@@ -231,7 +231,7 @@ const EXTRA_SEARCH_LABELS = [
   buildLabel("car_detailing_sale", "Car Detailing", "🚗", ["detailing"], ["sale"], ["US"], ["us_personal_services_side_hustle"])
 ];
 
-const LABEL_CATALOG = [...buildCatalogFromQuickPicks(), ...EXTRA_SEARCH_LABELS];
+let LABEL_CATALOG = [];
 
 const PRIMARY_ACTIONS = [
   { id: "sale", label: "Sell", icon: "🟢", help: "Business sells goods or services." },
@@ -1341,6 +1341,8 @@ function getIconForLabel(label) {
 function inferIcon(displayName, action) {
   return getIconForLabel(displayName);
 }
+
+LABEL_CATALOG = [...buildCatalogFromQuickPicks(), ...EXTRA_SEARCH_LABELS];
 
 function showScreen(id) {
   document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
