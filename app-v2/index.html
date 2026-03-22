@@ -196,4 +196,25 @@
       <div class="modal-mode" data-mode-panel="speak">
         <p class="subtle">Speak a label and Confirma will rank the best matches before you confirm.</p>
         <button class="btn btn-primary" id="speak-label-button" type="button">Speak label</button>
-        <p class=
+        <p class="subtle" id="speech-status"></p>
+        <div class="ranked-list" id="speech-results"></div>
+      </div>
+
+      <div class="modal-mode" data-mode-panel="browse">
+        <div class="ranked-list" id="browse-results"></div>
+      </div>
+
+      <div class="modal-mode" data-mode-panel="other">
+        <p class="subtle">If you cannot find a match, confirm a custom label and Confirma will learn it for future ranking.</p>
+        <label class="field">
+          Custom label
+          <input id="custom-label-input" type="text" placeholder="Enter your label">
+        </label>
+        <button class="btn btn-secondary" id="save-custom-label" type="button">Use this custom label</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/app-v2/app.js"></script>
+</body>
+</html>

@@ -9,4 +9,7 @@ document.addEventListener("DOMContentLoaded", function () {
     link.setAttribute("href", appUrl);
   });
 
-  document.querySelectorAll("[data-confirma-app-text]").forEach(function
+  document.querySelectorAll("[data-confirma-app-text]").forEach(function (node) {
+    node.textContent = appUrl;
+  });
+});

@@ -417,4 +417,835 @@ function buildVisualCard(icon, title, description, onClick, active) {
   button.className = `visual-card${active ? " active" : ""}`;
   button.innerHTML = `<span class="visual-icon">${icon}</span><strong>${title}</strong><span>${description}</span>`;
   button.addEventListener("click", onClick);
-  retur
+  return button;
+}
+
+async function finishOnboarding() {
+  await saveProfile(state.profile);
+  hydrateProfileUi();
+  await showCapture();
+}
+
+function hydrateProfileUi() {
+  const businessType = BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id);
+  const sector = SECTORS.find((item) => item.id === state.profile.sector_id);
+  els["profile-summary"].textContent = `${countryName(state.profile.country)} • ${sector?.name || ""} • ${businessType?.name || ""}`;
+}
+
+async function showCapture() {
+  state.currentAction = state.profile.last_action || "sale";
+  state.selectedLabel = null;
+  state.candidateRecord = null;
+  state.onboardingStep = 3;
+  hydrateProfileUi();
+  renderActionRows();
+  await renderQuickLabels();
+  await renderRecentRecords();
+  showScreen("screen-capture");
+}
+
+function renderActionRows() {
+  const primarySelected = state.currentAction === "transfer" ? null : state.currentAction;
+  const transferSelected = state.currentAction === "transfer" ? state.transferSubtype : null;
+
+  renderActionButtons(els["primary-actions"], PRIMARY_ACTIONS, primarySelected, (id) => {
+    state.currentAction = id;
+    state.profile.last_action = id;
+    renderActionRows();
+    renderQuickLabels();
+    clearSelectedLabel();
+  });
+
+  renderActionButtons(els["transfer-actions"], TRANSFER_ACTIONS, transferSelected, (id) => {
+    state.currentAction = "transfer";
+    state.transferSubtype = id;
+    renderActionRows();
+    renderQuickLabels();
+    clearSelectedLabel();
+  });
+
+  if (FEATURE_TRANSFER_PRIMARY && !PRIMARY_ACTIONS.find((item) => item.id === "transfer")) {
+    PRIMARY_ACTIONS.push({ id: "transfer", label: "Transfer", icon: "🔁", help: "Internal movement between owned accounts." });
+  }
+
+  els["transfer-details"].hidden = state.currentAction !== "transfer";
+}
+
+function renderActionButtons(container, actions, selectedId, handler) {
+  container.innerHTML = "";
+  actions.forEach((action) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `action-card${selectedId === action.id ? " active" : ""}`;
+    button.innerHTML = `<strong>${action.icon} ${action.label}</strong><span>${action.help}</span>`;
+    button.addEventListener("click", () => handler(action.id));
+    container.appendChild(button);
+  });
+}
+
+async function renderQuickLabels() {
+  els["quick-label-grid"].innerHTML = "";
+  const ranked = await rankLabels("", { limit: 9 });
+  ranked.forEach((item) => {
+    els["quick-label-grid"].appendChild(buildRankedLabelButton(item));
+  });
+  await renderBrowseResults();
+}
+
+function buildRankedLabelButton(item) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `ranked-item${state.selectedLabel && state.selectedLabel.id === item.id ? " active" : ""}`;
+  button.innerHTML = `<strong>${item.icon || "🏷️"} ${item.display_name}</strong><span>${contextCopy(item)}</span>`;
+  button.addEventListener("click", () => selectLabel(item));
+  return button;
+}
+
+function contextCopy(item) {
+  if (item.subtitle) return item.subtitle;
+  const context = item.transaction_contexts[0] || "";
+  return friendlyActionLabel(context);
+}
+
+function selectLabel(item) {
+  state.selectedLabel = item;
+  els["selected-label-chip"].textContent = `${item.icon || "🏷️"} ${item.display_name} selected`;
+  renderQuickLabels();
+  closeSelector();
+}
+
+function clearSelectedLabel() {
+  state.selectedLabel = null;
+  els["selected-label-chip"].textContent = "No label selected yet.";
+}
+
+async function openSelector() {
+  els["selector-modal"].hidden = false;
+  setSelectorMode("search");
+  await handleSearch();
+}
+
+function closeSelector() {
+  els["selector-modal"].hidden = true;
+}
+
+function setSelectorMode(mode) {
+  state.selectorMode = mode;
+  document.querySelectorAll("[data-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.mode === mode);
+  });
+  document.querySelectorAll("[data-mode-panel]").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.modePanel === mode);
+  });
+  if (mode === "browse") {
+    renderBrowseResults();
+  }
+}
+
+async function handleSearch() {
+  const query = els["label-search-input"].value.trim();
+  const results = query
+    ? searchLayerBLabels(query, state.profile.country, state.profile.business_type_id, getCurrentActionContext())
+    : await rankLabels("", { limit: 12 });
+  state.searchResults = results;
+  els["search-results"].innerHTML = results.length
+    ? results.map(renderRankedItemHtml).join("")
+    : `<div class="record-card"><strong>No labels found</strong><div class="record-meta">Try speech, browse all, or add Other.</div></div>`;
+  wireRankedButtons("search-results", results);
+}
+
+async function renderBrowseResults() {
+  const results = getBrowseAllLabels(state.profile.country, state.profile.business_type_id, getCurrentActionContext());
+  state.browseResults = results;
+  els["browse-results"].innerHTML = results.map(renderRankedItemHtml).join("");
+  wireRankedButtons("browse-results", results);
+}
+
+function renderRankedItemHtml(item, index) {
+  return `<button type="button" class="ranked-item" data-ranked-id="${item.id}"><strong>${item.icon || "🏷️"} ${item.display_name}</strong><span>${contextCopy(item)}</span><small>${item.badge || item.reason || "Recommended label"}</small></button>`;
+}
+
+function wireRankedButtons(containerId, results) {
+  document.getElementById(containerId).querySelectorAll("[data-ranked-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const item = results.find((entry) => entry.id === button.dataset.rankedId);
+      if (item) selectLabel(item);
+    });
+  });
+}
+
+async function startSpeechMatch() {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    els["speech-status"].textContent = "Speech recognition is not available in this browser.";
+    return;
+  }
+
+  els["speech-status"].textContent = "Listening...";
+  const recognition = new SpeechRec();
+  recognition.lang = state.profile.country === "US" ? "en-US" : "en-NG";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  recognition.onresult = (event) => {
+    const utterance = event.results[0][0].transcript;
+    rankLabels(utterance, { limit: 5, includeScore: true }).then((results) => {
+      state.speechResults = results;
+      renderSpeechResults(utterance, results);
+    });
+  };
+  recognition.onerror = () => {
+    els["speech-status"].textContent = "Speech capture failed. Try again or use search.";
+  };
+  recognition.start();
+}
+
+function renderSpeechResults(utterance, results) {
+  if (!results.length) {
+    els["speech-status"].textContent = `No strong match for "${utterance}". Try search, browse all, or Other.`;
+    els["speech-results"].innerHTML = "";
+    return;
+  }
+
+  const top = results[0];
+  if (top.confidence >= 0.85) {
+    els["speech-status"].textContent = `Best match for "${utterance}" found. Confirm by tapping the top result.`;
+  } else if (top.confidence >= 0.6) {
+    els["speech-status"].textContent = `Here are the best shortlist matches for "${utterance}".`;
+  } else {
+    els["speech-status"].textContent = `Low confidence for "${utterance}". Try search, browse all, or Other.`;
+  }
+
+  els["speech-results"].innerHTML = results.map(renderRankedItemHtml).join("");
+  wireRankedButtons("speech-results", results);
+}
+
+async function saveCustomLabel() {
+  const value = els["custom-label-input"].value.trim();
+  if (!value) return;
+  const item = await createUserCustomLabel(value);
+  selectLabel(item);
+  els["custom-label-input"].value = "";
+}
+
+function prepareConfirmation() {
+  clearError();
+  const amount = parseMinor(els["amount-input-v2"].value);
+  if (!state.selectedLabel) {
+    return showError("Pick a label first.");
+  }
+  if (!amount || amount <= 0) {
+    return showError("Enter a valid amount before confirming.");
+  }
+
+  const transactionType = state.currentAction === "transfer" ? "transfer" : state.currentAction;
+  const record = {
+    transaction_type: transactionType,
+    label: state.selectedLabel.display_name,
+    normalized_label: state.selectedLabel.normalized_label,
+    amount_minor: amount,
+    currency: state.profile.country === "US" ? "USD" : "NGN",
+    counterparty: els["counterparty-input-v2"].value.trim() || null,
+    source_account: transactionType === "transfer" ? (els["source-account-input"].value.trim() || null) : null,
+    destination_account: transactionType === "transfer" ? (els["destination-account-input"].value.trim() || null) : null,
+    input_mode: "visual",
+    confirmation_state: "pending",
+    business_type_id: state.profile.business_type_id,
+    sector_id: state.profile.sector_id,
+    country: state.profile.country
+  };
+
+  state.candidateRecord = record;
+  els["confirm-copy-v2"].textContent = confirmationCopy(record);
+  els["confirm-meta-v2"].innerHTML = `
+    <div><strong>Type:</strong> ${record.transaction_type}</div>
+    <div><strong>Normalized label:</strong> ${record.normalized_label}</div>
+    <div><strong>Amount:</strong> ${formatMoney(record.amount_minor, record.currency)}</div>
+    <div><strong>Counterparty:</strong> ${record.counterparty || "Not provided"}</div>
+  `;
+  showScreen("screen-confirm");
+}
+
+async function confirmAppend() {
+  if (!state.candidateRecord) return;
+  const record = {
+    ...state.candidateRecord,
+    confirmation_state: "confirmed"
+  };
+  await appendLedgerRecord(record);
+  await bumpLabelUsage(record.normalized_label);
+  resetCaptureForm();
+  await renderRecentRecords();
+  showScreen("screen-capture");
+}
+
+function resetCaptureForm() {
+  state.candidateRecord = null;
+  clearSelectedLabel();
+  els["amount-input-v2"].value = "";
+  els["counterparty-input-v2"].value = "";
+  els["source-account-input"].value = "";
+  els["destination-account-input"].value = "";
+}
+
+async function renderRecentRecords() {
+  const records = await getRecords();
+  const recent = [...records].reverse().slice(0, 5);
+  els["recent-records-v2"].innerHTML = recent.length
+    ? recent.map(renderRecordCard).join("")
+    : `<div class="record-card"><strong>No confirmed records yet.</strong><div class="record-meta">Start with a visual label, then confirm the transaction.</div></div>`;
+}
+
+async function renderHistory() {
+  const records = await getRecords();
+  els["history-records-v2"].innerHTML = records.length
+    ? [...records].reverse().map(renderRecordCard).join("")
+    : `<div class="record-card"><strong>No history yet.</strong><div class="record-meta">Nothing has been appended yet.</div></div>`;
+}
+
+function renderRecordCard(record) {
+  return `
+    <div class="record-card">
+      <strong>${record.label} • ${record.transaction_type}</strong>
+      <div class="record-meta">
+        ${formatMoney(record.amount_minor, record.currency)} • ${new Date(record.confirmed_at * 1000).toLocaleString()}<br>
+        ${record.normalized_label}${record.counterparty ? ` • ${record.counterparty}` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function confirmationCopy(record) {
+  const amount = formatMoney(record.amount_minor, record.currency);
+  if (record.transaction_type === "sale") return `You sold ${record.label} for ${amount}.`;
+  if (record.transaction_type === "purchase") return `You bought ${record.label} for ${amount}.`;
+  if (record.transaction_type === "payment") return `You paid ${amount} for ${record.label}.`;
+  if (record.transaction_type === "receipt") return `You received ${amount} for ${record.label}.`;
+  return `You are transferring ${amount} for ${record.label}.`;
+}
+
+function rankLabels(query, options = {}) {
+  const includeScore = options.includeScore !== false;
+  const limit = options.limit || 12;
+  const catalog = getCatalogForCurrentProfile();
+  const usageMapPromise = getUsageMap();
+
+  return usageMapPromise.then((usageMap) => {
+    const normalizedQuery = normalizeText(query);
+    const ranked = catalog.map((item) => {
+      const exact = normalizedQuery && normalizeText(item.display_name) === normalizedQuery ? 1 : 0;
+      const synonym = normalizedQuery && item.synonyms.some((synonym) => normalizeText(synonym) === normalizedQuery) ? 1 : 0;
+      const partial = normalizedQuery && (normalizeText(item.display_name).includes(normalizedQuery) || item.synonyms.some((synonym) => normalizeText(synonym).includes(normalizedQuery))) ? 1 : 0;
+      const businessMatch = item.business_types.includes(state.profile.business_type_id) ? 1 : 0;
+      const sectorMatch = businessSectorMatch(item) ? 1 : 0;
+      const countryMatch = item.countries.includes(state.profile.country) ? 1 : 0;
+      const historyBoost = usageMap.get(item.normalized_label) || 0;
+      const score = (exact * 40) + (synonym * 30) + (partial * 16) + (businessMatch * 12) + (sectorMatch * 8) + (countryMatch * 6) + Math.min(historyBoost, 8);
+      const confidence = normalizedQuery
+        ? Math.min(score / 50, 0.99)
+        : Math.min((businessMatch * 0.55) + (sectorMatch * 0.2) + (countryMatch * 0.1) + Math.min(historyBoost, 3) / 10, 0.9);
+      const reason = exact ? "Exact match" : synonym ? "Synonym match" : partial ? "Related match" : "Recommended for this business";
+      return { ...item, score, confidence, reason };
+    }).sort((a, b) => b.score - a.score || a.display_name.localeCompare(b.display_name));
+
+    return ranked.slice(0, limit).map((item) => includeScore ? item : stripScore(item));
+  });
+}
+
+function stripScore(item) {
+  const clone = { ...item };
+  delete clone.score;
+  delete clone.confidence;
+  delete clone.reason;
+  return clone;
+}
+
+function businessSectorMatch(item) {
+  const business = BUSINESS_TYPES.find((entry) => entry.id === state.profile.business_type_id);
+  const profileSector = business ? business.sector_id : state.profile.sector_id;
+  return item.business_types.some((businessId) => BUSINESS_TYPES.find((entry) => entry.id === businessId)?.sector_id === profileSector);
+}
+
+function getCatalogForCurrentProfile() {
+  const context = getCurrentActionContext();
+  const exactBusinessMatches = LABEL_CATALOG.filter((item) => {
+    return item.transaction_contexts.includes(context)
+      && item.business_types.includes(state.profile.business_type_id);
+  });
+
+  if (exactBusinessMatches.length) return exactBusinessMatches;
+
+  const sectorBusinessIds = BUSINESS_TYPES
+    .filter((item) => item.country === state.profile.country && item.sector_id === state.profile.sector_id)
+    .map((item) => item.id);
+
+  const sectorMatches = LABEL_CATALOG.filter((item) => {
+    return item.transaction_contexts.includes(context)
+      && item.countries.includes(state.profile.country)
+      && item.business_types.some((businessId) => sectorBusinessIds.includes(businessId));
+  });
+
+  if (sectorMatches.length) return sectorMatches;
+
+  return LABEL_CATALOG.filter((item) => {
+    return item.transaction_contexts.includes(context)
+      && item.countries.includes(state.profile.country);
+  });
+}
+
+function getAvailableBusinessTypes() {
+  if (!state.profile || !state.profile.country || !state.profile.sector_id) return [];
+  return BUSINESS_TYPES.filter((item) => item.country === state.profile.country && item.sector_id === state.profile.sector_id);
+}
+
+function buildLabel(id, displayName, icon, synonyms, contexts, countries, businessTypes) {
+  return {
+    id,
+    normalized_label: id,
+    display_name: displayName,
+    synonyms,
+    icon,
+    image_url: null,
+    transaction_contexts: contexts,
+    countries,
+    business_types: businessTypes
+  };
+}
+
+function buildCatalogFromQuickPicks() {
+  const items = [];
+  Object.entries(QUICK_PICKS).forEach(([businessTypeId, groups]) => {
+    const business = BUSINESS_TYPES.find((entry) => entry.id === businessTypeId);
+    if (!business) return;
+    const country = business.country;
+
+    Object.entries(groups).forEach(([action, labels]) => {
+      const canonicalAction = normalizeActionKey(action);
+      labels.forEach((displayName) => {
+        const normalized = normalizeText(displayName).replace(/\s+/g, "_");
+        const id = `${businessTypeId}_${canonicalAction}_${normalized}`;
+        if (items.some((item) => item.id === id)) return;
+        items.push(buildLabel(
+          id,
+          displayName,
+          inferIcon(displayName, canonicalAction),
+          [],
+          [canonicalAction],
+          [country],
+          [businessTypeId]
+        ));
+      });
+    });
+  });
+  return items;
+}
+
+function normalizeActionKey(action) {
+  if (action === "sell") return "sale";
+  if (action === "buy") return "purchase";
+  if (action === "pay") return "payment";
+  if (action === "receive") return "receipt";
+  return action;
+}
+
+function getCurrentActionContext() {
+  if (state.currentAction === "transfer") return state.transferSubtype;
+  return state.currentAction;
+}
+
+function layerBActionKey(action) {
+  if (action === "sale") return "sell";
+  if (action === "purchase") return "buy";
+  if (action === "payment") return "pay";
+  if (action === "receipt") return "receive";
+  if (action === "transfer_in") return "receive";
+  if (action === "transfer_out") return "receive";
+  return "sell";
+}
+
+function layerBContextFromActionKey(actionKey) {
+  if (actionKey === "sell") return "sale";
+  if (actionKey === "buy") return "purchase";
+  if (actionKey === "pay") return "payment";
+  return "receipt";
+}
+
+function slugifyLabel(value) {
+  return normalizeText(value).replace(/\s+/g, "_");
+}
+
+function buildLayerBItem(country, businessTypeId, actionKey, label, badge) {
+  const context = layerBContextFromActionKey(actionKey);
+  return {
+    id: `layerb_${country}_${businessTypeId}_${actionKey}_${slugifyLabel(label)}`,
+    normalized_label: slugifyLabel(label),
+    display_name: label,
+    synonyms: [],
+    icon: inferIcon(label, context),
+    image_url: null,
+    transaction_contexts: [context],
+    countries: [country],
+    business_types: [businessTypeId],
+    subtitle: friendlyActionLabel(context),
+    badge
+  };
+}
+
+function getCurrentProfileFallbackLabels(context) {
+  return LABEL_CATALOG.filter((item) => {
+    return item.transaction_contexts.includes(context)
+      && item.business_types.includes(state.profile.business_type_id);
+  });
+}
+
+function getBrowseAllLabels(country, businessTypeId, currentAction) {
+  const actionKey = layerBActionKey(currentAction);
+  const countryData = LAYER_B[country] || {};
+  const businessData = countryData[businessTypeId] || {};
+  const recommended = [];
+  const others = [];
+  const seen = new Set();
+
+  (businessData[actionKey] || []).forEach((label) => {
+    const dedupeKey = `${actionKey}:${label}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    recommended.push(buildLayerBItem(country, businessTypeId, actionKey, label, "Recommended label"));
+  });
+
+  Object.entries(countryData).forEach(([sourceBusinessTypeId, groups]) => {
+    (groups[actionKey] || []).forEach((label) => {
+      const dedupeKey = `${actionKey}:${label}`;
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      others.push(buildLayerBItem(country, sourceBusinessTypeId, actionKey, label, "Other businesses"));
+    });
+  });
+
+  if (!recommended.length) {
+    const context = layerBContextFromActionKey(actionKey);
+    getCurrentProfileFallbackLabels(context).forEach((item) => {
+      const dedupeKey = `${actionKey}:${item.display_name}`;
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      recommended.push({
+        ...item,
+        subtitle: friendlyActionLabel(context),
+        badge: "Recommended label"
+      });
+    });
+  }
+
+  return [...recommended, ...others];
+}
+
+function searchLayerBLabels(query, country, businessTypeId, currentAction) {
+  const q = normalizeText(query);
+  if (!q) return [];
+
+  const actionKey = layerBActionKey(currentAction);
+  const countryData = LAYER_B[country] || {};
+  const matches = [];
+  const seen = new Set();
+
+  Object.entries(countryData).forEach(([sourceBusinessTypeId, groups]) => {
+    ["sell", "buy", "pay", "receive"].forEach((groupAction) => {
+      (groups[groupAction] || []).forEach((label) => {
+        const normalizedLabel = normalizeText(label);
+        if (!normalizedLabel.includes(q)) return;
+        const dedupeKey = `${groupAction}:${normalizedLabel}`;
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+
+        const exact = normalizedLabel === q ? 1 : 0;
+        const starts = normalizedLabel.startsWith(q) ? 1 : 0;
+        const actionMatch = groupAction === actionKey ? 1 : 0;
+        const businessMatch = sourceBusinessTypeId === businessTypeId ? 1 : 0;
+        const score = (exact * 50) + (starts * 20) + (actionMatch * 16) + (businessMatch * 12);
+
+        matches.push({
+          ...buildLayerBItem(country, sourceBusinessTypeId, groupAction, label, businessMatch ? "Recommended label" : "Other businesses"),
+          score,
+          reason: exact ? "Exact match" : starts ? "Starts with your search" : "Matching label"
+        });
+      });
+    });
+  });
+
+  LABEL_CATALOG.forEach((item) => {
+    const normalizedLabel = normalizeText(item.display_name);
+    if (!normalizedLabel.includes(q)) return;
+    const context = item.transaction_contexts[0] || "";
+    const groupAction = layerBActionKey(context);
+    const dedupeKey = `${groupAction}:${normalizedLabel}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+
+    const actionMatch = groupAction === actionKey ? 1 : 0;
+    const businessMatch = item.business_types.includes(businessTypeId) ? 1 : 0;
+    matches.push({
+      ...item,
+      subtitle: friendlyActionLabel(context),
+      badge: businessMatch ? "Recommended label" : "Other businesses",
+      score: 10 + (actionMatch * 10) + (businessMatch * 8),
+      reason: "Matching label"
+    });
+  });
+
+  return matches
+    .sort((a, b) => (b.score || 0) - (a.score || 0) || a.display_name.localeCompare(b.display_name))
+    .slice(0, 18)
+    .map((item) => stripScore(item));
+}
+
+function friendlyActionLabel(action) {
+  if (action === "sale") return "Sell";
+  if (action === "purchase") return "Buy";
+  if (action === "payment") return "Pay";
+  if (action === "receipt") return "Receive";
+  if (action === "transfer") return "Transfer";
+  return action;
+}
+
+function inferIcon(displayName, action) {
+  const text = normalizeText(displayName);
+  if (text.includes("rice")) return "🌾";
+  if (text.includes("beans")) return "🫘";
+  if (text.includes("garri")) return "🥣";
+  if (text.includes("tomato")) return "🍅";
+  if (text.includes("pepper")) return "🌶️";
+  if (text.includes("oil")) return "🛢️";
+  if (text.includes("yam")) return "🍠";
+  if (text.includes("onion")) return "🧅";
+  if (text.includes("drink") || text.includes("water")) return "🥤";
+  if (text.includes("airtime") || text.includes("data")) return "📱";
+  if (text.includes("fuel") || text.includes("gas")) return "⛽";
+  if (text.includes("rent")) return "🏠";
+  if (text.includes("transport") || text.includes("trip") || text.includes("delivery")) return "🚚";
+  if (text.includes("packag")) return "📦";
+  if (text.includes("pay") || text.includes("wage")) return "👤";
+  if (text.includes("tool")) return "🧰";
+  if (text.includes("material")) return "🧱";
+  if (text.includes("payment") || text.includes("deposit") || text.includes("refund")) return "💵";
+  if (text.includes("platform") || text.includes("subscription")) return "🧾";
+  if (text.includes("hair") || text.includes("braid") || text.includes("loc")) return "💇";
+  if (text.includes("consult") || text.includes("project") || text.includes("service")) return "💼";
+  if (action === "receipt") return "💰";
+  if (action === "payment") return "💸";
+  if (action === "purchase") return "🛒";
+  return "🏷️";
+}
+
+function showScreen(id) {
+  document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+}
+
+function openChangeProfileConfirm() {
+  els["change-confirm-modal"].hidden = false;
+}
+
+function closeChangeProfileConfirm() {
+  els["change-confirm-modal"].hidden = true;
+}
+
+function confirmChangeProfile() {
+  closeChangeProfileConfirm();
+  state.onboardingStep = 3;
+  renderOnboarding();
+  showScreen("screen-onboarding");
+}
+
+function normalizeText(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function countryName(countryId) {
+  return COUNTRIES.find((item) => item.id === countryId)?.name || countryId;
+}
+
+function parseMinor(value) {
+  const number = parseFloat(String(value || "").replace(/,/g, ""));
+  return Number.isFinite(number) ? Math.round(number * 100) : 0;
+}
+
+function formatMoney(amountMinor, currency) {
+  const amount = amountMinor / 100;
+  if (currency === "USD") {
+    return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return `₦${amount.toLocaleString("en-NG", { maximumFractionDigits: 0 })}`;
+}
+
+function showError(message) {
+  els["capture-error"].hidden = false;
+  els["capture-error"].textContent = message;
+}
+
+function clearError() {
+  els["capture-error"].hidden = true;
+  els["capture-error"].textContent = "";
+}
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("records")) db.createObjectStore("records", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("customLabels")) db.createObjectStore("customLabels", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("usage")) db.createObjectStore("usage", { keyPath: "normalized_label" });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function getProfile() {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readonly");
+    const request = tx.objectStore("settings").get("profile");
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function saveProfile(profile) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readwrite");
+    tx.objectStore("settings").put({ ...profile, key: "profile" });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function getRecords() {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("records", "readonly");
+    const request = tx.objectStore("records").getAll();
+    request.onsuccess = () => resolve(request.result.sort((a, b) => a.id - b.id));
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function appendLedgerRecord(record) {
+  const last = await getLastRecord();
+  const id = last ? last.id + 1 : 1;
+  const confirmedAt = Math.floor(Date.now() / 1000);
+  const prevHash = last ? last.entry_hash : "0".repeat(64);
+  const entryHash = await sha256(`${id}|${record.transaction_type}|${record.normalized_label}|${record.amount_minor}|${confirmedAt}|${prevHash}`);
+  const payload = {
+    ...record,
+    id,
+    confirmed_at: confirmedAt,
+    prev_entry_hash: prevHash,
+    entry_hash: entryHash
+  };
+
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("records", "readwrite");
+    tx.objectStore("records").add(payload);
+    tx.oncomplete = () => resolve(payload);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function getLastRecord() {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("records", "readonly");
+    const request = tx.objectStore("records").openCursor(null, "prev");
+    request.onsuccess = () => resolve(request.result ? request.result.value : null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function getUsageMap() {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("usage", "readonly");
+    const request = tx.objectStore("usage").getAll();
+    request.onsuccess = () => {
+      const map = new Map();
+      request.result.forEach((item) => map.set(item.normalized_label, item.count));
+      resolve(map);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function bumpLabelUsage(normalizedLabel) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("usage", "readwrite");
+    const store = tx.objectStore("usage");
+    const getRequest = store.get(normalizedLabel);
+    getRequest.onsuccess = () => {
+      const current = getRequest.result || { normalized_label: normalizedLabel, count: 0 };
+      store.put({ normalized_label: normalizedLabel, count: current.count + 1 });
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function createUserCustomLabel(value) {
+  const normalized = normalizeText(value).replace(/\s+/g, "_");
+  const item = {
+    id: `custom_${Date.now()}`,
+    normalized_label: normalized,
+    display_name: value,
+    synonyms: [value],
+    icon: "⭐",
+    image_url: null,
+    transaction_contexts: [state.currentAction === "transfer" ? "transfer" : state.currentAction],
+    countries: [state.profile.country],
+    business_types: [state.profile.business_type_id]
+  };
+
+  await new Promise((resolve, reject) => {
+    const tx = state.db.transaction("customLabels", "readwrite");
+    tx.objectStore("customLabels").put({
+      id: item.id,
+      user_id: "local-user",
+      display_name: item.display_name,
+      normalized_label: item.normalized_label,
+      source: "manual_entry",
+      learned_from: state.currentAction,
+      business_type_id: state.profile.business_type_id
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  LABEL_CATALOG.push(item);
+  return item;
+}
+
+function loadCustomLabelsIntoCatalog() {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("customLabels", "readonly");
+    const request = tx.objectStore("customLabels").getAll();
+    request.onsuccess = () => {
+      request.result.forEach((item) => {
+        const alreadyExists = LABEL_CATALOG.some((label) => label.id === item.id);
+        if (alreadyExists) return;
+        LABEL_CATALOG.push({
+          id: item.id,
+          normalized_label: item.normalized_label,
+          display_name: item.display_name,
+          synonyms: [item.display_name],
+          icon: "⭐",
+          image_url: null,
+          transaction_contexts: [item.learned_from === "transfer_in" || item.learned_from === "transfer_out" ? "transfer" : item.learned_from],
+          countries: [state.profile?.country || "NG", "US"].filter((value, index, array) => array.indexOf(value) === index),
+          business_types: [item.business_type_id]
+        });
+      });
+      resolve();
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function sha256(input) {
+  const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
