@@ -330,4 +330,18 @@ body {
   margin-bottom: 12px;
 }
 
-.modal-
+.modal-mode {
+  display: none;
+}
+
+.modal-mode.active {
+  display: block;
+}
+
+@media (max-width: 520px) {
+  .visual-grid,
+  .action-row,
+  .label-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
