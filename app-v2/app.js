@@ -256,7 +256,11 @@ const state = {
   candidateRecord: null,
   searchResults: [],
   browseResults: [],
-  speechResults: []
+  speechResults: [],
+  amountsHidden: false,
+  pinEntry: "",
+  pinAttempts: 0,
+  reminderDismissed: false
 };
 
 const els = {};
@@ -276,6 +280,9 @@ async function init() {
   if (state.profile) {
     state.profile.preferred_labels = Array.isArray(state.profile.preferred_labels) ? state.profile.preferred_labels : [];
     hydrateProfileUi();
+    if (state.profile.pinEnabled && state.profile.pinHash) {
+      showPinLock();
+    }
     await showCapture();
   } else {
     showScreen("screen-onboarding");
@@ -293,7 +300,10 @@ function cacheElements() {
     "change-confirm-modal", "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
     "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
-    "settings-capture-v2", "settings-summary-v2", "settings-change-profile-v2", "export-button-v2", "export-status-v2"
+    "settings-capture-v2", "settings-summary-v2", "settings-change-profile-v2", "export-button-v2", "export-status-v2",
+    "daily-reminder-banner", "dismiss-reminder-btn", "privacy-toggle-btn", "reminder-toggle", "pin-lock-toggle",
+    "pin-setup-area", "pin-input-new", "pin-input-confirm", "pin-save-btn", "pin-remove-btn", "pin-setup-error",
+    "settings-security-status", "pin-setup-label", "pin-lock-screen", "pin-error"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -324,8 +334,17 @@ function wireEvents() {
   document.getElementById("back-home").addEventListener("click", () => showScreen("screen-capture"));
   document.getElementById("settings-change-profile-v2").addEventListener("click", openChangeProfileConfirm);
   document.getElementById("export-button-v2").addEventListener("click", generateExport);
+  document.getElementById("dismiss-reminder-btn").addEventListener("click", dismissDailyReminder);
+  document.getElementById("privacy-toggle-btn").addEventListener("click", togglePrivacyMode);
+  document.getElementById("reminder-toggle").addEventListener("click", toggleReminderPreference);
+  document.getElementById("pin-lock-toggle").addEventListener("click", togglePinLockPreference);
+  document.getElementById("pin-save-btn").addEventListener("click", savePinLock);
+  document.getElementById("pin-remove-btn").addEventListener("click", removePinLock);
   document.getElementById("mic-button-v2").addEventListener("click", startVoiceRecordShortcut);
   document.getElementById("quick-text-submit").addEventListener("click", handleQuickTextRecord);
+  document.querySelectorAll(".pin-key").forEach((button) => {
+    button.addEventListener("click", () => handlePinKey(button.dataset.digit));
+  });
   document.querySelectorAll("[data-target-screen]").forEach((button) => {
     button.addEventListener("click", async () => {
       const target = button.dataset.targetScreen;
@@ -336,10 +355,13 @@ function wireEvents() {
         await renderHistory();
       }
       if (target === "screen-settings") {
-        renderSettings();
+        await renderSettings();
       }
       if (target === "screen-export") {
         renderExportScreen();
+      }
+      if (target === "screen-capture") {
+        await checkDailyReminder();
       }
       showScreen(target);
     });
@@ -490,6 +512,7 @@ async function showCapture() {
   renderActionRows();
   await renderQuickLabels();
   await renderRecentRecords();
+  await checkDailyReminder();
   showScreen("screen-capture");
 }
 
@@ -561,6 +584,26 @@ async function renderSettings() {
     ${renderSettingsRow("Transfer handling", "Separate from income and expense")}
   `;
 
+  if (state.profile.reminderEnabled === false) {
+    els["reminder-toggle"].classList.remove("on");
+  } else {
+    els["reminder-toggle"].classList.add("on");
+  }
+
+  if (state.profile.pinEnabled && state.profile.pinHash) {
+    els["pin-lock-toggle"].classList.add("on");
+    els["pin-setup-area"].hidden = false;
+    els["pin-remove-btn"].hidden = false;
+    els["pin-setup-label"].textContent = "PIN is set — enter new PIN to change";
+  } else {
+    els["pin-lock-toggle"].classList.remove("on");
+    els["pin-setup-area"].hidden = true;
+    els["pin-remove-btn"].hidden = true;
+    els["pin-setup-label"].textContent = "Set a 4-digit PIN";
+    els["settings-security-status"].textContent = "";
+    els["pin-setup-error"].textContent = "";
+  }
+
   els["settings-preferred-v2"].innerHTML = preferred.length
     ? preferred.map((label) => `<div class="settings-chip">${getIconForLabel(label)} ${label}</div>`).join("")
     : `<div class="record-meta">No common transactions selected yet.</div>`;
@@ -576,6 +619,184 @@ async function renderSettings() {
 
 function renderSettingsRow(label, value) {
   return `<div class="settings-row"><span>${label}</span><strong>${value}</strong></div>`;
+}
+
+function dismissDailyReminder() {
+  state.reminderDismissed = true;
+  els["daily-reminder-banner"].hidden = true;
+}
+
+async function checkDailyReminder() {
+  if (!state.db || !state.profile) return;
+  if (state.profile.reminderEnabled === false) {
+    els["daily-reminder-banner"].hidden = true;
+    return;
+  }
+
+  const entries = await getRecords();
+  const todayStr = new Date().toDateString();
+  const recordedToday = entries.some((entry) => new Date(entry.confirmed_at * 1000).toDateString() === todayStr);
+
+  if (recordedToday) {
+    state.reminderDismissed = false;
+    els["daily-reminder-banner"].hidden = true;
+    return;
+  }
+
+  els["daily-reminder-banner"].hidden = state.reminderDismissed;
+}
+
+function toggleReminderPreference() {
+  if (!state.profile) return;
+  const enabled = els["reminder-toggle"].classList.toggle("on");
+  state.profile.reminderEnabled = enabled;
+  if (enabled) state.reminderDismissed = false;
+  saveProfile(state.profile);
+  checkDailyReminder();
+}
+
+function togglePrivacyMode() {
+  state.amountsHidden = !state.amountsHidden;
+  if (state.amountsHidden) {
+    document.body.classList.add("amounts-hidden");
+    els["privacy-toggle-btn"].textContent = "🙈";
+  } else {
+    document.body.classList.remove("amounts-hidden");
+    els["privacy-toggle-btn"].textContent = "👁️";
+  }
+}
+
+function resetPrivacyMode() {
+  state.amountsHidden = false;
+  document.body.classList.remove("amounts-hidden");
+  if (els["privacy-toggle-btn"]) {
+    els["privacy-toggle-btn"].textContent = "👁️";
+  }
+}
+
+function showPinLock() {
+  state.pinEntry = "";
+  updatePinDots();
+  els["pin-error"].textContent = "";
+  els["pin-lock-screen"].hidden = false;
+}
+
+function hidePinLock() {
+  els["pin-lock-screen"].hidden = true;
+}
+
+function updatePinDots() {
+  document.querySelectorAll(".pin-dot").forEach((dot, index) => {
+    dot.classList.toggle("filled", index < state.pinEntry.length);
+  });
+}
+
+function hashPin(pin) {
+  let hash = 0;
+  for (let index = 0; index < pin.length; index += 1) {
+    hash = ((hash << 5) - hash) + pin.charCodeAt(index);
+    hash |= 0;
+  }
+  return String(hash);
+}
+
+function handlePinKey(digit) {
+  if (!(state.profile && state.profile.pinEnabled && state.profile.pinHash)) return;
+
+  if (digit === "back") {
+    state.pinEntry = state.pinEntry.slice(0, -1);
+    updatePinDots();
+    return;
+  }
+
+  if (state.pinEntry.length >= 4) return;
+  state.pinEntry += digit;
+  updatePinDots();
+
+  if (state.pinEntry.length !== 4) return;
+
+  if (hashPin(state.pinEntry) === state.profile.pinHash) {
+    state.pinAttempts = 0;
+    hidePinLock();
+    els["pin-error"].textContent = "";
+    return;
+  }
+
+  state.pinAttempts += 1;
+  state.pinEntry = "";
+  updatePinDots();
+  els["pin-error"].textContent = state.pinAttempts >= 3 ? "Too many attempts. Try again." : "Incorrect PIN. Try again.";
+  setTimeout(() => {
+    if (els["pin-error"]) els["pin-error"].textContent = "";
+  }, 2000);
+}
+
+async function togglePinLockPreference() {
+  if (!state.profile) return;
+  const enabled = els["pin-lock-toggle"].classList.toggle("on");
+
+  if (enabled) {
+    els["pin-setup-area"].hidden = false;
+    els["pin-remove-btn"].hidden = !state.profile.pinEnabled;
+    els["pin-setup-label"].textContent = state.profile.pinEnabled ? "PIN is set — enter new PIN to change" : "Set a 4-digit PIN";
+    return;
+  }
+
+  els["pin-setup-area"].hidden = true;
+  els["pin-remove-btn"].hidden = true;
+  state.profile.pinEnabled = false;
+  state.profile.pinHash = null;
+  await saveProfile(state.profile);
+}
+
+async function savePinLock() {
+  if (!state.profile) return;
+  const newPin = els["pin-input-new"].value.trim();
+  const confirmPin = els["pin-input-confirm"].value.trim();
+
+  if (!/^\d{4}$/.test(newPin)) {
+    els["pin-setup-error"].textContent = "PIN must be exactly 4 digits";
+    return;
+  }
+
+  if (newPin !== confirmPin) {
+    els["pin-setup-error"].textContent = "PINs do not match";
+    return;
+  }
+
+  state.profile.pinEnabled = true;
+  state.profile.pinHash = hashPin(newPin);
+  await saveProfile(state.profile);
+
+  els["pin-input-new"].value = "";
+  els["pin-input-confirm"].value = "";
+  els["pin-setup-error"].textContent = "";
+  els["pin-remove-btn"].hidden = false;
+  els["pin-setup-area"].hidden = false;
+  els["pin-setup-label"].textContent = "PIN is set — enter new PIN to change";
+  els["settings-security-status"].textContent = "PIN lock enabled";
+  setTimeout(() => {
+    if (els["settings-security-status"]) els["settings-security-status"].textContent = "";
+  }, 2000);
+}
+
+async function removePinLock() {
+  if (!state.profile) return;
+  if (!window.confirm("Remove PIN lock? The app will open without a PIN.")) return;
+
+  state.profile.pinEnabled = false;
+  state.profile.pinHash = null;
+  await saveProfile(state.profile);
+  els["pin-lock-toggle"].classList.remove("on");
+  els["pin-setup-area"].hidden = true;
+  els["pin-remove-btn"].hidden = true;
+  els["pin-input-new"].value = "";
+  els["pin-input-confirm"].value = "";
+  els["pin-setup-error"].textContent = "";
+  els["settings-security-status"].textContent = "PIN removed";
+  setTimeout(() => {
+    if (els["settings-security-status"]) els["settings-security-status"].textContent = "";
+  }, 2000);
 }
 
 function renderExportScreen() {
@@ -1036,6 +1257,7 @@ async function confirmAppend() {
   await renderRecentRecords();
   await renderHistory();
   await renderDashboard();
+  await checkDailyReminder();
   showScreen("screen-dashboard");
 }
 
@@ -1068,7 +1290,7 @@ function renderRecordCard(record) {
     <div class="record-card">
       <strong>${record.label} • ${record.transaction_type}</strong>
       <div class="record-meta">
-        ${formatMoney(record.amount_minor, record.currency)} • ${new Date(record.confirmed_at * 1000).toLocaleString()}<br>
+        <span class="record-money">${formatMoney(record.amount_minor, record.currency)}</span> • ${new Date(record.confirmed_at * 1000).toLocaleString()}<br>
         ${record.normalized_label}${record.counterparty ? ` • ${record.counterparty}` : ""}
       </div>
     </div>
