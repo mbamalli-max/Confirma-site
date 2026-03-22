@@ -450,7 +450,4 @@ select {
   .choice-grid,
   .category-columns,
   .metric-grid,
-  .input-row {
-    grid-template-columns: 1fr;
-  }
-}
+  .input

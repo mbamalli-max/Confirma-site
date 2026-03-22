@@ -300,11 +300,20 @@ function wireStaticEvents() {
 }
 
 function registerPwaFeatures() {
+  const standalone = isStandaloneMode();
+  if (standalone) {
+    els["install-button"].hidden = true;
+  }
+
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/app/sw.js");
   }
 
   window.addEventListener("beforeinstallprompt", (event) => {
+    if (isStandaloneMode()) {
+      els["install-button"].hidden = true;
+      return;
+    }
     event.preventDefault();
     state.deferredPrompt = event;
     els["install-button"].hidden = false;
@@ -315,11 +324,20 @@ function registerPwaFeatures() {
     await state.deferredPrompt.prompt();
   });
 
+  window.addEventListener("appinstalled", () => {
+    state.deferredPrompt = null;
+    els["install-button"].hidden = true;
+  });
+
   const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  const isStandalone = window.navigator.standalone === true;
+  const isStandalone = window.navigator.standalone === true || standalone;
   if (isIos && !isStandalone) {
     els["ios-banner"].hidden = false;
   }
+}
+
+function isStandaloneMode() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 }
 
 function updateOnboardingStep(step) {
