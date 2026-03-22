@@ -361,6 +361,56 @@ body {
   line-height: 1.45;
 }
 
+.settings-list {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.settings-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.settings-row span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.settings-row strong {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.settings-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #F8F4EF;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+}
+
 .confirm-copy {
   font-size: 24px;
   color: var(--primary);
@@ -496,6 +546,14 @@ body {
   .action-row,
   .label-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .settings-row {
+    flex-direction: column;
+  }
+
+  .settings-row strong {
+    text-align: left;
   }
 
   .metric-grid {

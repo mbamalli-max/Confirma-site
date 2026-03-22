@@ -293,7 +293,7 @@ function cacheElements() {
     "change-confirm-modal", "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
     "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
-    "settings-change-profile-v2", "export-button-v2", "export-status-v2"
+    "settings-capture-v2", "settings-summary-v2", "settings-change-profile-v2", "export-button-v2", "export-status-v2"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -532,22 +532,50 @@ async function renderDashboard() {
     : `<div class="record-card"><strong>No confirmed records yet.</strong><div class="record-meta">Your recent confirmed transactions will appear here.</div></div>`;
 }
 
-function renderSettings() {
+async function renderSettings() {
   if (!state.profile) return;
+  const records = await getRecords();
   const businessType = BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id);
   const sector = SECTORS.find((item) => item.id === state.profile.sector_id);
   const preferred = state.profile.preferred_labels || [];
+  const currency = state.profile.country === "US" ? "USD" : "NGN";
+  const latestRecord = records.length ? records[records.length - 1] : null;
+  const totalSales = records
+    .filter((record) => record.transaction_type === "sale")
+    .reduce((sum, record) => sum + Number(record.amount_minor || 0), 0);
+  const totalOutflow = records
+    .filter((record) => record.transaction_type === "payment" || record.transaction_type === "purchase")
+    .reduce((sum, record) => sum + Number(record.amount_minor || 0), 0);
 
   els["settings-profile-v2"].innerHTML = `
-    <div><strong>Country:</strong> ${countryName(state.profile.country)}</div>
-    <div><strong>Sector:</strong> ${sector?.name || "Not selected"}</div>
-    <div><strong>Business type:</strong> ${businessType?.name || "Not selected"}</div>
-    <div><strong>Last action:</strong> ${friendlyActionLabel(state.profile.last_action || "sale")}</div>
+    ${renderSettingsRow("Country", countryName(state.profile.country))}
+    ${renderSettingsRow("Sector", sector?.name || "Not selected")}
+    ${renderSettingsRow("Business type", businessType?.name || "Not selected")}
+    ${renderSettingsRow("Last action", friendlyActionLabel(state.profile.last_action || "sale"))}
+  `;
+
+  els["settings-capture-v2"].innerHTML = `
+    ${renderSettingsRow("Primary recording mode", "Voice-first with text fallback")}
+    ${renderSettingsRow("Confirmation rule", "Every transaction must be reviewed before append")}
+    ${renderSettingsRow("Quick-pick strategy", preferred.length ? `${preferred.length} common transaction${preferred.length === 1 ? "" : "s"} boosted` : "Using business defaults")}
+    ${renderSettingsRow("Transfer handling", "Separate from income and expense")}
   `;
 
   els["settings-preferred-v2"].innerHTML = preferred.length
-    ? preferred.map((label) => `<div>${getIconForLabel(label)} ${label}</div>`).join("")
-    : "No common transactions selected yet.";
+    ? preferred.map((label) => `<div class="settings-chip">${getIconForLabel(label)} ${label}</div>`).join("")
+    : `<div class="record-meta">No common transactions selected yet.</div>`;
+
+  els["settings-summary-v2"].innerHTML = `
+    ${renderSettingsRow("Confirmed records", String(records.length))}
+    ${renderSettingsRow("Total sales", formatMoney(totalSales, currency))}
+    ${renderSettingsRow("Total outflow", formatMoney(totalOutflow, currency))}
+    ${renderSettingsRow("Latest confirmed record", latestRecord ? `${latestRecord.label} • ${new Date(latestRecord.confirmed_at * 1000).toLocaleString()}` : "No confirmed records yet")}
+    ${renderSettingsRow("Storage", "Saved locally on this device")}
+  `;
+}
+
+function renderSettingsRow(label, value) {
+  return `<div class="settings-row"><span>${label}</span><strong>${value}</strong></div>`;
 }
 
 function renderExportScreen() {
