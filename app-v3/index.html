@@ -59,7 +59,7 @@
 
       <div class="panel">
         <div class="stepper-row">
-          <div class="stepper" id="onboarding-step-copy">Step 1 of 4</div>
+          <div class="stepper" id="onboarding-step-copy">Step 1 of 5</div>
           <button class="pill-button" id="onboarding-back" type="button" hidden>Back</button>
         </div>
 
@@ -83,7 +83,56 @@
           <h2>Pick your common transactions</h2>
           <p class="subtle">Choose the labels you use most often. Confirma will surface them more often while recording.</p>
           <div class="visual-grid label-grid" id="common-label-grid"></div>
-          <button class="btn btn-primary" id="finish-onboarding" type="button" disabled>Use this profile</button>
+          <button class="btn btn-secondary" id="onboarding-next" type="button">Continue</button>
+        </div>
+
+        <div class="step" data-step="5">
+          <h2>About you</h2>
+          <p class="subtle">This helps personalise your records and supports account
+          recovery. All fields except name are optional.</p>
+
+          <label class="field">
+            Full name
+            <input id="onboarding-name" type="text" placeholder="Your name or business name" autocomplete="name">
+          </label>
+
+          <label class="field">
+            Phone number
+            <input id="onboarding-phone" type="tel" placeholder="+234 or +1 ..." autocomplete="tel" inputmode="tel">
+          </label>
+
+          <label class="field">
+            Email address <span style="font-weight:400;color:var(--muted)">(optional)</span>
+            <input id="onboarding-email" type="email" placeholder="you@example.com" autocomplete="email" inputmode="email">
+          </label>
+
+          <label class="field">
+            State / Region <span style="font-weight:400;color:var(--muted)">(optional)</span>
+            <input id="onboarding-state" type="text" placeholder="e.g. Kano, Lagos, Texas" autocomplete="address-level1">
+          </label>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+            <label class="field" style="margin-bottom:0">
+              Year of birth <span style="font-weight:400;color:var(--muted)">(optional)</span>
+              <input id="onboarding-birth-year" type="number" placeholder="e.g. 1990" min="1930" max="2010" inputmode="numeric">
+            </label>
+            <label class="field" style="margin-bottom:0">
+              Gender <span style="font-weight:400;color:var(--muted)">(optional)</span>
+              <select id="onboarding-gender" style="width:100%;min-height:48px;border-radius:12px;border:1px solid var(--border);background:white;margin-top:6px;padding:0 12px;color:var(--text)">
+                <option value="">Prefer not to say</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="nonbinary">Non-binary</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+          </div>
+
+          <p class="error" id="onboarding-profile-error" hidden></p>
+
+          <button class="btn btn-primary" id="finish-onboarding" type="button" disabled>
+            Use this profile
+          </button>
         </div>
       </div>
     </section>

@@ -299,6 +299,8 @@ async function init() {
 function cacheElements() {
   [
     "country-grid", "sector-grid", "business-grid", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
+    "onboarding-next", "onboarding-name", "onboarding-phone", "onboarding-email", "onboarding-state",
+    "onboarding-birth-year", "onboarding-gender", "onboarding-profile-error",
     "business-helper", "profile-summary", "primary-actions", "advanced-panel", "transfer-actions",
     "quick-label-grid", "selected-label-chip", "amount-input-v2", "counterparty-input-v2", "source-account-input",
     "destination-account-input", "transfer-details", "capture-error", "confirm-copy-v2", "confirm-meta-v2",
@@ -319,6 +321,7 @@ function cacheElements() {
 
 function wireEvents() {
   document.getElementById("finish-onboarding").addEventListener("click", finishOnboarding);
+  document.getElementById("onboarding-next").addEventListener("click", () => updateOnboardingStep(5));
   document.getElementById("change-profile").addEventListener("click", openChangeProfileConfirm);
   document.getElementById("confirm-change-profile").addEventListener("click", confirmChangeProfile);
   document.getElementById("cancel-change-profile").addEventListener("click", closeChangeProfileConfirm);
@@ -350,6 +353,9 @@ function wireEvents() {
   document.getElementById("pin-remove-btn").addEventListener("click", removePinLock);
   document.getElementById("mic-button-v2").addEventListener("click", startVoiceRecordShortcut);
   document.getElementById("quick-text-submit").addEventListener("click", handleQuickTextRecord);
+  document.getElementById("onboarding-name").addEventListener("input", updateFinishOnboardingState);
+  document.getElementById("onboarding-phone").addEventListener("input", clearOnboardingProfileError);
+  document.getElementById("onboarding-email").addEventListener("input", clearOnboardingProfileError);
   document.querySelectorAll(".pin-key").forEach((button) => {
     button.addEventListener("click", () => handlePinKey(button.dataset.digit));
   });
@@ -396,6 +402,7 @@ function renderOnboarding() {
   renderSectorGrid();
   renderBusinessGrid();
   renderCommonLabelGrid();
+  renderOnboardingProfileStep();
   updateOnboardingStep(state.onboardingStep || 1);
 }
 
@@ -408,10 +415,17 @@ function renderCountryGrid() {
         sector_id: null,
         business_type_id: null,
         last_action: "sale",
-        preferred_labels: []
+        preferred_labels: [],
+        display_name: state.profile?.display_name || "",
+        phone_number: state.profile?.phone_number || "",
+        email: state.profile?.email || "",
+        region: state.profile?.region || "",
+        birth_year: state.profile?.birth_year || "",
+        gender: state.profile?.gender || ""
       };
       renderSectorGrid();
       renderBusinessGrid();
+      renderOnboardingProfileStep();
       updateOnboardingStep(2);
     }, state.profile && state.profile.country === country.id));
   });
@@ -428,6 +442,7 @@ function renderSectorGrid() {
         preferred_labels: []
       };
       renderBusinessGrid();
+      renderOnboardingProfileStep();
       updateOnboardingStep(3);
     }, state.profile && state.profile.sector_id === sector.id));
   });
@@ -452,6 +467,7 @@ function renderBusinessGrid() {
       };
       renderBusinessGrid();
       renderCommonLabelGrid();
+      renderOnboardingProfileStep();
       updateOnboardingStep(4);
     }, state.profile && state.profile.business_type_id === item.id));
   });
@@ -478,9 +494,10 @@ function updateOnboardingStep(step) {
   state.onboardingStep = step;
   document.querySelectorAll(".step").forEach((node) => node.classList.remove("active"));
   document.querySelector(`.step[data-step="${state.onboardingStep}"]`).classList.add("active");
-  els["onboarding-step-copy"].textContent = `Step ${state.onboardingStep} of 4`;
-  els["onboarding-back"].hidden = state.onboardingStep <= 1;
-  document.getElementById("finish-onboarding").disabled = !(state.profile && state.profile.business_type_id);
+  els["onboarding-step-copy"].textContent = `Step ${state.onboardingStep} of 5`;
+  els["onboarding-back"].hidden = state.onboardingStep === 1;
+  els["finish-onboarding"].hidden = state.onboardingStep !== 5;
+  updateFinishOnboardingState();
 }
 
 function goToPreviousOnboardingStep() {
@@ -502,7 +519,30 @@ function buildVisualCard(icon, title, description, onClick, active) {
 }
 
 async function finishOnboarding() {
+  clearOnboardingProfileError();
   if (!state.profile.preferred_labels) state.profile.preferred_labels = [];
+  state.profile.display_name = document.getElementById("onboarding-name")?.value.trim() || "";
+  state.profile.phone_number = document.getElementById("onboarding-phone")?.value.trim() || "";
+  state.profile.email = document.getElementById("onboarding-email")?.value.trim() || "";
+  state.profile.region = document.getElementById("onboarding-state")?.value.trim() || "";
+  state.profile.birth_year = document.getElementById("onboarding-birth-year")?.value.trim() || "";
+  state.profile.gender = document.getElementById("onboarding-gender")?.value || "";
+
+  if (!state.profile.display_name) {
+    updateFinishOnboardingState();
+    return;
+  }
+
+  if (state.profile.phone_number && !/^\+?[\d\s\-]{7,15}$/.test(state.profile.phone_number)) {
+    showOnboardingProfileError("Enter a valid phone number");
+    state.profile.phone_number = "";
+  }
+
+  if (state.profile.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.profile.email)) {
+    showOnboardingProfileError("Enter a valid email address");
+    state.profile.email = "";
+  }
+
   await saveProfile(state.profile);
   hydrateProfileUi();
   await showCapture();
@@ -511,7 +551,10 @@ async function finishOnboarding() {
 function hydrateProfileUi() {
   const businessType = BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id);
   const sector = SECTORS.find((item) => item.id === state.profile.sector_id);
-  els["profile-summary"].textContent = `${countryName(state.profile.country)} • ${sector?.name || ""} • ${businessType?.name || ""}`;
+  const nameDisplay = state.profile.display_name
+    ? `${state.profile.display_name} · `
+    : "";
+  els["profile-summary"].textContent = `${nameDisplay}${countryName(state.profile.country)} · ${sector?.name || ""} · ${businessType?.name || ""}`;
   updateAmountInputStep();
 }
 
@@ -718,6 +761,10 @@ async function renderSettings() {
     ${renderSettingsRow("Country", countryName(state.profile.country))}
     ${renderSettingsRow("Sector", sector?.name || "Not selected")}
     ${renderSettingsRow("Business type", businessType?.name || "Not selected")}
+    ${state.profile.display_name ? renderSettingsRow("Name", state.profile.display_name) : ""}
+    ${state.profile.phone_number ? renderSettingsRow("Phone", state.profile.phone_number) : ""}
+    ${state.profile.email ? renderSettingsRow("Email", state.profile.email) : ""}
+    ${state.profile.region ? renderSettingsRow("Region", state.profile.region) : ""}
     ${renderSettingsRow("Last action", friendlyActionLabel(state.profile.last_action || "sale"))}
   `;
 
@@ -1015,13 +1062,15 @@ async function generateExport() {
     "CONFIRMA V2 EXPORT",
     `Generated: ${new Date().toLocaleString()}`,
     `Profile: ${countryName(state.profile.country)} / ${BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id)?.name || "Unknown"}`,
+    state.profile.display_name ? `Name: ${state.profile.display_name}` : null,
+    state.profile.region ? `Region: ${state.profile.region}` : null,
     `Entries: ${records.length}`,
     "---",
     ...lines,
     "---",
     `Ledger Root Hash: ${ledgerRootHash}`,
     "Verification Status: Device-verified on this device. Server attestation coming."
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 
   const blob = new Blob([output], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
@@ -2167,6 +2216,35 @@ function renderFirstRecordGuide(records) {
     </div>
   `;
   els["first-record-guide"].hidden = records.length > 0;
+}
+
+function renderOnboardingProfileStep() {
+  if (!els["onboarding-name"]) return;
+  els["onboarding-name"].value = state.profile?.display_name || "";
+  els["onboarding-phone"].value = state.profile?.phone_number || "";
+  els["onboarding-email"].value = state.profile?.email || "";
+  els["onboarding-state"].value = state.profile?.region || "";
+  els["onboarding-birth-year"].value = state.profile?.birth_year || "";
+  els["onboarding-gender"].value = state.profile?.gender || "";
+  clearOnboardingProfileError();
+  updateFinishOnboardingState();
+}
+
+function updateFinishOnboardingState() {
+  if (!els["finish-onboarding"]) return;
+  const hasBusinessType = Boolean(state.profile && state.profile.business_type_id);
+  const hasDisplayName = Boolean(els["onboarding-name"]?.value.trim());
+  els["finish-onboarding"].disabled = !(hasBusinessType && hasDisplayName);
+}
+
+function showOnboardingProfileError(message) {
+  if (!els["onboarding-profile-error"]) return;
+  els["onboarding-profile-error"].hidden = !message;
+  els["onboarding-profile-error"].textContent = message || "";
+}
+
+function clearOnboardingProfileError() {
+  showOnboardingProfileError("");
 }
 
 function speakConfirmationCopy(text) {
