@@ -40,44 +40,44 @@ const QUICK_PICKS = {
   ng_market_trader: {
     sell: ["Rice", "Beans", "Garri", "Tomatoes", "Pepper", "Palm Oil", "Yam", "Onion"],
     purchase: ["Rice Stock", "Beans Stock", "Palm Oil Stock", "Tomato Crate", "Pepper Bag", "Nylon Bags"],
-    payment: ["Transport", "Market Fee", "Stall Rent", "Packaging", "Helper Pay", "Mobile Data"],
+    payment: ["Transport", "Market Fee", "Stall Rent", "Packaging", "Helper Pay", "Generator Fuel"],
     receipt: ["Customer Payment", "POS Payment", "Debt Collected", "Esusu Payout"]
   },
   ng_provision_shop: {
-    sell: ["Drinks", "Biscuits", "Noodles", "Sugar", "Bread", "Water", "Airtime", "Toiletries"],
-    purchase: ["Drinks Stock", "Biscuit Carton", "Noodles Carton", "Sugar Stock", "Bread Stock", "Airtime Float"],
-    payment: ["Shop Rent", "Electricity", "Transport", "Generator Fuel", "Staff Pay", "Packaging"],
-    receipt: ["Customer Payment", "POS Payment", "Debt Collected", "Supplier Refund"]
+    sell: ["Drinks", "Noodles", "Biscuits", "Sugar", "Bread", "Water", "Toiletries", "Airtime"],
+    purchase: ["Drinks Stock", "Noodles Carton", "Biscuit Carton", "Sugar Stock", "Bread Stock", "Airtime Float"],
+    payment: ["Shop Rent", "Electricity", "Transport", "Staff Pay", "Generator Fuel"],
+    receipt: ["Customer Payment", "POS Payment", "Debt Collected"]
   },
   ng_food_vendor: {
-    sell: ["Rice Meal", "Soup", "Swallow", "Snacks", "Drinks", "Fish", "Chicken", "Catering", "Eba", "Tuwo"],
-    purchase: ["Rice (Cooking)", "Cooking Oil", "Tomatoes", "Pepper", "Meat/Fish", "Gas", "Firewood", "Seasoning"],
-    payment: ["Stall Rent", "Helper Pay", "Transport", "Packaging", "Electricity", "Water Supply", "Waste Disposal", "Cooking Gas"],
-    receipt: ["Customer Payment", "Bulk Order Payment", "Catering Deposit", "Debt Collected"]
+    sell: ["Swallow & Soup", "Rice Meal", "Snacks", "Drinks", "Protein", "Catering", "Takeaway", "Breakfast"],
+    purchase: ["Grains/Staples", "Oil", "Vegetables", "Protein/Meat", "Cooking Gas", "Packaging", "Seasoning", "Firewood"],
+    payment: ["Stall Rent", "Helper Pay", "Transport", "Packaging", "Cooking Gas", "Market Fee"],
+    receipt: ["Customer Payment", "Bulk Order Payment", "Debt Collected"]
   },
   ng_transport_operator: {
-    sell: ["Trip Fare", "Delivery Fee", "Charter", "Interstate Fare", "Loading Fee", "Haulage"],
-    purchase: ["Fuel", "Engine Oil", "Spare Parts", "Tyres", "Battery", "Tools"],
-    payment: ["Fuel", "Repair", "Park Levy", "Tyre Repair", "Driver Pay", "Car Wash", "Insurance", "Road Toll"],
-    receipt: ["Passenger Payment", "Delivery Payment", "Charter Payment", "Debt Collected"]
+    sell: ["Trip Fare", "Delivery Fee", "Charter", "Loading Fee", "Extra Seat"],
+    purchase: ["Fuel", "Engine Oil", "Spare Parts", "Tyres"],
+    payment: ["Fuel", "Motor Levy", "Parking Fee", "Repair", "Driver Pay", "Car Wash"],
+    receipt: ["Passenger Payment", "Delivery Payment", "Charter Payment"]
   },
   ng_artisan: {
-    sell: ["Repair Job", "Installation", "Labour", "Fabrication", "Maintenance", "Inspection"],
-    purchase: ["Materials", "Spare Parts", "Tools", "Paint", "Fittings", "Safety Gear"],
-    payment: ["Transport", "Helper Pay", "Generator Fuel", "Phone/Data", "Workshop Rent", "Tool Repair"],
+    sell: ["Repair Job", "Labour", "Installation", "Maintenance", "Inspection"],
+    purchase: ["Materials", "Spare Parts", "Tools", "Fittings"],
+    payment: ["Transport", "Helper Pay", "Workshop Rent", "Generator Fuel", "Phone/Data"],
     receipt: ["Job Payment", "Deposit", "Balance Payment", "Refund Received"]
   },
   ng_service_provider: {
-    sell: ["Consultation", "Service Fee", "Project Fee", "Training", "Retainer", "Admin Service"],
-    purchase: ["Materials", "Data Bundle", "Airtime", "Office Supplies"],
-    payment: ["Transport", "Data/Internet", "Rent", "Assistant Pay", "Power", "Marketing"],
-    receipt: ["Client Payment", "Deposit", "Balance", "Refund Received"]
+    sell: ["Service Fee", "Consultation", "Project Fee", "Training", "Admin Service"],
+    purchase: ["Materials", "Data Bundle", "Office Supplies"],
+    payment: ["Transport", "Data/Internet", "Office Rent", "Assistant Pay", "Marketing"],
+    receipt: ["Client Payment", "Deposit", "Balance"]
   },
   ng_online_seller: {
-    sell: ["Product Sale", "Delivery Charged", "Wholesale Order", "Social Media Sale", "Custom Order", "Bulk Order"],
-    purchase: ["Inventory", "Packaging", "Data Bundle", "Product Photos", "Labels/Tags", "Storage"],
-    payment: ["Shipping Cost", "Platform Fee", "Ad Boost", "Data/Internet", "Packaging", "Rider Payment", "Dispatch Fee", "Printing"],
-    receipt: ["Customer Transfer", "POS/Link Payment", "Deposit", "Refund Received"]
+    sell: ["Products", "Delivery Charged", "Wholesale Order", "Custom Order"],
+    purchase: ["Inventory", "Packaging", "Product Photos"],
+    payment: ["Shipping Cost", "Platform Fee", "Ad Boost", "Data/Internet"],
+    receipt: ["Customer Transfer", "POS/Link Payment", "Deposit"]
   },
   ng_kiosk_phone_business: {
     sell: ["Airtime", "Data Bundle", "Transfer Fee", "Electricity Token", "Cable Sub", "Print/Photocopy"],
@@ -98,16 +98,16 @@ const QUICK_PICKS = {
     receipt: ["Passenger Payment", "Delivery Payment", "Debt Collected"]
   },
   us_retail: {
-    sell: ["Products", "Merchandise", "Gift Items", "Accessories", "Custom Order", "Online Sale", "Bundle Sale", "Clearance"],
-    purchase: ["Inventory", "Supplies", "Packaging", "Labels/Tags", "Display Items", "Thrift Haul"],
-    payment: ["Rent", "Shipping Cost", "Utilities", "Staff Pay", "Card Fees", "Platform Fees", "Storage", "Ads"],
-    receipt: ["Customer Payment", "Online Order Payment", "Deposit", "Supplier Refund"]
+    sell: ["Products", "Merchandise", "Gift Items", "Accessories", "Online Sale"],
+    purchase: ["Inventory", "Supplies", "Packaging", "Labels/Tags"],
+    payment: ["Rent", "Utilities", "Shipping Cost", "Staff Pay", "Card Fees"],
+    receipt: ["Customer Payment", "Online Order Payment", "Deposit"]
   },
   us_food_service: {
-    sell: ["Meals", "Drinks", "Catering", "Delivery", "Baked Goods", "Wings", "Meal Prep", "Custom Cake", "BBQ", "Soul Food"],
-    purchase: ["Ingredients", "Meat", "Produce", "Packaging", "Cooking Oil", "Baking Supplies", "Dairy", "Beverages"],
-    payment: ["Rent", "Utilities", "Cooking Gas/Propane", "Staff Pay", "Delivery App Fee", "Packaging", "Permits", "Equipment"],
-    receipt: ["Customer Payment", "Delivery App Payout", "Catering Deposit", "Supplier Refund"]
+    sell: ["Meals", "Drinks", "Snacks", "Catering", "Delivery", "Desserts"],
+    purchase: ["Ingredients", "Meat/Protein", "Packaging", "Produce", "Cooking Oil"],
+    payment: ["Rent", "Utilities", "Staff Pay", "Delivery App Fee", "Permits"],
+    receipt: ["Customer Payment", "Catering Deposit", "Delivery App Payout"]
   },
   us_logistics: {
     sell: ["Delivery Job", "Route Pay", "Freight Job", "Rush Delivery", "Charter Trip", "Moving Job"],
@@ -116,22 +116,22 @@ const QUICK_PICKS = {
     receipt: ["Client Payment", "Platform Payout", "Tip", "Reimbursement"]
   },
   us_contractor: {
-    sell: ["Labor", "Project Fee", "Installation", "Repair Job", "Inspection", "Emergency Call"],
-    purchase: ["Materials", "Equipment Rental", "Tools", "Safety Gear", "Paint/Primer", "Fasteners"],
-    payment: ["Materials", "Subcontractor Pay", "Permits", "Fuel", "Disposal/Dumpster", "Insurance", "Helper Pay", "Tool Rental"],
+    sell: ["Labor", "Project Fee", "Installation", "Repair Job", "Inspection"],
+    purchase: ["Materials", "Equipment Rental", "Tools", "Safety Gear"],
+    payment: ["Subcontractor Pay", "Permits", "Fuel", "Disposal", "Helper Pay"],
     receipt: ["Client Payment", "Deposit", "Progress Payment", "Final Balance"]
   },
   us_beauty_services: {
-    sell: ["Hair Service", "Nails", "Braiding", "Locs/Retwist", "Silk Press", "Sew-In", "Treatment/Wax", "Makeup", "Lashes", "Product Sale"],
-    purchase: ["Braiding Hair", "Supplies", "Products", "Lash Supplies", "Nail Supplies", "Color/Developer"],
-    payment: ["Booth Rent", "Products Used", "Platform Fee", "Supplies Run", "Training", "Utilities"],
-    receipt: ["Client Payment", "Deposit", "Tip", "Supplier Refund"]
+    sell: ["Hair Service", "Nails", "Treatment", "Makeup", "Lashes", "Product Sale"],
+    purchase: ["Supplies", "Products", "Equipment"],
+    payment: ["Booth Rent", "Staff Pay", "Training", "Booking App Fee"],
+    receipt: ["Client Payment", "Deposit", "Tip"]
   },
   us_digital_business: {
-    sell: ["Project Fee", "Subscription", "Consultation", "Digital Product", "Coaching", "Course Sale", "Brand Deal", "UGC Content"],
-    purchase: ["Software", "Equipment", "Domain/Hosting", "Stock Assets", "Content Props", "Merch Inventory"],
-    payment: ["Subscriptions", "Ads", "Contractor Pay", "Internet", "Platform Fee", "Phone Plan", "Cloud Hosting", "Accounting"],
-    receipt: ["Client Payment", "Platform Payout", "Affiliate Payout", "Deposit"]
+    sell: ["Project Fee", "Consultation", "Retainer", "Digital Product", "Subscription"],
+    purchase: ["Software", "Equipment", "Domain/Hosting"],
+    payment: ["Subscriptions", "Ads", "Contractor Pay", "Internet", "Platform Fee"],
+    receipt: ["Client Payment", "Platform Payout", "Affiliate Payout"]
   },
   us_personal_services_side_hustle: {
     sell: ["Cleaning Job", "Dog Walking", "Babysitting", "Tutoring", "Lawn Care", "Photography", "Car Detailing", "Rideshare", "Power Washing", "Moving Help"],
