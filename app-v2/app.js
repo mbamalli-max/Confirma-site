@@ -290,7 +290,7 @@ function cacheElements() {
     "destination-account-input", "transfer-details", "capture-error", "confirm-copy-v2", "confirm-meta-v2",
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
     "speech-results", "browse-results", "speech-status", "custom-label-input", "onboarding-back",
-    "change-confirm-modal"
+    "change-confirm-modal", "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -319,6 +319,8 @@ function wireEvents() {
     showScreen("screen-history");
   });
   document.getElementById("back-home").addEventListener("click", () => showScreen("screen-capture"));
+  document.getElementById("mic-button-v2").addEventListener("click", startVoiceRecordShortcut);
+  document.getElementById("quick-text-submit").addEventListener("click", handleQuickTextRecord);
   document.getElementById("label-search-input").addEventListener("input", () => {
     handleSearch();
   });
@@ -541,6 +543,156 @@ function selectLabel(item) {
 function clearSelectedLabel() {
   state.selectedLabel = null;
   els["selected-label-chip"].textContent = "No label selected yet.";
+}
+
+function setVoiceRecordError(message) {
+  els["voice-error-v2"].hidden = !message;
+  els["voice-error-v2"].textContent = message || "";
+}
+
+function handleQuickTextRecord() {
+  const input = els["quick-text-input-v2"].value.trim();
+  if (!input) {
+    setVoiceRecordError("Type a short transaction like: Sold rice for 15000.");
+    return;
+  }
+  const parsed = parseNaturalTransaction(input);
+  if (!parsed) {
+    setVoiceRecordError("Could not understand that. Try: Sold rice for 15000.");
+    return;
+  }
+  applyParsedTransactionToCapture(parsed);
+  els["quick-text-input-v2"].value = "";
+}
+
+function parseNaturalTransaction(input) {
+  const text = String(input || "").trim().replace(/[₦$,]/g, "");
+  let match = text.match(/^(?:sold|sell)\s+(.+?)\s+for\s+([0-9,.]+)/i);
+  if (match) {
+    return { action: "sale", labelQuery: match[1].trim(), amountMinor: parseMinor(match[2]), counterparty: "" };
+  }
+
+  match = text.match(/^(?:bought|buy)\s+(.+?)\s+for\s+([0-9,.]+)/i);
+  if (match) {
+    return { action: "purchase", labelQuery: match[1].trim(), amountMinor: parseMinor(match[2]), counterparty: "" };
+  }
+
+  match = text.match(/^paid\s+([0-9,.]+)\s+for\s+(.+)/i);
+  if (match) {
+    return { action: "payment", labelQuery: match[2].trim(), amountMinor: parseMinor(match[1]), counterparty: "" };
+  }
+
+  match = text.match(/^(?:paid|pay)\s+(.+?)\s+(?:for\s+)?([0-9,.]+)/i);
+  if (match) {
+    return { action: "payment", labelQuery: match[1].trim(), amountMinor: parseMinor(match[2]), counterparty: "" };
+  }
+
+  match = text.match(/^(?:received|receive)\s+([0-9,.]+)\s+from\s+(.+)/i);
+  if (match) {
+    return { action: "receipt", labelQuery: "Customer Payment", amountMinor: parseMinor(match[1]), counterparty: match[2].trim() };
+  }
+
+  match = text.match(/^(?:received|receive)\s+(.+?)\s+for\s+([0-9,.]+)/i);
+  if (match) {
+    return { action: "receipt", labelQuery: match[1].trim(), amountMinor: parseMinor(match[2]), counterparty: "" };
+  }
+
+  return null;
+}
+
+function startVoiceRecordShortcut() {
+  setVoiceRecordError("");
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    setVoiceRecordError("Voice input is not available in this browser. Please use text input.");
+    return;
+  }
+
+  const recognition = new SpeechRec();
+  recognition.lang = state.profile.country === "US" ? "en-US" : "en-NG";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    const parsed = parseNaturalTransaction(transcript);
+    if (!parsed || !parsed.amountMinor) {
+      setVoiceRecordError("Could not understand that. Try: Sold rice for 15000.");
+      return;
+    }
+    applyParsedTransactionToCapture(parsed);
+  };
+
+  recognition.onerror = () => {
+    setVoiceRecordError("Microphone error. Please try again or use text input.");
+  };
+
+  recognition.start();
+}
+
+function getCatalogForProfileAction(actionContext) {
+  const exactBusinessMatches = LABEL_CATALOG.filter((item) => {
+    return item.transaction_contexts.includes(actionContext)
+      && item.business_types.includes(state.profile.business_type_id);
+  });
+
+  if (exactBusinessMatches.length) return exactBusinessMatches;
+
+  const sectorBusinessIds = BUSINESS_TYPES
+    .filter((item) => item.country === state.profile.country && item.sector_id === state.profile.sector_id)
+    .map((item) => item.id);
+
+  const sectorMatches = LABEL_CATALOG.filter((item) => {
+    return item.transaction_contexts.includes(actionContext)
+      && item.countries.includes(state.profile.country)
+      && item.business_types.some((businessId) => sectorBusinessIds.includes(businessId));
+  });
+
+  if (sectorMatches.length) return sectorMatches;
+
+  return LABEL_CATALOG.filter((item) => {
+    return item.transaction_contexts.includes(actionContext)
+      && item.countries.includes(state.profile.country);
+  });
+}
+
+function findBestLabelForAction(labelQuery, actionContext) {
+  const catalog = getCatalogForProfileAction(actionContext);
+  const normalizedQuery = normalizeText(labelQuery);
+  const ranked = catalog
+    .map((item) => {
+      const exact = normalizeText(item.display_name) === normalizedQuery ? 1 : 0;
+      const partial = normalizeText(item.display_name).includes(normalizedQuery) ? 1 : 0;
+      const synonym = item.synonyms.some((synonym) => normalizeText(synonym).includes(normalizedQuery)) ? 1 : 0;
+      const preferred = (state.profile?.preferred_labels || []).includes(item.display_name) ? 1 : 0;
+      const score = (exact * 50) + (partial * 18) + (synonym * 20) + (preferred * 8);
+      return { item, score };
+    })
+    .sort((a, b) => b.score - a.score || a.item.display_name.localeCompare(b.item.display_name));
+
+  return ranked[0]?.score ? ranked[0].item : catalog[0] || null;
+}
+
+function applyParsedTransactionToCapture(parsed) {
+  setVoiceRecordError("");
+  state.currentAction = parsed.action;
+  state.profile.last_action = parsed.action;
+  renderActionRows();
+
+  const label = findBestLabelForAction(parsed.labelQuery, parsed.action);
+  if (label) {
+    state.selectedLabel = label;
+    els["selected-label-chip"].textContent = `${label.icon || "🏷️"} ${label.display_name} selected`;
+  } else {
+    clearSelectedLabel();
+    setVoiceRecordError("We filled the amount, but you still need to pick a label.");
+  }
+
+  els["amount-input-v2"].value = parsed.amountMinor ? String(parsed.amountMinor / 100) : "";
+  els["counterparty-input-v2"].value = parsed.counterparty || "";
+  renderQuickLabels();
+  clearError();
+  showScreen("screen-capture");
 }
 
 function getCommonTransactionOptions(businessTypeId) {
@@ -817,30 +969,7 @@ function businessSectorMatch(item) {
 }
 
 function getCatalogForCurrentProfile() {
-  const context = getCurrentActionContext();
-  const exactBusinessMatches = LABEL_CATALOG.filter((item) => {
-    return item.transaction_contexts.includes(context)
-      && item.business_types.includes(state.profile.business_type_id);
-  });
-
-  if (exactBusinessMatches.length) return exactBusinessMatches;
-
-  const sectorBusinessIds = BUSINESS_TYPES
-    .filter((item) => item.country === state.profile.country && item.sector_id === state.profile.sector_id)
-    .map((item) => item.id);
-
-  const sectorMatches = LABEL_CATALOG.filter((item) => {
-    return item.transaction_contexts.includes(context)
-      && item.countries.includes(state.profile.country)
-      && item.business_types.some((businessId) => sectorBusinessIds.includes(businessId));
-  });
-
-  if (sectorMatches.length) return sectorMatches;
-
-  return LABEL_CATALOG.filter((item) => {
-    return item.transaction_contexts.includes(context)
-      && item.countries.includes(state.profile.country);
-  });
+  return getCatalogForProfileAction(getCurrentActionContext());
 }
 
 function getAvailableBusinessTypes() {

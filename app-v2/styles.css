@@ -231,6 +231,41 @@ body {
   min-height: 100px;
 }
 
+.voice-card {
+  background: var(--card);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 18px;
+  padding: 18px 16px;
+  box-shadow: 0 12px 28px rgba(26, 60, 52, 0.08);
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.mic-button {
+  width: 76px;
+  height: 76px;
+  border-radius: 999px;
+  border: 0;
+  background: linear-gradient(135deg, var(--primary-mid), var(--primary));
+  color: white;
+  font-size: 30px;
+  box-shadow: 0 10px 20px rgba(45, 106, 79, 0.24);
+}
+
+.quick-record-panel h2 {
+  margin-bottom: 8px;
+}
+
+.text-field-like {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: white;
+  padding: 0 12px;
+  margin: 8px 0 12px;
+}
+
 .field {
   display: block;
   color: var(--text);
