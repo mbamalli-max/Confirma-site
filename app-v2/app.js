@@ -290,7 +290,8 @@ function cacheElements() {
     "destination-account-input", "transfer-details", "capture-error", "confirm-copy-v2", "confirm-meta-v2",
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
     "speech-results", "browse-results", "speech-status", "custom-label-input", "onboarding-back",
-    "change-confirm-modal", "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2"
+    "change-confirm-modal", "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
+    "bottom-nav-v2"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -321,6 +322,15 @@ function wireEvents() {
   document.getElementById("back-home").addEventListener("click", () => showScreen("screen-capture"));
   document.getElementById("mic-button-v2").addEventListener("click", startVoiceRecordShortcut);
   document.getElementById("quick-text-submit").addEventListener("click", handleQuickTextRecord);
+  document.querySelectorAll("[data-target-screen]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const target = button.dataset.targetScreen;
+      if (target === "screen-history") {
+        await renderHistory();
+      }
+      showScreen(target);
+    });
+  });
   document.getElementById("label-search-input").addEventListener("input", () => {
     handleSearch();
   });
@@ -1476,6 +1486,15 @@ LABEL_CATALOG = [...buildCatalogFromQuickPicks(), ...EXTRA_SEARCH_LABELS];
 function showScreen(id) {
   document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
   document.getElementById(id).classList.add("active");
+  updateBottomNav(id);
+}
+
+function updateBottomNav(activeScreenId) {
+  const visible = activeScreenId === "screen-capture" || activeScreenId === "screen-history";
+  els["bottom-nav-v2"].hidden = !visible;
+  document.querySelectorAll("[data-target-screen]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.targetScreen === activeScreenId);
+  });
 }
 
 function openChangeProfileConfirm() {

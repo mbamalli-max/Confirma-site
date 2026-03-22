@@ -26,7 +26,7 @@ body {
 .app-shell {
   width: min(100%, 560px);
   margin: 0 auto;
-  padding: 18px;
+  padding: 18px 18px 92px;
 }
 
 .screen {
@@ -393,9 +393,57 @@ body {
   display: block;
 }
 
+.bottom-nav[hidden] {
+  display: none;
+}
+
+.bottom-nav {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: min(100%, 560px);
+  background: rgba(26, 60, 52, 0.98);
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  box-shadow: 0 -8px 24px rgba(26, 60, 52, 0.18);
+  z-index: 6;
+}
+
+.nav-item {
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.82);
+  min-height: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.nav-item span {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.nav-item strong {
+  font-size: 13px;
+}
+
+.nav-item.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+}
+
 @media (max-width: 520px) {
   .app-shell {
-    padding: 14px;
+    padding: 14px 14px 92px;
   }
 
   .hero,
