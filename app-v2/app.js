@@ -141,6 +141,85 @@ const QUICK_PICKS = {
   }
 };
 
+const LAYER_B = {
+  NG: {
+    ng_market_trader: {
+      sell: ["Rice", "Beans", "Garri", "Tomatoes", "Pepper", "Palm Oil", "Yam", "Onion", "Groundnuts", "Vegetable Oil", "Crayfish", "Stock Fish", "Egusi", "Plantain", "Maize", "Millet", "Garden Egg", "Okra", "Ugu", "Bitter Leaf", "Sweet Potato", "Cocoyam", "Banana", "Soybeans", "Groundnut Oil", "Seasoning Cubes", "Salt", "Tomato Paste", "Ogi", "Soft Drinks", "Pure Water", "Zobo", "Kunu"],
+      buy: ["Rice Stock", "Beans Stock", "Palm Oil Stock", "Tomato Crate", "Pepper Bag", "Nylon Bags", "Garri Stock", "Yam Stock", "Onion Bag", "Groundnut Stock", "Vegetable Oil Stock", "Crayfish Stock", "Dried Fish Stock", "Egusi Stock", "Seasoning Stock", "Salt Stock", "Wholesale Goods", "Storage Sacks", "Plastic Containers", "Weighing Scale", "Crates/Trays"],
+      pay: ["Transport", "Market Fee", "Stall Rent", "Packaging", "Helper Pay", "Generator Fuel", "Mobile Data", "Electricity", "Porter Pay", "Cold Room Fee", "Association Dues", "Loading Fee", "Vehicle Hire", "Shop Repair", "Security Fee", "Cleaning Supplies", "Waste Disposal", "Record Keeper"],
+      receive: ["Customer Payment", "POS Payment", "Debt Collected", "Esusu Payout", "Family Support", "Supplier Refund", "Business Loan", "Association Refund", "Government Support", "NGO Grant", "Bank Transfer"]
+    },
+    ng_provision_shop: {
+      sell: ["Drinks", "Noodles", "Biscuits", "Sugar", "Bread", "Water", "Toiletries", "Airtime", "Detergent", "Milk", "Eggs", "Tin Tomato", "Sardine", "Corned Beef", "Groundnut Oil", "Vegetable Oil", "Seasoning", "Salt", "Flour", "Spaghetti", "Rice", "Beans", "Garri", "Snacks", "Ice Cream", "Yoghurt", "Juice", "Energy Drinks", "Recharge Cards", "Data Bundle", "Baby Food", "Diapers", "Sanitary Pads", "Soap", "Cream", "Toothpaste", "Tissue", "Matches", "Candles", "Stationery", "Cosmetics", "Cleaning Products", "Household Items"],
+      buy: ["Drinks Stock", "Noodles Carton", "Biscuit Carton", "Sugar Stock", "Bread Stock", "Airtime Float", "Toiletries Stock", "Detergent Stock", "Milk Stock", "Egg Crate", "Tin Tomato Stock", "Sardine Carton", "Snack Carton", "Juice Carton", "Rice Stock", "Beans Stock", "Garri Stock", "Seasoning Stock", "Flour Stock", "Baby Food Stock", "Soap Stock", "Cream Stock", "Wholesale Restock", "Nylon Bags", "Shelving", "General Restock"],
+      pay: ["Shop Rent", "Electricity", "Transport", "Staff Pay", "Generator Fuel", "Mobile Data", "Packaging", "Shop Repair", "Security Fee", "Association Dues", "Waste Disposal", "Water Supply", "Delivery Cost", "Cleaning Supplies"],
+      receive: ["Customer Payment", "POS Payment", "Debt Collected", "Supplier Refund", "Esusu Payout", "Family Support", "Business Loan", "Bank Transfer"]
+    },
+    ng_food_vendor: {
+      sell: ["Rice Meal", "Soup", "Swallow", "Snacks", "Drinks", "Fish", "Chicken", "Catering", "Jollof Rice", "Fried Rice", "Egusi Soup", "Ogbono Soup", "Okra Soup", "Pepper Soup", "Pounded Yam", "Eba", "Amala", "Semo", "Fufu", "Tuwo Shinkafa", "Tuwo Masara", "Masa", "Kosai", "Suya", "Moin Moin", "Akara", "Ogi", "Boli", "Asun", "Ofada Rice", "Abacha", "Nkwobi", "Afang Soup", "Yam Porridge", "Beans Porridge", "Puff Puff", "Meat Pie", "Egg Roll", "Scotch Egg", "Chin Chin", "Zobo", "Kunu", "Smoothie", "Fresh Juice", "Chapman", "Goat Meat", "Tilapia", "Grilled Fish", "Small Chops", "Party Pack", "Takeaway", "Delivery Order"],
+      buy: ["Rice Stock", "Oil", "Tomatoes", "Pepper", "Meat/Fish", "Gas", "Packaging", "Seasoning", "Firewood", "Vegetables", "Egusi", "Crayfish", "Stock Fish", "Beans", "Yam", "Plantain", "Garri", "Semovita", "Palm Oil", "Onions", "Spices", "Maggi", "Salt", "Water", "Charcoal", "Takeaway Packs", "Nylons", "Plates/Cutlery", "Drinks Stock", "Ice", "Frozen Chicken", "Goat", "Prawns", "Smoked Fish"],
+      pay: ["Stall Rent", "Helper Pay", "Transport", "Packaging", "Cooking Gas", "Water Supply", "Electricity", "Generator Fuel", "Firewood", "Market Fee", "Waste Disposal", "Kitchen Rent", "Equipment Repair", "Cleaning Supplies", "Aprons", "Mobile Data", "Association Dues", "Delivery Rider", "Cold Room Fee"],
+      receive: ["Customer Payment", "Bulk Order Payment", "Debt Collected", "Catering Deposit", "Event Payment", "Supplier Refund", "Esusu Payout", "Business Loan", "Bank Transfer"]
+    },
+    ng_transport_operator: {
+      sell: ["Trip Fare", "Delivery Fee", "Charter", "Loading Fee", "Extra Seat", "Interstate Fare", "Haulage Income", "School Run", "Airport Trip", "Goods Delivery", "Dispatch Rider Job", "Moving Service"],
+      buy: ["Fuel", "Engine Oil", "Tyres", "Spare Parts", "Battery", "Brake Pads", "Windscreen", "Filters", "Brake Fluid", "Lubricants", "Wipers", "Bulbs"],
+      pay: ["Fuel", "Motor Levy", "Parking Fee", "Repair", "Driver Pay", "Car Wash", "Vehicle Registration", "Vehicle Insurance", "Mechanic", "Tyre Repair", "Vulcanizer", "Road Toll", "Union Dues", "Park Rent", "Vehicle Loan Payment", "Emission Test", "Mobile Data", "GPS Subscription"],
+      receive: ["Passenger Payment", "Delivery Payment", "Charter Payment", "Fuel Advance", "Vehicle Loan", "Debt Collected", "Esusu Payout", "Family Support"]
+    },
+    ng_artisan: {
+      sell: ["Repair Job", "Labour", "Installation", "Maintenance", "Inspection", "Electrical Work", "Plumbing Work", "Welding Job", "Carpentry Job", "Painting Job", "Tiling Job", "Roofing Job", "AC Repair", "Generator Repair", "Phone Repair", "Electronics Repair", "Furniture Making", "Steel Work", "Aluminum Work", "Borehole Service", "Fumigation Service"],
+      buy: ["Materials", "Spare Parts", "Tools", "Fittings", "Paint", "Cement", "Tiles", "Wood", "Iron Rods", "Electrical Wire", "PVC Pipe", "Welding Rod", "Gas Cylinder", "Screws/Nails", "Primer", "Safety Gear", "Drill Bits", "Saw Blade", "Measuring Tape"],
+      pay: ["Transport", "Helper Pay", "Workshop Rent", "Generator Fuel", "Phone/Data", "Tool Repair", "Electricity", "Protective Gear", "Association Dues", "Training Fee", "Equipment Servicing", "Van Hire", "Marketing"],
+      receive: ["Job Payment", "Deposit", "Balance Payment", "Refund Received", "Materials Advance", "Contract Payment", "Esusu Payout", "Business Loan"]
+    },
+    ng_service_provider: {
+      sell: ["Service Fee", "Consultation", "Project Fee", "Training", "Admin Service", "Hair Styling", "Barbing", "Makeup", "Nail Service", "Facial", "Photography", "Videography", "Graphic Design", "Web Design", "Printing", "Photocopying", "Lamination", "Typing", "Event Planning", "DJ Service", "MC Service", "Security Service", "Cleaning Service", "Laundry Service", "Ironing Service", "Tutoring", "Driving Lesson", "Fitness Training", "Massage"],
+      buy: ["Materials", "Data Bundle", "Office Supplies", "Printing Ink", "Paper", "Tools/Equipment", "Beauty Supplies", "Cleaning Supplies", "Uniforms", "Camera Accessories", "Studio Props", "Sound Equipment"],
+      pay: ["Transport", "Data/Internet", "Office Rent", "Assistant Pay", "Marketing", "Electricity", "Generator Fuel", "Equipment Repair", "Training Fee", "Platform Fee", "Printing", "Association Dues", "Tax/Levy"],
+      receive: ["Client Payment", "Deposit", "Balance", "Esusu Payout", "Business Loan", "Referral Bonus", "Platform Payout", "Bank Transfer"]
+    },
+    ng_online_seller: {
+      sell: ["Products", "Delivery Charged", "Wholesale Order", "Social Media Sale", "Custom Order", "Bundle Sale", "Clearance Sale", "Digital Download", "Subscription Box", "Gift Set", "Print-On-Demand", "Dropship Order"],
+      buy: ["Inventory", "Packaging", "Data Bundle", "Product Photos", "Boxes", "Mailers", "Tissue Paper", "Poly Bags", "Tape", "Stickers", "Thank You Cards", "Branded Bags", "Ribbon", "Labels"],
+      pay: ["Shipping Cost", "Platform Fee", "Ad Boost", "Data/Internet", "Rider Payment", "Printing", "Storage", "Returns Processing", "Photography", "Platform Monthly", "Accounting Software", "Email Marketing", "Influencer Collab", "Packaging Design", "Customs Fee", "Fulfillment Fee", "Paystack/Flutterwave Fee"],
+      receive: ["Customer Transfer", "Payment Link", "Deposit", "Platform Payout", "Refund Received", "Business Loan", "Grant", "Affiliate Payout", "Chargeback Reversal"]
+    }
+  },
+  US: {
+    us_retail: {
+      sell: ["Products", "Merchandise", "Gift Items", "Accessories", "Online Sale", "Clothing", "Shoes", "Jewelry", "Handbags", "Beauty Products", "Candles", "Home Decor", "Artwork", "Books", "Electronics", "Toys", "Thrift Items", "Sneaker Resale", "Vintage Items", "Custom T-Shirts", "Merch", "Gift Baskets", "Phone Cases", "Seasonal Items", "Pop-Up Sale", "Flea Market Sale", "Custom Hats", "Baby Items", "Pet Supplies"],
+      buy: ["Inventory", "Supplies", "Packaging", "Labels/Tags", "Wholesale Clothing", "Thrift Haul", "Display/Fixtures", "Mailers", "Poly Bags", "Boxes", "Tape", "Hangers", "Tissue Paper", "Ribbon", "Stickers", "Receipt Paper", "Mannequins", "Shelving", "Shopping Bags", "Price Tags"],
+      pay: ["Rent", "Utilities", "Shipping Cost", "Staff Pay", "Card Fees", "Storage Unit", "Marketing/Ads", "Business License", "Platform Fees", "Insurance", "Accounting", "Website/Domain", "Printer Ink", "Cleaning Supplies", "Security System", "POS Equipment Lease", "Booth Fee", "Event Fee", "Photography"],
+      receive: ["Customer Payment", "Online Order Payment", "Deposit", "Supplier Refund", "Insurance Claim", "Business Loan", "Grant", "Tax Refund", "PayPal/Venmo"]
+    },
+    us_food_service: {
+      sell: ["Meals", "Drinks", "Catering", "Delivery", "Desserts", "Baked Goods", "Custom Cake", "Cookies", "Cupcakes", "Bread", "Soul Food Plate", "BBQ", "Wings", "Fried Chicken", "Tacos", "Empanadas", "Jerk Chicken", "Meal Prep", "Fresh Juice", "Smoothie", "Coffee", "Tea", "Breakfast Plate", "Brunch Special", "Food Truck Special", "Catering Package", "Weekly Meal Plan", "Ice Cream"],
+      buy: ["Ingredients", "Meat", "Packaging", "Produce", "Cooking Oil", "Dairy", "Baking Supplies", "Spices", "Beverages Stock", "Seafood", "Frozen Items", "Canned Goods", "Dry Goods", "Paper Goods", "Foil", "Gloves", "Cleaning Supplies", "Napkins", "Cups", "Lids", "Straws"],
+      pay: ["Rent", "Utilities", "Staff Pay", "Delivery App Fee", "Permits", "Cooking Gas/Propane", "Equipment", "Kitchen Rental", "Event Fee", "Uniforms", "Food Handler Permit", "Health Inspection Fee", "Marketing/Ads", "Platform Commission", "Insurance", "Accounting", "Pest Control", "Grease Trap Service", "Refrigeration Repair", "Linen Service", "POS System", "Website/Online Ordering"],
+      receive: ["Customer Payment", "Catering Deposit", "Delivery App Payout", "Event Deposit", "Supplier Refund", "Business Loan", "Grant", "Insurance Claim", "Tip Pool", "PayPal/Venmo", "Zelle"]
+    },
+    us_digital_business: {
+      sell: ["Project Fee", "Consultation", "Retainer", "Digital Product", "Ad Revenue", "Social Media Management", "Video Editing", "Graphic Design", "Web Design", "Copywriting", "Virtual Assistant", "Course Sale", "E-Book Sale", "Template Sale", "Coaching Session", "Podcast Sponsorship", "Brand Deal", "YouTube Income", "TikTok Income", "Affiliate Income", "Print-On-Demand", "Stock Photo Sale", "UGC Content", "Newsletter Sponsorship", "Voice Over", "Translation", "Products", "Etsy Sale", "Amazon Sale", "Shopify Sale", "eBay Sale", "Instagram Sale", "TikTok Shop Sale", "Custom Order", "Bundle Sale", "Clearance Sale", "Subscription Box", "Gift Set", "Dropship Order"],
+      buy: ["Software", "Equipment", "Domain/Hosting", "Camera/Gear", "Computer", "External Drive", "Props/Backdrops", "Merch Inventory", "Microphone", "Ring Light", "Tripod", "Green Screen", "Stock Photos", "Music License", "Inventory", "Packaging", "Product Photos", "Blank Apparel", "Boxes", "Mailers", "Tissue Paper", "Poly Bags", "Tape", "Stickers", "Thank You Cards", "Branded Bags", "Ribbon", "Labels"],
+      pay: ["Subscriptions", "Ads", "Contractor Pay", "Internet", "Platform Fee", "Phone Plan", "Cloud Storage", "Email Marketing Tool", "Project Management Tool", "Accounting Software", "Legal Fee", "LLC Filing", "Taxes", "Health Insurance", "Co-working Space", "Training/Course", "Stock Assets", "Business Cards", "Website Maintenance", "CRM Tool", "Shipping Cost", "Storage", "Returns Processing", "Photography", "Influencer Collab", "Packaging Design", "Fulfillment Fee", "PayPal/Stripe Fee"],
+      receive: ["Client Payment", "Platform Payout", "Affiliate Payout", "Deposit", "Business Loan", "Grant", "Tax Refund", "Tip", "PayPal/Venmo", "Zelle", "Wire Transfer", "Check Deposit", "Customer Payment", "Refund Received", "Chargeback Reversal"]
+    },
+    us_contractor: {
+      sell: ["Labor", "Project Fee", "Installation", "Repair Job", "Inspection", "Roofing Job", "Plumbing Job", "Electrical Job", "HVAC Job", "Painting Job", "Drywall Job", "Flooring Job", "Landscaping", "Pressure Washing", "Fence Job", "Handyman Work", "Pool Service", "Snow Removal", "Tree Service", "Concrete Work", "Masonry", "Window Installation", "Door Installation", "Cabinet Install", "Deck Build", "Garage Door", "Gutter Install"],
+      buy: ["Materials", "Equipment Rental", "Tools", "Safety Gear", "Lumber", "Concrete/Block", "Pipe/Plumbing", "Wire/Electrical", "Roofing Materials", "Flooring Materials", "Paint/Primer", "Fasteners", "Landscaping Supplies", "Chemicals", "Mulch/Soil", "Gravel/Stone", "Drywall", "Insulation", "Windows", "Doors", "Hardware", "Sealants/Caulk"],
+      pay: ["Subcontractor Pay", "Permits", "Fuel", "Disposal", "Helper Pay", "Insurance", "Truck Payment", "Tool Rental", "Advertising", "Uniforms", "Accounting", "Legal Fee", "License Renewal", "Safety Training", "Equipment Servicing", "Background Checks", "PPE", "Vehicle Maintenance", "Storage Unit", "Phone Plan"],
+      receive: ["Client Payment", "Deposit", "Progress Payment", "Final Balance", "Insurance Payout", "Business Loan", "Grant", "Retainer", "Check Deposit", "Wire Transfer"]
+    },
+    us_beauty_services: {
+      sell: ["Hair Service", "Nails", "Treatment", "Makeup", "Product Sale", "Lashes", "Box Braids", "Knotless Braids", "Cornrows", "Fulani Braids", "Starter Locs", "Loc Retwist", "Wash and Style", "Silk Press", "Wig Install", "Sew-In", "Color Service", "Barber Cut", "Shape-Up", "Kids Hair", "Acrylic Set", "Gel Nails", "Manicure", "Pedicure", "Nail Art", "Lash Extensions", "Microblading", "Brow Lamination", "Waxing", "Facial", "Bridal Makeup", "Massage", "Teeth Whitening", "Spray Tan"],
+      buy: ["Supplies", "Products", "Equipment", "Braiding Hair", "Bundles/Wigs", "Nail Supplies", "Lash Supplies", "Color/Developer", "Wax Supplies", "Gloves/PPE", "Spa Supplies", "Towels/Linen", "Furniture", "Retail Stock", "Shampoo/Conditioner", "Styling Products", "Nail Polish", "Gel/Acrylic Powder"],
+      pay: ["Booth Rent", "Staff Pay", "Training", "Booking App Fee", "Utilities", "Supplies Run", "Insurance", "Advertising", "Business Cards", "Website/Online Booking", "License Renewal", "Equipment Repair", "Laundry", "Cleaning", "Phone Plan", "Parking", "Accounting"],
+      receive: ["Client Payment", "Deposit", "Tip", "Supplier Refund", "Business Loan", "Grant", "Insurance Claim", "PayPal/Venmo", "Zelle", "Cash App"]
+    }
+  }
+};
+
 const EXTRA_SEARCH_LABELS = [
   buildLabel("tuwo_shinkafa_sale", "Tuwo Shinkafa", "🍲", ["tuwo", "rice tuwo"], ["sale"], ["NG"], ["ng_food_vendor"]),
   buildLabel("zobo_sale", "Zobo", "🥤", ["zobo drink"], ["sale"], ["NG"], ["ng_food_vendor"]),
@@ -338,682 +417,4 @@ function buildVisualCard(icon, title, description, onClick, active) {
   button.className = `visual-card${active ? " active" : ""}`;
   button.innerHTML = `<span class="visual-icon">${icon}</span><strong>${title}</strong><span>${description}</span>`;
   button.addEventListener("click", onClick);
-  return button;
-}
-
-async function finishOnboarding() {
-  await saveProfile(state.profile);
-  hydrateProfileUi();
-  await showCapture();
-}
-
-function hydrateProfileUi() {
-  const businessType = BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id);
-  const sector = SECTORS.find((item) => item.id === state.profile.sector_id);
-  els["profile-summary"].textContent = `${countryName(state.profile.country)} • ${sector?.name || ""} • ${businessType?.name || ""}`;
-}
-
-async function showCapture() {
-  state.currentAction = state.profile.last_action || "sale";
-  state.selectedLabel = null;
-  state.candidateRecord = null;
-  state.onboardingStep = 3;
-  hydrateProfileUi();
-  renderActionRows();
-  await renderQuickLabels();
-  await renderRecentRecords();
-  showScreen("screen-capture");
-}
-
-function renderActionRows() {
-  const primarySelected = state.currentAction === "transfer" ? null : state.currentAction;
-  const transferSelected = state.currentAction === "transfer" ? state.transferSubtype : null;
-
-  renderActionButtons(els["primary-actions"], PRIMARY_ACTIONS, primarySelected, (id) => {
-    state.currentAction = id;
-    state.profile.last_action = id;
-    renderActionRows();
-    renderQuickLabels();
-    clearSelectedLabel();
-  });
-
-  renderActionButtons(els["transfer-actions"], TRANSFER_ACTIONS, transferSelected, (id) => {
-    state.currentAction = "transfer";
-    state.transferSubtype = id;
-    renderActionRows();
-    renderQuickLabels();
-    clearSelectedLabel();
-  });
-
-  if (FEATURE_TRANSFER_PRIMARY && !PRIMARY_ACTIONS.find((item) => item.id === "transfer")) {
-    PRIMARY_ACTIONS.push({ id: "transfer", label: "Transfer", icon: "🔁", help: "Internal movement between owned accounts." });
-  }
-
-  els["transfer-details"].hidden = state.currentAction !== "transfer";
-}
-
-function renderActionButtons(container, actions, selectedId, handler) {
-  container.innerHTML = "";
-  actions.forEach((action) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `action-card${selectedId === action.id ? " active" : ""}`;
-    button.innerHTML = `<strong>${action.icon} ${action.label}</strong><span>${action.help}</span>`;
-    button.addEventListener("click", () => handler(action.id));
-    container.appendChild(button);
-  });
-}
-
-async function renderQuickLabels() {
-  els["quick-label-grid"].innerHTML = "";
-  const ranked = await rankLabels("", { limit: 9 });
-  ranked.forEach((item) => {
-    els["quick-label-grid"].appendChild(buildRankedLabelButton(item));
-  });
-  await renderBrowseResults();
-}
-
-function buildRankedLabelButton(item) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = `ranked-item${state.selectedLabel && state.selectedLabel.id === item.id ? " active" : ""}`;
-  button.innerHTML = `<strong>${item.icon || "🏷️"} ${item.display_name}</strong><span>${contextCopy(item)}</span>`;
-  button.addEventListener("click", () => selectLabel(item));
-  return button;
-}
-
-function contextCopy(item) {
-  const context = item.transaction_contexts[0] || "";
-  return friendlyActionLabel(context);
-}
-
-function selectLabel(item) {
-  state.selectedLabel = item;
-  els["selected-label-chip"].textContent = `${item.icon || "🏷️"} ${item.display_name} selected`;
-  renderQuickLabels();
-  closeSelector();
-}
-
-function clearSelectedLabel() {
-  state.selectedLabel = null;
-  els["selected-label-chip"].textContent = "No label selected yet.";
-}
-
-async function openSelector() {
-  els["selector-modal"].hidden = false;
-  setSelectorMode("search");
-  await handleSearch();
-}
-
-function closeSelector() {
-  els["selector-modal"].hidden = true;
-}
-
-function setSelectorMode(mode) {
-  state.selectorMode = mode;
-  document.querySelectorAll("[data-mode]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.mode === mode);
-  });
-  document.querySelectorAll("[data-mode-panel]").forEach((panel) => {
-    panel.classList.toggle("active", panel.dataset.modePanel === mode);
-  });
-  if (mode === "browse") {
-    renderBrowseResults();
-  }
-}
-
-async function handleSearch() {
-  const query = els["label-search-input"].value.trim();
-  const results = await rankLabels(query, { limit: 12 });
-  state.searchResults = results;
-  els["search-results"].innerHTML = results.length
-    ? results.map(renderRankedItemHtml).join("")
-    : `<div class="record-card"><strong>No labels found</strong><div class="record-meta">Try speech, browse all, or add Other.</div></div>`;
-  wireRankedButtons("search-results", results);
-}
-
-async function renderBrowseResults() {
-  const results = await rankLabels("", { limit: 24, includeScore: false });
-  state.browseResults = results;
-  els["browse-results"].innerHTML = results.map(renderRankedItemHtml).join("");
-  wireRankedButtons("browse-results", results);
-}
-
-function renderRankedItemHtml(item, index) {
-  return `<button type="button" class="ranked-item" data-ranked-id="${item.id}"><strong>${item.icon || "🏷️"} ${item.display_name}</strong><span>${contextCopy(item)}</span><small>${item.reason || "Recommended label"}</small></button>`;
-}
-
-function wireRankedButtons(containerId, results) {
-  document.getElementById(containerId).querySelectorAll("[data-ranked-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const item = results.find((entry) => entry.id === button.dataset.rankedId);
-      if (item) selectLabel(item);
-    });
-  });
-}
-
-async function startSpeechMatch() {
-  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRec) {
-    els["speech-status"].textContent = "Speech recognition is not available in this browser.";
-    return;
-  }
-
-  els["speech-status"].textContent = "Listening...";
-  const recognition = new SpeechRec();
-  recognition.lang = state.profile.country === "US" ? "en-US" : "en-NG";
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
-  recognition.onresult = (event) => {
-    const utterance = event.results[0][0].transcript;
-    rankLabels(utterance, { limit: 5, includeScore: true }).then((results) => {
-      state.speechResults = results;
-      renderSpeechResults(utterance, results);
-    });
-  };
-  recognition.onerror = () => {
-    els["speech-status"].textContent = "Speech capture failed. Try again or use search.";
-  };
-  recognition.start();
-}
-
-function renderSpeechResults(utterance, results) {
-  if (!results.length) {
-    els["speech-status"].textContent = `No strong match for "${utterance}". Try search, browse all, or Other.`;
-    els["speech-results"].innerHTML = "";
-    return;
-  }
-
-  const top = results[0];
-  if (top.confidence >= 0.85) {
-    els["speech-status"].textContent = `Best match for "${utterance}" found. Confirm by tapping the top result.`;
-  } else if (top.confidence >= 0.6) {
-    els["speech-status"].textContent = `Here are the best shortlist matches for "${utterance}".`;
-  } else {
-    els["speech-status"].textContent = `Low confidence for "${utterance}". Try search, browse all, or Other.`;
-  }
-
-  els["speech-results"].innerHTML = results.map(renderRankedItemHtml).join("");
-  wireRankedButtons("speech-results", results);
-}
-
-async function saveCustomLabel() {
-  const value = els["custom-label-input"].value.trim();
-  if (!value) return;
-  const item = await createUserCustomLabel(value);
-  selectLabel(item);
-  els["custom-label-input"].value = "";
-}
-
-function prepareConfirmation() {
-  clearError();
-  const amount = parseMinor(els["amount-input-v2"].value);
-  if (!state.selectedLabel) {
-    return showError("Pick a label first.");
-  }
-  if (!amount || amount <= 0) {
-    return showError("Enter a valid amount before confirming.");
-  }
-
-  const transactionType = state.currentAction === "transfer" ? "transfer" : state.currentAction;
-  const record = {
-    transaction_type: transactionType,
-    label: state.selectedLabel.display_name,
-    normalized_label: state.selectedLabel.normalized_label,
-    amount_minor: amount,
-    currency: state.profile.country === "US" ? "USD" : "NGN",
-    counterparty: els["counterparty-input-v2"].value.trim() || null,
-    source_account: transactionType === "transfer" ? (els["source-account-input"].value.trim() || null) : null,
-    destination_account: transactionType === "transfer" ? (els["destination-account-input"].value.trim() || null) : null,
-    input_mode: "visual",
-    confirmation_state: "pending",
-    business_type_id: state.profile.business_type_id,
-    sector_id: state.profile.sector_id,
-    country: state.profile.country
-  };
-
-  state.candidateRecord = record;
-  els["confirm-copy-v2"].textContent = confirmationCopy(record);
-  els["confirm-meta-v2"].innerHTML = `
-    <div><strong>Type:</strong> ${record.transaction_type}</div>
-    <div><strong>Normalized label:</strong> ${record.normalized_label}</div>
-    <div><strong>Amount:</strong> ${formatMoney(record.amount_minor, record.currency)}</div>
-    <div><strong>Counterparty:</strong> ${record.counterparty || "Not provided"}</div>
-  `;
-  showScreen("screen-confirm");
-}
-
-async function confirmAppend() {
-  if (!state.candidateRecord) return;
-  const record = {
-    ...state.candidateRecord,
-    confirmation_state: "confirmed"
-  };
-  await appendLedgerRecord(record);
-  await bumpLabelUsage(record.normalized_label);
-  resetCaptureForm();
-  await renderRecentRecords();
-  showScreen("screen-capture");
-}
-
-function resetCaptureForm() {
-  state.candidateRecord = null;
-  clearSelectedLabel();
-  els["amount-input-v2"].value = "";
-  els["counterparty-input-v2"].value = "";
-  els["source-account-input"].value = "";
-  els["destination-account-input"].value = "";
-}
-
-async function renderRecentRecords() {
-  const records = await getRecords();
-  const recent = [...records].reverse().slice(0, 5);
-  els["recent-records-v2"].innerHTML = recent.length
-    ? recent.map(renderRecordCard).join("")
-    : `<div class="record-card"><strong>No confirmed records yet.</strong><div class="record-meta">Start with a visual label, then confirm the transaction.</div></div>`;
-}
-
-async function renderHistory() {
-  const records = await getRecords();
-  els["history-records-v2"].innerHTML = records.length
-    ? [...records].reverse().map(renderRecordCard).join("")
-    : `<div class="record-card"><strong>No history yet.</strong><div class="record-meta">Nothing has been appended yet.</div></div>`;
-}
-
-function renderRecordCard(record) {
-  return `
-    <div class="record-card">
-      <strong>${record.label} • ${record.transaction_type}</strong>
-      <div class="record-meta">
-        ${formatMoney(record.amount_minor, record.currency)} • ${new Date(record.confirmed_at * 1000).toLocaleString()}<br>
-        ${record.normalized_label}${record.counterparty ? ` • ${record.counterparty}` : ""}
-      </div>
-    </div>
-  `;
-}
-
-function confirmationCopy(record) {
-  const amount = formatMoney(record.amount_minor, record.currency);
-  if (record.transaction_type === "sale") return `You sold ${record.label} for ${amount}.`;
-  if (record.transaction_type === "purchase") return `You bought ${record.label} for ${amount}.`;
-  if (record.transaction_type === "payment") return `You paid ${amount} for ${record.label}.`;
-  if (record.transaction_type === "receipt") return `You received ${amount} for ${record.label}.`;
-  return `You are transferring ${amount} for ${record.label}.`;
-}
-
-function rankLabels(query, options = {}) {
-  const includeScore = options.includeScore !== false;
-  const limit = options.limit || 12;
-  const catalog = getCatalogForCurrentProfile();
-  const usageMapPromise = getUsageMap();
-
-  return usageMapPromise.then((usageMap) => {
-    const normalizedQuery = normalizeText(query);
-    const ranked = catalog.map((item) => {
-      const exact = normalizedQuery && normalizeText(item.display_name) === normalizedQuery ? 1 : 0;
-      const synonym = normalizedQuery && item.synonyms.some((synonym) => normalizeText(synonym) === normalizedQuery) ? 1 : 0;
-      const partial = normalizedQuery && (normalizeText(item.display_name).includes(normalizedQuery) || item.synonyms.some((synonym) => normalizeText(synonym).includes(normalizedQuery))) ? 1 : 0;
-      const businessMatch = item.business_types.includes(state.profile.business_type_id) ? 1 : 0;
-      const sectorMatch = businessSectorMatch(item) ? 1 : 0;
-      const countryMatch = item.countries.includes(state.profile.country) ? 1 : 0;
-      const historyBoost = usageMap.get(item.normalized_label) || 0;
-      const score = (exact * 40) + (synonym * 30) + (partial * 16) + (businessMatch * 12) + (sectorMatch * 8) + (countryMatch * 6) + Math.min(historyBoost, 8);
-      const confidence = normalizedQuery
-        ? Math.min(score / 50, 0.99)
-        : Math.min((businessMatch * 0.55) + (sectorMatch * 0.2) + (countryMatch * 0.1) + Math.min(historyBoost, 3) / 10, 0.9);
-      const reason = exact ? "Exact match" : synonym ? "Synonym match" : partial ? "Related match" : "Recommended for this business";
-      return { ...item, score, confidence, reason };
-    }).sort((a, b) => b.score - a.score || a.display_name.localeCompare(b.display_name));
-
-    return ranked.slice(0, limit).map((item) => includeScore ? item : stripScore(item));
-  });
-}
-
-function stripScore(item) {
-  const clone = { ...item };
-  delete clone.score;
-  delete clone.confidence;
-  delete clone.reason;
-  return clone;
-}
-
-function businessSectorMatch(item) {
-  const business = BUSINESS_TYPES.find((entry) => entry.id === state.profile.business_type_id);
-  const profileSector = business ? business.sector_id : state.profile.sector_id;
-  return item.business_types.some((businessId) => BUSINESS_TYPES.find((entry) => entry.id === businessId)?.sector_id === profileSector);
-}
-
-function getCatalogForCurrentProfile() {
-  const context = state.currentAction === "transfer" ? "transfer" : state.currentAction;
-  const exactBusinessMatches = LABEL_CATALOG.filter((item) => {
-    return item.transaction_contexts.includes(context)
-      && item.business_types.includes(state.profile.business_type_id);
-  });
-
-  if (exactBusinessMatches.length) return exactBusinessMatches;
-
-  const sectorBusinessIds = BUSINESS_TYPES
-    .filter((item) => item.country === state.profile.country && item.sector_id === state.profile.sector_id)
-    .map((item) => item.id);
-
-  const sectorMatches = LABEL_CATALOG.filter((item) => {
-    return item.transaction_contexts.includes(context)
-      && item.countries.includes(state.profile.country)
-      && item.business_types.some((businessId) => sectorBusinessIds.includes(businessId));
-  });
-
-  if (sectorMatches.length) return sectorMatches;
-
-  return LABEL_CATALOG.filter((item) => {
-    return item.transaction_contexts.includes(context)
-      && item.countries.includes(state.profile.country);
-  });
-}
-
-function getAvailableBusinessTypes() {
-  if (!state.profile || !state.profile.country || !state.profile.sector_id) return [];
-  return BUSINESS_TYPES.filter((item) => item.country === state.profile.country && item.sector_id === state.profile.sector_id);
-}
-
-function buildLabel(id, displayName, icon, synonyms, contexts, countries, businessTypes) {
-  return {
-    id,
-    normalized_label: id,
-    display_name: displayName,
-    synonyms,
-    icon,
-    image_url: null,
-    transaction_contexts: contexts,
-    countries,
-    business_types: businessTypes
-  };
-}
-
-function buildCatalogFromQuickPicks() {
-  const items = [];
-  Object.entries(QUICK_PICKS).forEach(([businessTypeId, groups]) => {
-    const business = BUSINESS_TYPES.find((entry) => entry.id === businessTypeId);
-    if (!business) return;
-    const country = business.country;
-
-    Object.entries(groups).forEach(([action, labels]) => {
-      const canonicalAction = normalizeActionKey(action);
-      labels.forEach((displayName) => {
-        const normalized = normalizeText(displayName).replace(/\s+/g, "_");
-        const id = `${businessTypeId}_${canonicalAction}_${normalized}`;
-        if (items.some((item) => item.id === id)) return;
-        items.push(buildLabel(
-          id,
-          displayName,
-          inferIcon(displayName, canonicalAction),
-          [],
-          [canonicalAction],
-          [country],
-          [businessTypeId]
-        ));
-      });
-    });
-  });
-  return items;
-}
-
-function normalizeActionKey(action) {
-  if (action === "sell") return "sale";
-  if (action === "buy") return "purchase";
-  if (action === "pay") return "payment";
-  if (action === "receive") return "receipt";
-  return action;
-}
-
-function friendlyActionLabel(action) {
-  if (action === "sale") return "Sell";
-  if (action === "purchase") return "Buy";
-  if (action === "payment") return "Pay";
-  if (action === "receipt") return "Receive";
-  if (action === "transfer") return "Transfer";
-  return action;
-}
-
-function inferIcon(displayName, action) {
-  const text = normalizeText(displayName);
-  if (text.includes("rice")) return "🌾";
-  if (text.includes("beans")) return "🫘";
-  if (text.includes("garri")) return "🥣";
-  if (text.includes("tomato")) return "🍅";
-  if (text.includes("pepper")) return "🌶️";
-  if (text.includes("oil")) return "🛢️";
-  if (text.includes("yam")) return "🍠";
-  if (text.includes("onion")) return "🧅";
-  if (text.includes("drink") || text.includes("water")) return "🥤";
-  if (text.includes("airtime") || text.includes("data")) return "📱";
-  if (text.includes("fuel") || text.includes("gas")) return "⛽";
-  if (text.includes("rent")) return "🏠";
-  if (text.includes("transport") || text.includes("trip") || text.includes("delivery")) return "🚚";
-  if (text.includes("packag")) return "📦";
-  if (text.includes("pay") || text.includes("wage")) return "👤";
-  if (text.includes("tool")) return "🧰";
-  if (text.includes("material")) return "🧱";
-  if (text.includes("payment") || text.includes("deposit") || text.includes("refund")) return "💵";
-  if (text.includes("platform") || text.includes("subscription")) return "🧾";
-  if (text.includes("hair") || text.includes("braid") || text.includes("loc")) return "💇";
-  if (text.includes("consult") || text.includes("project") || text.includes("service")) return "💼";
-  if (action === "receipt") return "💰";
-  if (action === "payment") return "💸";
-  if (action === "purchase") return "🛒";
-  return "🏷️";
-}
-
-function showScreen(id) {
-  document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
-  document.getElementById(id).classList.add("active");
-}
-
-function openChangeProfileConfirm() {
-  els["change-confirm-modal"].hidden = false;
-}
-
-function closeChangeProfileConfirm() {
-  els["change-confirm-modal"].hidden = true;
-}
-
-function confirmChangeProfile() {
-  closeChangeProfileConfirm();
-  state.onboardingStep = 3;
-  renderOnboarding();
-  showScreen("screen-onboarding");
-}
-
-function normalizeText(value) {
-  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-function countryName(countryId) {
-  return COUNTRIES.find((item) => item.id === countryId)?.name || countryId;
-}
-
-function parseMinor(value) {
-  const number = parseFloat(String(value || "").replace(/,/g, ""));
-  return Number.isFinite(number) ? Math.round(number * 100) : 0;
-}
-
-function formatMoney(amountMinor, currency) {
-  const amount = amountMinor / 100;
-  if (currency === "USD") {
-    return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-  return `₦${amount.toLocaleString("en-NG", { maximumFractionDigits: 0 })}`;
-}
-
-function showError(message) {
-  els["capture-error"].hidden = false;
-  els["capture-error"].textContent = message;
-}
-
-function clearError() {
-  els["capture-error"].hidden = true;
-  els["capture-error"].textContent = "";
-}
-
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings", { keyPath: "key" });
-      if (!db.objectStoreNames.contains("records")) db.createObjectStore("records", { keyPath: "id" });
-      if (!db.objectStoreNames.contains("customLabels")) db.createObjectStore("customLabels", { keyPath: "id" });
-      if (!db.objectStoreNames.contains("usage")) db.createObjectStore("usage", { keyPath: "normalized_label" });
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function getProfile() {
-  return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("settings", "readonly");
-    const request = tx.objectStore("settings").get("profile");
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function saveProfile(profile) {
-  return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("settings", "readwrite");
-    tx.objectStore("settings").put({ ...profile, key: "profile" });
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-function getRecords() {
-  return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("records", "readonly");
-    const request = tx.objectStore("records").getAll();
-    request.onsuccess = () => resolve(request.result.sort((a, b) => a.id - b.id));
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function appendLedgerRecord(record) {
-  const last = await getLastRecord();
-  const id = last ? last.id + 1 : 1;
-  const confirmedAt = Math.floor(Date.now() / 1000);
-  const prevHash = last ? last.entry_hash : "0".repeat(64);
-  const entryHash = await sha256(`${id}|${record.transaction_type}|${record.normalized_label}|${record.amount_minor}|${confirmedAt}|${prevHash}`);
-  const payload = {
-    ...record,
-    id,
-    confirmed_at: confirmedAt,
-    prev_entry_hash: prevHash,
-    entry_hash: entryHash
-  };
-
-  return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("records", "readwrite");
-    tx.objectStore("records").add(payload);
-    tx.oncomplete = () => resolve(payload);
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-function getLastRecord() {
-  return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("records", "readonly");
-    const request = tx.objectStore("records").openCursor(null, "prev");
-    request.onsuccess = () => resolve(request.result ? request.result.value : null);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function getUsageMap() {
-  return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("usage", "readonly");
-    const request = tx.objectStore("usage").getAll();
-    request.onsuccess = () => {
-      const map = new Map();
-      request.result.forEach((item) => map.set(item.normalized_label, item.count));
-      resolve(map);
-    };
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function bumpLabelUsage(normalizedLabel) {
-  return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("usage", "readwrite");
-    const store = tx.objectStore("usage");
-    const getRequest = store.get(normalizedLabel);
-    getRequest.onsuccess = () => {
-      const current = getRequest.result || { normalized_label: normalizedLabel, count: 0 };
-      store.put({ normalized_label: normalizedLabel, count: current.count + 1 });
-    };
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function createUserCustomLabel(value) {
-  const normalized = normalizeText(value).replace(/\s+/g, "_");
-  const item = {
-    id: `custom_${Date.now()}`,
-    normalized_label: normalized,
-    display_name: value,
-    synonyms: [value],
-    icon: "⭐",
-    image_url: null,
-    transaction_contexts: [state.currentAction === "transfer" ? "transfer" : state.currentAction],
-    countries: [state.profile.country],
-    business_types: [state.profile.business_type_id]
-  };
-
-  await new Promise((resolve, reject) => {
-    const tx = state.db.transaction("customLabels", "readwrite");
-    tx.objectStore("customLabels").put({
-      id: item.id,
-      user_id: "local-user",
-      display_name: item.display_name,
-      normalized_label: item.normalized_label,
-      source: "manual_entry",
-      learned_from: state.currentAction,
-      business_type_id: state.profile.business_type_id
-    });
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-
-  LABEL_CATALOG.push(item);
-  return item;
-}
-
-function loadCustomLabelsIntoCatalog() {
-  return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("customLabels", "readonly");
-    const request = tx.objectStore("customLabels").getAll();
-    request.onsuccess = () => {
-      request.result.forEach((item) => {
-        const alreadyExists = LABEL_CATALOG.some((label) => label.id === item.id);
-        if (alreadyExists) return;
-        LABEL_CATALOG.push({
-          id: item.id,
-          normalized_label: item.normalized_label,
-          display_name: item.display_name,
-          synonyms: [item.display_name],
-          icon: "⭐",
-          image_url: null,
-          transaction_contexts: [item.learned_from === "transfer_in" || item.learned_from === "transfer_out" ? "transfer" : item.learned_from],
-          countries: [state.profile?.country || "NG", "US"].filter((value, index, array) => array.indexOf(value) === index),
-          business_types: [item.business_type_id]
-        });
-      });
-      resolve();
-    };
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function sha256(input) {
-  const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
-  return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
+  retur

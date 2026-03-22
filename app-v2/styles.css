@@ -132,14 +132,20 @@ body {
 .action-card strong,
 .ranked-item strong {
   font-size: 15px;
+  line-height: 1.3;
 }
 
 .visual-card span,
 .action-card span,
-.ranked-item span,
-.ranked-item small {
+.ranked-item span {
   color: var(--muted);
   line-height: 1.35;
+}
+
+.ranked-item small {
+  color: #8A7F76;
+  line-height: 1.3;
+  font-size: 12px;
 }
 
 .visual-card.active,
@@ -324,18 +330,4 @@ body {
   margin-bottom: 12px;
 }
 
-.modal-mode {
-  display: none;
-}
-
-.modal-mode.active {
-  display: block;
-}
-
-@media (max-width: 520px) {
-  .visual-grid,
-  .action-row,
-  .label-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
+.modal-
