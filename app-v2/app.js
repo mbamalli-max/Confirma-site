@@ -423,8 +423,8 @@ function buildRankedLabelButton(item) {
 }
 
 function contextCopy(item) {
-  const contexts = item.transaction_contexts.join(", ");
-  return `${contexts} • ${item.normalized_label}`;
+  const context = item.transaction_contexts[0] || "";
+  return friendlyActionLabel(context);
 }
 
 function selectLabel(item) {
@@ -480,7 +480,7 @@ async function renderBrowseResults() {
 }
 
 function renderRankedItemHtml(item, index) {
-  return `<button type="button" class="ranked-item" data-ranked-id="${item.id}"><strong>${item.icon || "🏷️"} ${item.display_name}</strong><span>${item.normalized_label}</span><small>${item.reason || contextCopy(item)}</small></button>`;
+  return `<button type="button" class="ranked-item" data-ranked-id="${item.id}"><strong>${item.icon || "🏷️"} ${item.display_name}</strong><span>${contextCopy(item)}</span><small>${item.reason || "Recommended label"}</small></button>`;
 }
 
 function wireRankedButtons(containerId, results) {
@@ -737,16 +737,17 @@ function buildCatalogFromQuickPicks() {
     const country = business.country;
 
     Object.entries(groups).forEach(([action, labels]) => {
+      const canonicalAction = normalizeActionKey(action);
       labels.forEach((displayName) => {
         const normalized = normalizeText(displayName).replace(/\s+/g, "_");
-        const id = `${businessTypeId}_${action}_${normalized}`;
+        const id = `${businessTypeId}_${canonicalAction}_${normalized}`;
         if (items.some((item) => item.id === id)) return;
         items.push(buildLabel(
           id,
           displayName,
-          inferIcon(displayName, action),
+          inferIcon(displayName, canonicalAction),
           [],
-          [action],
+          [canonicalAction],
           [country],
           [businessTypeId]
         ));
@@ -754,6 +755,23 @@ function buildCatalogFromQuickPicks() {
     });
   });
   return items;
+}
+
+function normalizeActionKey(action) {
+  if (action === "sell") return "sale";
+  if (action === "buy") return "purchase";
+  if (action === "pay") return "payment";
+  if (action === "receive") return "receipt";
+  return action;
+}
+
+function friendlyActionLabel(action) {
+  if (action === "sale") return "Sell";
+  if (action === "purchase") return "Buy";
+  if (action === "payment") return "Pay";
+  if (action === "receipt") return "Receive";
+  if (action === "transfer") return "Transfer";
+  return action;
 }
 
 function inferIcon(displayName, action) {
