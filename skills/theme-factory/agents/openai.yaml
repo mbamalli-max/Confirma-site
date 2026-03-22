@@ -1,0 +1,4 @@
+interface:
+  display_name: "Theme Factory"
+  short_description: "Apply or invent visual themes"
+  default_prompt: "Use $theme-factory to show theme options and apply one consistently to this artifact."

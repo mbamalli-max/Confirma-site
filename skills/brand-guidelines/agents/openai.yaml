@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brand Guidelines"
+  short_description: "Apply OpenAI/Codex brand styling"
+  default_prompt: "Use $brand-guidelines to restyle this artifact with the OpenAI/Codex visual system."

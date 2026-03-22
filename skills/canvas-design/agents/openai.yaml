@@ -1,0 +1,4 @@
+interface:
+  display_name: "Canvas Design"
+  short_description: "Create polished static visual art"
+  default_prompt: "Use $canvas-design to create a polished static visual piece and save both the philosophy and final asset."
