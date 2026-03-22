@@ -230,6 +230,31 @@ body.amounts-hidden .record-money {
   color: var(--muted);
 }
 
+.first-record-guide[hidden],
+.storage-warning[hidden] {
+  display: none;
+}
+
+.first-record-guide {
+  margin: 6px 0 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(82, 183, 136, 0.35);
+  background: #F1FBF5;
+  color: var(--primary);
+}
+
+.first-record-guide strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.first-record-guide div {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 #common-label-grid .ranked-item {
   min-height: 110px;
 }
@@ -745,6 +770,27 @@ body.amounts-hidden .record-money {
   color: var(--primary);
 }
 
+.privacy-button.reset-flash {
+  animation: privacy-reset-flash 0.7s ease;
+}
+
+@keyframes privacy-reset-flash {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(82, 183, 136, 0);
+  }
+
+  35% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 6px rgba(82, 183, 136, 0.18);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(82, 183, 136, 0);
+  }
+}
+
 @media (max-width: 520px) {
   .app-shell {
     padding: 14px 14px 92px;
@@ -832,6 +878,15 @@ body.amounts-hidden .record-money {
 
 .chart-panel h2 {
   margin: 0;
+}
+
+.storage-warning {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #FFF8EE;
+  border: 1px solid rgba(244, 162, 97, 0.45);
+  color: var(--primary);
 }
 
 .chart-header {

@@ -261,11 +261,14 @@ const state = {
   pinEntry: "",
   pinAttempts: 0,
   reminderDismissed: false,
-  isConfirming: false
+  isConfirming: false,
+  dashboardMetricsCache: null,
+  lowStorageWarning: ""
 };
 
 let dashChart = null;
 let searchDebounceTimer = null;
+let privacyResetFlashTimer = null;
 
 const els = {};
 
@@ -307,7 +310,8 @@ function cacheElements() {
     "settings-capture-v2", "settings-summary-v2", "settings-change-profile-v2", "export-button-v2", "export-status-v2",
     "daily-reminder-banner", "dismiss-reminder-btn", "privacy-toggle-btn", "reminder-toggle", "pin-lock-toggle",
     "pin-setup-area", "pin-input-new", "pin-input-confirm", "pin-save-btn", "pin-remove-btn", "pin-setup-error",
-    "settings-security-status", "pin-setup-label", "pin-lock-screen", "pin-error"
+    "settings-security-status", "pin-setup-label", "pin-lock-screen", "pin-error", "first-record-guide",
+    "storage-warning-v2"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -481,7 +485,11 @@ function updateOnboardingStep(step) {
 
 function goToPreviousOnboardingStep() {
   if (state.onboardingStep <= 1) return;
-  updateOnboardingStep(state.onboardingStep - 1);
+  const targetStep = state.onboardingStep - 1;
+  if (targetStep === 2) {
+    renderSectorGrid();
+  }
+  updateOnboardingStep(targetStep);
 }
 
 function buildVisualCard(icon, title, description, onClick, active) {
@@ -653,35 +661,12 @@ async function renderDashboard() {
   const records = await getRecords();
   const effectiveRecords = getOperationalRecords(records);
   const currency = state.profile?.country === "US" ? "USD" : "NGN";
-  const now = new Date();
-  const todayKey = now.toDateString();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
+  const metrics = getDashboardMetrics(records, effectiveRecords);
 
-  let todaySales = 0;
-  let monthlySales = 0;
-  let monthlyExpenses = 0;
-
-  effectiveRecords.forEach((record) => {
-    const amount = Number(record.amount_minor || 0);
-    const date = new Date(record.confirmed_at * 1000);
-    const isToday = date.toDateString() === todayKey;
-    const isThisMonth = date.getMonth() === currentMonth && date.getFullYear() === currentYear;
-
-    if (record.transaction_type === "sale") {
-      if (isToday) todaySales += amount;
-      if (isThisMonth) monthlySales += amount;
-    }
-
-    if (record.transaction_type === "payment" || record.transaction_type === "purchase") {
-      if (isThisMonth) monthlyExpenses += amount;
-    }
-  });
-
-  els["dash-today-sales-v2"].textContent = formatMoney(todaySales, currency);
-  els["dash-monthly-sales-v2"].textContent = formatMoney(monthlySales, currency);
-  els["dash-monthly-expenses-v2"].textContent = formatMoney(monthlyExpenses, currency);
-  els["dash-cash-flow-v2"].textContent = formatMoney(monthlySales - monthlyExpenses, currency);
+  els["dash-today-sales-v2"].textContent = formatMoney(metrics.todaySales, currency);
+  els["dash-monthly-sales-v2"].textContent = formatMoney(metrics.monthlySales, currency);
+  els["dash-monthly-expenses-v2"].textContent = formatMoney(metrics.monthlyExpenses, currency);
+  els["dash-cash-flow-v2"].textContent = formatMoney(metrics.monthlySales - metrics.monthlyExpenses, currency);
 
   const recent = [...records].reverse().slice(0, 5);
   els["dashboard-records-v2"].innerHTML = recent.length
@@ -774,6 +759,11 @@ async function renderSettings() {
     ${renderSettingsRow("Latest confirmed record", latestRecord ? `${latestRecord.label} • ${new Date(latestRecord.confirmed_at * 1000).toLocaleString()}` : "No confirmed records yet")}
     ${renderSettingsRow("Storage", "Saved locally on this device")}
   `;
+
+  await refreshStorageWarning();
+  if (state.lowStorageWarning) {
+    els["settings-summary-v2"].innerHTML += renderSettingsRow("Backup recommendation", state.lowStorageWarning);
+  }
 }
 
 function renderSettingsRow(label, value) {
@@ -830,6 +820,13 @@ function resetPrivacyMode() {
   document.body.classList.remove("amounts-hidden");
   if (els["privacy-toggle-btn"]) {
     els["privacy-toggle-btn"].textContent = "👁️";
+    els["privacy-toggle-btn"].classList.remove("reset-flash");
+    void els["privacy-toggle-btn"].offsetWidth;
+    els["privacy-toggle-btn"].classList.add("reset-flash");
+    if (privacyResetFlashTimer) clearTimeout(privacyResetFlashTimer);
+    privacyResetFlashTimer = setTimeout(() => {
+      els["privacy-toggle-btn"]?.classList.remove("reset-flash");
+    }, 700);
   }
 }
 
@@ -991,6 +988,7 @@ async function removePinLock() {
 
 function renderExportScreen() {
   els["export-status-v2"].textContent = "";
+  refreshStorageWarning();
 }
 
 async function generateExport() {
@@ -1489,6 +1487,7 @@ function resetCaptureForm() {
 
 async function renderRecentRecords() {
   const records = await getRecords();
+  renderFirstRecordGuide(records);
   const recent = [...records].reverse().slice(0, 5);
   els["recent-records-v2"].innerHTML = recent.length
     ? recent.map(renderRecordCard).join("")
@@ -2145,6 +2144,31 @@ function updateAmountInputStep() {
   els["amount-input-v2"].step = state.profile?.country === "US" ? "0.01" : "1";
 }
 
+function renderFirstRecordGuide(records) {
+  if (!els["first-record-guide"]) return;
+  els["first-record-guide"].innerHTML = `
+    <strong>📋 Record your first transaction</strong>
+    <div style="margin-top:8px;line-height:1.7">
+      <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--primary-mid)">
+        By voice
+      </strong><br>
+      Tap the mic, speak naturally — "Sold rice for 15,000" or "Paid transport 2,000".<br>
+      The app fills the action, label, and amount. Review, then confirm.
+    </div>
+    <div style="margin-top:10px;line-height:1.7">
+      <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--primary-mid)">
+        By text
+      </strong><br>
+      Type a short phrase in the text box — same format. Or tap a quick-pick label,
+      enter the amount, then tap Review before confirming.
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--primary);font-weight:600">
+      Every confirmed record is permanent and timestamped. This builds your financial history.
+    </div>
+  `;
+  els["first-record-guide"].hidden = records.length > 0;
+}
+
 function speakConfirmationCopy(text) {
   if (!("speechSynthesis" in window) || !text) return;
   cancelConfirmationSpeech();
@@ -2192,6 +2216,65 @@ function getOperationalRecords(records) {
     if (record.transaction_type === "reversal") return false;
     return !reversedHashes.has(record.entry_hash);
   });
+}
+
+function getDashboardMetrics(records, effectiveRecords) {
+  const cacheKey = `${records.length}:${state.profile?.country || ""}`;
+  if (state.dashboardMetricsCache?.key === cacheKey) {
+    return state.dashboardMetricsCache.value;
+  }
+
+  const now = new Date();
+  const todayKey = now.toDateString();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  const metrics = {
+    todaySales: 0,
+    monthlySales: 0,
+    monthlyExpenses: 0
+  };
+
+  effectiveRecords.forEach((record) => {
+    const amount = Number(record.amount_minor || 0);
+    const date = new Date(record.confirmed_at * 1000);
+    const isToday = date.toDateString() === todayKey;
+    const isThisMonth = date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+
+    if (record.transaction_type === "sale") {
+      if (isToday) metrics.todaySales += amount;
+      if (isThisMonth) metrics.monthlySales += amount;
+    }
+
+    if (record.transaction_type === "payment" || record.transaction_type === "purchase") {
+      if (isThisMonth) metrics.monthlyExpenses += amount;
+    }
+  });
+
+  state.dashboardMetricsCache = { key: cacheKey, value: metrics };
+  return metrics;
+}
+
+async function refreshStorageWarning() {
+  state.lowStorageWarning = await getLowStorageWarning();
+  if (els["storage-warning-v2"]) {
+    els["storage-warning-v2"].hidden = !state.lowStorageWarning;
+    els["storage-warning-v2"].textContent = state.lowStorageWarning;
+  }
+}
+
+async function getLowStorageWarning() {
+  if (!(navigator.storage && navigator.storage.estimate)) return "";
+  try {
+    const { quota = 0, usage = 0 } = await navigator.storage.estimate();
+    const available = Math.max(quota - usage, 0);
+    if (quota < 10 * 1024 * 1024 || available < 10 * 1024 * 1024) {
+      return "Low storage detected on this device. Open Export and download a backup of your confirmed records.";
+    }
+  } catch (error) {
+    return "";
+  }
+  return "";
 }
 
 function wireReverseButtons(records) {

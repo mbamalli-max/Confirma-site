@@ -161,6 +161,12 @@
             <input id="destination-account-input" type="text" placeholder="Cash, wallet, bank">
           </label>
         </div>
+        <div id="first-record-guide" class="first-record-guide" hidden>
+          <strong>Record your first transaction</strong>
+          <div>1. Tap a label that fits the transaction.</div>
+          <div>2. Enter the amount and any optional details.</div>
+          <div>3. Review before confirming to start your history.</div>
+        </div>
         <button class="btn btn-primary" id="prepare-confirmation" type="button">Review before confirming</button>
         <p class="error" id="capture-error" hidden></p>
       </div>
@@ -348,6 +354,7 @@
         <p class="subtle">Download confirmed transactions with a simple integrity trail for review.</p>
         <button class="btn btn-primary" id="export-button-v2" type="button">Generate export</button>
         <p class="record-meta" id="export-status-v2"></p>
+        <p class="record-meta storage-warning" id="storage-warning-v2" hidden></p>
       </div>
     </section>
 
