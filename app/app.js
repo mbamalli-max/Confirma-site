@@ -290,6 +290,10 @@ function wireStaticEvents() {
   document.getElementById("save-settings").addEventListener("click", saveSettings);
   document.getElementById("export-button").addEventListener("click", exportLedger);
   document.getElementById("mic-button").addEventListener("click", startVoiceInput);
+  document.getElementById("read-again-button").addEventListener("click", () => {
+    if (!state.candidate) return;
+    speakText(state.candidate.displayText, true);
+  });
   els["ios-dismiss"].addEventListener("click", () => {
     els["ios-banner"].hidden = true;
   });
@@ -549,11 +553,37 @@ function presentCandidate(fields, modality) {
   const displayText = makeDisplayText(fields);
   state.candidate = { fields, modality, displayText };
   els["confirm-summary"].textContent = displayText;
-  if (state.profile.readbackEnabled !== false && "speechSynthesis" in window) {
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(new SpeechSynthesisUtterance(displayText));
-  }
+  speakText(displayText, false);
   showScreen("screen-confirm");
+}
+
+function speakText(text, fromUserAction) {
+  if (!text || !("speechSynthesis" in window) || state.profile.readbackEnabled === false) return;
+
+  const speakNow = () => {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = state.profile.country === "US" ? "en-US" : "en-NG";
+
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find((voice) => voice.lang === utterance.lang)
+      || voices.find((voice) => voice.lang.startsWith("en"))
+      || voices[0];
+    if (preferred) utterance.voice = preferred;
+
+    utterance.rate = 0.96;
+    utterance.pitch = 1;
+    window.speechSynthesis.resume();
+    window.speechSynthesis.speak(utterance);
+  };
+
+  if (fromUserAction) {
+    speakNow();
+    return;
+  }
+
+  window.speechSynthesis.getVoices();
+  setTimeout(speakNow, 120);
 }
 
 async function confirmCandidate() {
