@@ -25,7 +25,7 @@
 
       <div class="panel">
         <div class="stepper-row">
-          <div class="stepper" id="onboarding-step-copy">Step 1 of 3</div>
+          <div class="stepper" id="onboarding-step-copy">Step 1 of 4</div>
           <button class="pill-button" id="onboarding-back" type="button" hidden>Back</button>
         </div>
 
@@ -43,6 +43,12 @@
           <h2>Choose your business type</h2>
           <p class="subtle" id="business-helper"></p>
           <div class="visual-grid" id="business-grid"></div>
+        </div>
+
+        <div class="step" data-step="4">
+          <h2>Pick your common transactions</h2>
+          <p class="subtle">Choose the labels you use most often. Confirma will surface them more often while recording.</p>
+          <div class="visual-grid label-grid" id="common-label-grid"></div>
           <button class="btn btn-primary" id="finish-onboarding" type="button" disabled>Use this profile</button>
         </div>
       </div>
@@ -190,31 +196,4 @@
           Search labels
           <input id="label-search-input" type="text" placeholder="Search labels">
         </label>
-        <div class="ranked-list" id="search-results"></div>
-      </div>
-
-      <div class="modal-mode" data-mode-panel="speak">
-        <p class="subtle">Speak a label and Confirma will rank the best matches before you confirm.</p>
-        <button class="btn btn-primary" id="speak-label-button" type="button">Speak label</button>
-        <p class="subtle" id="speech-status"></p>
-        <div class="ranked-list" id="speech-results"></div>
-      </div>
-
-      <div class="modal-mode" data-mode-panel="browse">
-        <div class="ranked-list" id="browse-results"></div>
-      </div>
-
-      <div class="modal-mode" data-mode-panel="other">
-        <p class="subtle">If you cannot find a match, confirm a custom label and Confirma will learn it for future ranking.</p>
-        <label class="field">
-          Custom label
-          <input id="custom-label-input" type="text" placeholder="Enter your label">
-        </label>
-        <button class="btn btn-secondary" id="save-custom-label" type="button">Use this custom label</button>
-      </div>
-    </div>
-  </div>
-
-  <script type="module" src="/app-v2/app.js"></script>
-</body>
-</html>
+        <div class="ranked-list" id="searc

@@ -274,6 +274,7 @@ async function init() {
   renderActionRows();
 
   if (state.profile) {
+    state.profile.preferred_labels = Array.isArray(state.profile.preferred_labels) ? state.profile.preferred_labels : [];
     hydrateProfileUi();
     await showCapture();
   } else {
@@ -283,7 +284,7 @@ async function init() {
 
 function cacheElements() {
   [
-    "country-grid", "sector-grid", "business-grid", "onboarding-step-copy", "finish-onboarding",
+    "country-grid", "sector-grid", "business-grid", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
     "business-helper", "profile-summary", "primary-actions", "advanced-panel", "transfer-actions",
     "quick-label-grid", "selected-label-chip", "amount-input-v2", "counterparty-input-v2", "source-account-input",
     "destination-account-input", "transfer-details", "capture-error", "confirm-copy-v2", "confirm-meta-v2",
@@ -340,6 +341,7 @@ function renderOnboarding() {
   renderCountryGrid();
   renderSectorGrid();
   renderBusinessGrid();
+  renderCommonLabelGrid();
   updateOnboardingStep(state.onboardingStep || 1);
 }
 
@@ -351,7 +353,8 @@ function renderCountryGrid() {
         country: country.id,
         sector_id: null,
         business_type_id: null,
-        last_action: "sale"
+        last_action: "sale",
+        preferred_labels: []
       };
       renderSectorGrid();
       renderBusinessGrid();
@@ -367,7 +370,8 @@ function renderSectorGrid() {
       state.profile = {
         ...(state.profile || {}),
         sector_id: sector.id,
-        business_type_id: null
+        business_type_id: null,
+        preferred_labels: []
       };
       renderBusinessGrid();
       updateOnboardingStep(3);
@@ -389,11 +393,30 @@ function renderBusinessGrid() {
     els["business-grid"].appendChild(buildVisualCard(item.icon, item.name, sectorName, () => {
       state.profile = {
         ...state.profile,
-        business_type_id: item.id
+        business_type_id: item.id,
+        preferred_labels: []
       };
       renderBusinessGrid();
-      updateOnboardingStep(3);
+      renderCommonLabelGrid();
+      updateOnboardingStep(4);
     }, state.profile && state.profile.business_type_id === item.id));
+  });
+}
+
+function renderCommonLabelGrid() {
+  els["common-label-grid"].innerHTML = "";
+  if (!(state.profile && state.profile.business_type_id)) return;
+
+  const labels = getCommonTransactionOptions(state.profile.business_type_id);
+  const selected = state.profile.preferred_labels || [];
+
+  labels.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `ranked-item${selected.includes(item.display_name) ? " active" : ""}`;
+    button.innerHTML = `<strong>${getIconForLabel(item.display_name)} ${item.display_name}</strong><span>${friendlyActionLabel(item.context)}</span><small>Show more often while recording</small>`;
+    button.addEventListener("click", () => togglePreferredLabel(item.display_name));
+    els["common-label-grid"].appendChild(button);
   });
 }
 
@@ -401,7 +424,7 @@ function updateOnboardingStep(step) {
   state.onboardingStep = step;
   document.querySelectorAll(".step").forEach((node) => node.classList.remove("active"));
   document.querySelector(`.step[data-step="${state.onboardingStep}"]`).classList.add("active");
-  els["onboarding-step-copy"].textContent = `Step ${state.onboardingStep} of 3`;
+  els["onboarding-step-copy"].textContent = `Step ${state.onboardingStep} of 4`;
   els["onboarding-back"].hidden = state.onboardingStep <= 1;
   document.getElementById("finish-onboarding").disabled = !(state.profile && state.profile.business_type_id);
 }
@@ -421,6 +444,7 @@ function buildVisualCard(icon, title, description, onClick, active) {
 }
 
 async function finishOnboarding() {
+  if (!state.profile.preferred_labels) state.profile.preferred_labels = [];
   await saveProfile(state.profile);
   hydrateProfileUi();
   await showCapture();
@@ -517,6 +541,32 @@ function selectLabel(item) {
 function clearSelectedLabel() {
   state.selectedLabel = null;
   els["selected-label-chip"].textContent = "No label selected yet.";
+}
+
+function getCommonTransactionOptions(businessTypeId) {
+  const groups = QUICK_PICKS[businessTypeId] || {};
+  const order = ["sell", "purchase", "payment", "receipt"];
+  const seen = new Set();
+  const items = [];
+
+  order.forEach((group) => {
+    (groups[group] || []).forEach((label) => {
+      if (seen.has(label)) return;
+      seen.add(label);
+      items.push({ display_name: label, context: normalizeActionKey(group) });
+    });
+  });
+
+  return items.slice(0, 16);
+}
+
+function togglePreferredLabel(label) {
+  if (!state.profile) return;
+  const selected = new Set(state.profile.preferred_labels || []);
+  if (selected.has(label)) selected.delete(label);
+  else selected.add(label);
+  state.profile.preferred_labels = [...selected];
+  renderCommonLabelGrid();
 }
 
 async function openSelector() {
@@ -739,11 +789,12 @@ function rankLabels(query, options = {}) {
       const sectorMatch = businessSectorMatch(item) ? 1 : 0;
       const countryMatch = item.countries.includes(state.profile.country) ? 1 : 0;
       const historyBoost = usageMap.get(item.normalized_label) || 0;
-      const score = (exact * 40) + (synonym * 30) + (partial * 16) + (businessMatch * 12) + (sectorMatch * 8) + (countryMatch * 6) + Math.min(historyBoost, 8);
+      const preferredBoost = (state.profile?.preferred_labels || []).includes(item.display_name) ? 18 : 0;
+      const score = (exact * 40) + (synonym * 30) + (partial * 16) + (businessMatch * 12) + (sectorMatch * 8) + (countryMatch * 6) + Math.min(historyBoost, 8) + preferredBoost;
       const confidence = normalizedQuery
         ? Math.min(score / 50, 0.99)
-        : Math.min((businessMatch * 0.55) + (sectorMatch * 0.2) + (countryMatch * 0.1) + Math.min(historyBoost, 3) / 10, 0.9);
-      const reason = exact ? "Exact match" : synonym ? "Synonym match" : partial ? "Related match" : "Recommended for this business";
+        : Math.min((businessMatch * 0.55) + (sectorMatch * 0.2) + (countryMatch * 0.1) + Math.min(historyBoost, 3) / 10 + (preferredBoost ? 0.15 : 0), 0.92);
+      const reason = exact ? "Exact match" : synonym ? "Synonym match" : partial ? "Related match" : preferredBoost ? "Picked during onboarding" : "Recommended for this business";
       return { ...item, score, confidence, reason };
     }).sort((a, b) => b.score - a.score || a.display_name.localeCompare(b.display_name));
 
@@ -1306,7 +1357,7 @@ function closeChangeProfileConfirm() {
 
 function confirmChangeProfile() {
   closeChangeProfileConfirm();
-  state.onboardingStep = 3;
+  state.onboardingStep = 1;
   renderOnboarding();
   showScreen("screen-onboarding");
 }
