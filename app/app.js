@@ -1,4 +1,4 @@
-import { renderAdSlot } from "./ads.js";
+import { renderAdSlot } from "/app/ads.js";
 
 const DB_NAME = "confirma-db";
 const DB_VERSION = 1;
@@ -297,7 +297,7 @@ function wireStaticEvents() {
 
 function registerPwaFeatures() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js");
+    navigator.serviceWorker.register("/app/sw.js");
   }
 
   window.addEventListener("beforeinstallprompt", (event) => {
