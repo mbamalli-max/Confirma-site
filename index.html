@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Confirma turns everyday business activity into bank-verifiable financial history with a confirmation-gated, append-only ledger.">
+  <meta name="theme-color" content="#1A3C34">
+  <title>Confirma | Accessible Financial Records for Every Business, Everywhere</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell topbar">
+      <a class="brand" href="index.html">
+        <span class="brand-mark">📒</span>
+        <span class="brand-copy">
+          <strong>Confirma</strong>
+          <span>Accessible Financial Records for Every Business, Everywhere</span>
+        </span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a class="active" href="index.html">Home</a>
+        <a href="entrepreneurs.html">For Entrepreneurs</a>
+        <a href="banks.html">For Banks</a>
+        <a href="how-it-works.html">How It Works</a>
+        <a href="about.html">About</a>
+        <a href="get-the-app.html">Get the App</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="shell hero-grid">
+        <div>
+          <span class="eyebrow">Built for informal entrepreneurs and trusted by lenders</span>
+          <h1>Your business activity can become financial identity.</h1>
+          <p class="lede">Confirma is a confirmation-gated, append-only ledger that turns everyday sales and expenses into permanent, bank-verifiable records. No bookkeeping jargon. No hidden edits. Only transactions you confirm.</p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="get-the-app.html">Open the App</a>
+            <a class="btn btn-secondary" href="how-it-works.html">See How Verification Works</a>
+          </div>
+          <div class="hero-meta">
+            <div class="mini-stat">
+              <strong>Offline first</strong>
+              <span>PWA for Android and iPhone. Install from the browser, no app store required.</span>
+            </div>
+            <div class="mini-stat">
+              <strong>Append-only</strong>
+              <span>Nothing can be edited or deleted after confirmation. New records only.</span>
+            </div>
+            <div class="mini-stat">
+              <strong>Built for trust</strong>
+              <span>Each entry is linked to the previous one using SHA-256 cryptographic hashes.</span>
+            </div>
+          </div>
+        </div>
+        <div class="mockup-wrap">
+          <div class="mockup-glow"></div>
+          <div class="phone" aria-label="Confirma app preview">
+            <div class="phone-screen">
+              <div class="app-top">
+                <strong>Confirma</strong>
+                <span>Record your business. Build your history.</span>
+              </div>
+              <div class="app-panel">
+                <div class="pill-row">
+                  <span class="pill active">Sale</span>
+                  <span class="pill">Expense</span>
+                  <span class="pill">Transfer</span>
+                </div>
+                <div class="mock-input">Sold rice for 15,000</div>
+                <div class="mock-card accent-panel" style="padding: 1rem; border-radius: 1rem; margin-bottom: 0.75rem;">
+                  <strong style="display:block; color: var(--forest-deep); margin-bottom: 0.35rem;">You sold rice for ₦15,000.</strong>
+                  <span style="color: var(--muted);">Do you confirm?</span>
+                </div>
+                <div class="mock-cta">Confirm Transaction</div>
+                <div class="metric-strip">
+                  <div class="metric-box">
+                    <span>Today’s sales</span>
+                    <strong>₦42,500</strong>
+                  </div>
+                  <div class="metric-box">
+                    <span>Trust tier</span>
+                    <strong>BRONZE</strong>
+                  </div>
+                </div>
+              </div>
+              <div class="app-panel chart-card">
+                <strong style="display:block; color: var(--forest-deep);">Sales trend</strong>
+                <div class="chart" aria-hidden="true">
+                  <div class="bar"></div>
+                  <div class="bar"></div>
+                  <div class="bar"></div>
+                  <div class="bar"></div>
+                  <div class="bar"></div>
+                  <div class="bar"></div>
+                  <div class="bar"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell">
+        <div class="section-header">
+          <div>
+            <span class="tag">Plain-language product story</span>
+            <h2>Not accounting software. Record formation infrastructure.</h2>
+          </div>
+          <p class="section-copy">Confirma is designed for people whose businesses are real, active, and valuable, but whose financial lives are still invisible to formal lenders.</p>
+        </div>
+        <div class="grid-3">
+          <article class="card">
+            <div class="card-icon">🧺</div>
+            <h3>For entrepreneurs</h3>
+            <p>Market traders, food vendors, artisans, transport operators, and side hustlers can build usable financial history from daily activity they already understand.</p>
+          </article>
+          <article class="card">
+            <div class="card-icon">🏦</div>
+            <h3>For institutions</h3>
+            <p>Banks, SACCOs, microfinance lenders, and development finance partners get transaction history that is structured, tamper-resistant, and easier to verify.</p>
+          </article>
+          <article class="card">
+            <div class="card-icon">🔐</div>
+            <h3>For trust</h3>
+            <p>Every confirmed transaction becomes permanent, receives a unique ID, and links back to the previous record through a cryptographic hash chain.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell story-grid">
+        <article class="story">
+          <span class="eyebrow">How it works</span>
+          <h2>Say it. Confirm it. Keep it.</h2>
+          <div class="process-list" style="margin-top: 1.5rem;">
+            <div class="process-step">
+              <div>
+                <h3>Speak or type a transaction</h3>
+                <p>“Sold rice for 15,000.” Voice-first on Android and Chrome, with text fallback everywhere else.</p>
+              </div>
+            </div>
+            <div class="process-step">
+              <div>
+                <h3>Review the summary</h3>
+                <p>The app reads it back in plain language so the user stays in control before anything becomes final.</p>
+              </div>
+            </div>
+            <div class="process-step">
+              <div>
+                <h3>Confirm to write permanently</h3>
+                <p>Only explicit confirmation creates a ledger record. No edits, no deletes, no admin override path.</p>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="story accent-panel">
+          <span class="eyebrow">Why it matters</span>
+          <h2>Your activity is already a credit story.</h2>
+          <p>Confirma helps record that story in a way lenders can take seriously. Over time, each confirmed entry contributes to a persistent financial trail that can support underwriting, reporting, and trust.</p>
+          <ul class="check-list">
+            <li>Trust tiers move from NEW to BRONZE, SILVER, and GOLD based on sustained activity.</li>
+            <li>Exports include a ledger root hash and integrity code for offline verification.</li>
+            <li>The product supports Nigeria and the United States, with multiple languages and accessible interaction modes.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell">
+        <div class="section-header">
+          <div>
+            <span class="tag">Trust tiers</span>
+            <h2>Consistency becomes signal.</h2>
+          </div>
+          <p class="section-copy">Confirma rewards continuity, not hype. The more consistently a business records real activity, the stronger its financial identity becomes.</p>
+        </div>
+        <div class="trust-grid">
+          <article class="trust-band">
+            <span class="trust-stage">NEW</span>
+            <strong>Starting the record</strong>
+            <p>Every ledger begins with first use. The goal is simple: create a clear, trustworthy habit of confirmation-based recording.</p>
+          </article>
+          <article class="trust-band">
+            <span class="trust-stage">BRONZE • 30 days</span>
+            <strong>Early continuity</strong>
+            <p>After a month of active history, the ledger starts showing usable persistence and a foundation for first-level review.</p>
+          </article>
+          <article class="trust-band">
+            <span class="trust-stage">SILVER • 90 days</span>
+            <strong>Bank-relevant history</strong>
+            <p>Ninety days starts to resemble a meaningful operating picture. This is where reporting and underwriting conversations become stronger.</p>
+          </article>
+        </div>
+        <div class="trust-grid" style="margin-top: 1.2rem;">
+          <article class="trust-band accent-panel">
+            <span class="trust-stage">GOLD • 180 days</span>
+            <strong>Established financial identity</strong>
+            <p>Six months of consistent, append-only activity creates a deeper record that institutions can inspect with greater confidence.</p>
+          </article>
+          <article class="quote" style="grid-column: span 2;">
+            <p>“Your business activity is your credit history, if it’s recorded right.” Confirma is built around that idea from the first transaction to the exported report.</p>
+            <strong>Core message</strong>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell audience-grid">
+        <article class="card">
+          <span class="eyebrow">Entrepreneurs</span>
+          <h2>Build your financial history. Get access to credit.</h2>
+          <p>Designed for informal Nigerian entrepreneurs first, then extended for global use, Confirma works with real-world business rhythms instead of demanding formal paperwork upfront.</p>
+          <div class="button-row">
+            <a class="btn btn-primary" href="entrepreneurs.html">Explore entrepreneur view</a>
+          </div>
+        </article>
+        <article class="card">
+          <span class="eyebrow">Banks and institutions</span>
+          <h2>Verified, tamper-resistant SME records.</h2>
+          <p>Confirma gives lenders a clearer window into operating businesses that have revenue but lack conventional financial statements or bookkeeping history.</p>
+          <div class="button-row">
+            <a class="btn btn-primary" href="banks.html">Explore institutional view</a>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell install-grid">
+        <article class="install-card">
+          <span class="eyebrow">Install</span>
+          <h2>Open the PWA on your phone.</h2>
+          <p>Confirma installs directly from the browser and works offline after setup. It is designed to feel simple and familiar on the devices people already use for business.</p>
+          <div class="button-row">
+            <a class="btn btn-primary" href="get-the-app.html">Install instructions</a>
+            <a class="btn btn-secondary" href="about.html">About Confirma</a>
+          </div>
+          <p class="site-note">Replace the placeholder install URL on the Get the App page with your production Vercel link.</p>
+        </article>
+        <article class="install-card accent-panel">
+          <span class="eyebrow">Patent filed</span>
+          <h2>Protected architecture, practical mission.</h2>
+          <p>Confirma’s core design is covered by USPTO Provisional Patent Application No. 63/987,858 for confirmation-gated authority architecture in constrained environments.</p>
+          <ul class="simple-list">
+            <li>Inventors: Muhammad Bamalli and Ahmed Yaradua</li>
+            <li>Phase 1 complete: offline ledger, voice input, exports, dashboard, onboarding, multilingual support</li>
+            <li>Next: signatures, sync, verified reports, live verification portal</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell footer-inner">
+      <div class="footer-copy">Confirma is building accessible financial records for every business, everywhere.</div>
+      <div class="footer-links">
+        <a href="entrepreneurs.html">Entrepreneurs</a>
+        <a href="banks.html">Banks</a>
+        <a href="how-it-works.html">How It Works</a>
+        <a href="about.html">About</a>
+        <a href="get-the-app.html">Get the App</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

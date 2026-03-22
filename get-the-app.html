@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Install Confirma on Android or iPhone as a Progressive Web App.">
+  <title>Get the App | Confirma</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell topbar">
+      <a class="brand" href="index.html">
+        <span class="brand-mark">📒</span>
+        <span class="brand-copy">
+          <strong>Confirma</strong>
+          <span>Accessible Financial Records for Every Business, Everywhere</span>
+        </span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="index.html">Home</a>
+        <a href="entrepreneurs.html">For Entrepreneurs</a>
+        <a href="banks.html">For Banks</a>
+        <a href="how-it-works.html">How It Works</a>
+        <a href="about.html">About</a>
+        <a class="active" href="get-the-app.html">Get the App</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="page-hero">
+      <div>
+        <span class="eyebrow">Install from the browser</span>
+        <h1>Open Confirma on your phone and add it to your home screen.</h1>
+        <p class="lede">Confirma is delivered as a Progressive Web App, which means it works on Android and iPhone without going through an app store. After installation, it can keep working offline.</p>
+        <div class="button-row">
+          <a class="btn btn-primary" href="#android-install">Android instructions</a>
+          <a class="btn btn-secondary" href="#iphone-install">iPhone instructions</a>
+        </div>
+      </div>
+      <aside class="hero-panel">
+        <span class="tag">Install URL</span>
+        <p>The app URL below is pulled from one shared site config file, so you only have to change it once before launch.</p>
+        <p><strong data-confirma-app-text>https://your-confirma-app.vercel.app</strong></p>
+      </aside>
+    </section>
+
+    <section class="section">
+      <div class="install-grid">
+        <article class="install-card" id="android-install">
+          <span class="eyebrow">Android / Chrome</span>
+          <h2>Open the app and install when prompted.</h2>
+          <p>Visit your live Confirma URL in Chrome on Android. Chrome should show an install prompt automatically, or the user can use the browser menu to install the app.</p>
+          <div class="button-row">
+            <a class="btn btn-primary" data-confirma-app-link href="https://your-confirma-app.vercel.app">Open Android app link</a>
+          </div>
+          <ul class="simple-list">
+            <li>Open the production URL</li>
+            <li>Tap the install prompt if it appears</li>
+            <li>If needed, use the Chrome menu and choose install</li>
+            <li>Launch Confirma from the home screen after installation</li>
+          </ul>
+        </article>
+        <article class="install-card accent-panel" id="iphone-install">
+          <span class="eyebrow">iPhone / Safari</span>
+          <h2>Use “Add to Home Screen.”</h2>
+          <p>Open the production URL in Safari. Confirma can show guidance telling users to tap the Share button and then choose “Add to Home Screen.”</p>
+          <div class="button-row">
+            <a class="btn btn-primary" data-confirma-app-link href="https://your-confirma-app.vercel.app">Open iPhone app link</a>
+          </div>
+          <ul class="simple-list">
+            <li>Open the production URL in Safari</li>
+            <li>Tap the Share button</li>
+            <li>Select “Add to Home Screen”</li>
+            <li>Launch Confirma like a regular app from the home screen</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <article class="install-card" id="set-live-url">
+        <span class="eyebrow">Before launch</span>
+        <h2>Set your real PWA URL once.</h2>
+        <p>Open <code>site.js</code> and replace the placeholder with your deployed Confirma app URL. That one change updates every install link on this page.</p>
+        <p><strong>Example:</strong> https://confirma-app.vercel.app</p>
+      </article>
+    </section>
+
+    <section class="section">
+      <div class="grid-2">
+        <article class="card">
+          <div class="card-icon">📶</div>
+          <h3>Works offline</h3>
+          <p>Confirma is designed so users can keep recording even when connectivity is weak or unavailable.</p>
+        </article>
+        <article class="card">
+          <div class="card-icon">🌍</div>
+          <h3>Designed for global use</h3>
+          <p>Phase 1 supports Nigeria and the USA, with multilingual UI and currency-aware formatting.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <article class="quote">
+        <p>Before launch, update the shared app URL inside <code>site.js</code>. That will refresh the install address everywhere it appears on this page.</p>
+        <strong>Deployment note</strong>
+      </article>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell footer-inner">
+      <div class="footer-copy">Confirma works where real business happens: on phones, in motion, and often offline.</div>
+      <div class="footer-links">
+        <a href="index.html">Home</a>
+        <a href="entrepreneurs.html">Entrepreneurs</a>
+        <a href="banks.html">Banks</a>
+      </div>
+    </div>
+  </footer>
+  <script src="site.js"></script>
+</body>
+</html>
