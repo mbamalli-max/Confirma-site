@@ -947,4 +947,44 @@ function loadProfile() {
 function saveProfile(profile) {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("settings", "readwrite");
-    tx.objectStore("settings").put({ ...profile,
+    tx.objectStore("settings").put({ ...profile, key: "profile" });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function writeEntry(candidate) {
+  const last = await getLastEntry();
+  const id = last ? last.id + 1 : 1;
+  const confirmedAt = Math.floor(Date.now() / 1000);
+  const previousHash = last ? last.entry_hash : "0".repeat(64);
+  const entryHash = await computeEntryHash(id, candidate.fields, confirmedAt, previousHash);
+  const entry = {
+    id,
+    fields: candidate.fields,
+    confirmed_at: confirmedAt,
+    prev_entry_hash: previousHash,
+    entry_hash: entryHash,
+    input_modality: candidate.modality
+  };
+
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("ledger", "readwrite");
+    tx.objectStore("ledger").add(entry);
+    tx.oncomplete = () => resolve(entry);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function canonicalString(fields) {
+  return Object.keys(fields).sort().map((key) => `${key}=${fields[key]}`).join("&");
+}
+
+async function computeEntryHash(id, fields, confirmedAt, prevHash) {
+  return sha256(`${id}|${canonicalString(fields)}|${confirmedAt}|${prevHash}`);
+}
+
+async function sha256(input) {
+  const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
