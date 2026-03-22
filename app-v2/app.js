@@ -1006,33 +1006,289 @@ function friendlyActionLabel(action) {
   return action;
 }
 
-function inferIcon(displayName, action) {
-  const text = normalizeText(displayName);
-  if (text.includes("rice")) return "🌾";
-  if (text.includes("beans")) return "🫘";
-  if (text.includes("garri")) return "🥣";
-  if (text.includes("tomato")) return "🍅";
-  if (text.includes("pepper")) return "🌶️";
-  if (text.includes("oil")) return "🛢️";
-  if (text.includes("yam")) return "🍠";
-  if (text.includes("onion")) return "🧅";
-  if (text.includes("drink") || text.includes("water")) return "🥤";
-  if (text.includes("airtime") || text.includes("data")) return "📱";
-  if (text.includes("fuel") || text.includes("gas")) return "⛽";
-  if (text.includes("rent")) return "🏠";
-  if (text.includes("transport") || text.includes("trip") || text.includes("delivery")) return "🚚";
-  if (text.includes("packag")) return "📦";
-  if (text.includes("pay") || text.includes("wage")) return "👤";
-  if (text.includes("tool")) return "🧰";
-  if (text.includes("material")) return "🧱";
-  if (text.includes("payment") || text.includes("deposit") || text.includes("refund")) return "💵";
-  if (text.includes("platform") || text.includes("subscription")) return "🧾";
-  if (text.includes("hair") || text.includes("braid") || text.includes("loc")) return "💇";
-  if (text.includes("consult") || text.includes("project") || text.includes("service")) return "💼";
-  if (action === "receipt") return "💰";
-  if (action === "payment") return "💸";
-  if (action === "purchase") return "🛒";
+const LABEL_ICONS = {
+  "Cooking Gas": "🔥",
+  "Firewood": "🪵",
+  "Grains/Staples": "🌾",
+  "Oil": "🫙",
+  "Packaging": "📦",
+  "Protein/Meat": "🥩",
+  "Seasoning": "🧂",
+  "Vegetables": "🥬",
+  "Tomatoes": "🍅",
+  "Pepper": "🌶️",
+  "Palm Oil": "🫙",
+  "Water": "💧",
+  "Charcoal": "⚫",
+  "Swallow & Soup": "🍲",
+  "Rice Meal": "🍚",
+  "Snacks": "🍘",
+  "Drinks": "🥤",
+  "Protein": "🍗",
+  "Catering": "🍽️",
+  "Takeaway": "🥡",
+  "Breakfast": "🌅",
+  "Rice": "🌾",
+  "Beans": "🫘",
+  "Garri": "🥣",
+  "Yam": "🍠",
+  "Onion": "🧅",
+  "Plantain": "🍌",
+  "Groundnuts": "🥜",
+  "Crayfish": "🦐",
+  "Stock Fish": "🐟",
+  "Egusi": "🫘",
+  "Maize": "🌽",
+  "Millet": "🌾",
+  "Kilishi": "🥩",
+  "Dried Fish": "🐠",
+  "Zobo": "🍵",
+  "Kunu": "🥛",
+  "Transport": "🚗",
+  "Market Fee": "🎫",
+  "Stall Rent": "🏪",
+  "Shop Rent": "🏬",
+  "Helper Pay": "👷",
+  "Generator Fuel": "⛽",
+  "Electricity": "💡",
+  "Mobile Data": "📱",
+  "Workshop Rent": "🏭",
+  "Motor Levy": "🎫",
+  "Parking Fee": "🅿️",
+  "Repair": "🔧",
+  "Driver Pay": "🚘",
+  "Car Wash": "🚿",
+  "Staff Pay": "💵",
+  "Assistant Pay": "👩‍💼",
+  "Kitchen Rent": "🍳",
+  "Waste Disposal": "🗑️",
+  "Water Supply": "🚰",
+  "Trip Fare": "🚌",
+  "Delivery Fee": "🛵",
+  "Charter": "🚐",
+  "Loading Fee": "📦",
+  "Extra Seat": "💺",
+  "Fuel": "⛽",
+  "Engine Oil": "🛢️",
+  "Tyres": "🛞",
+  "Spare Parts": "⚙️",
+  "Repair Job": "🔧",
+  "Labour": "🪚",
+  "Installation": "🔩",
+  "Maintenance": "🛠️",
+  "Inspection": "🔍",
+  "Materials": "🧱",
+  "Tools": "🔨",
+  "Fittings": "🔩",
+  "Paint": "🎨",
+  "Customer Payment": "💵",
+  "POS Payment": "💳",
+  "Debt Collected": "📋",
+  "Esusu Payout": "🤲",
+  "Bulk Order Payment": "📦",
+  "Passenger Payment": "🚌",
+  "Delivery Payment": "🛵",
+  "Charter Payment": "🚐",
+  "Job Payment": "🪚",
+  "Deposit": "💰",
+  "Balance Payment": "✅",
+  "Client Payment": "🤝",
+  "Balance": "✅",
+  "Meals": "🍽️",
+  "Delivery": "🛵",
+  "Desserts": "🍰",
+  "Baked Goods": "🥐",
+  "BBQ": "🍖",
+  "Wings": "🍗",
+  "Fried Chicken": "🍗",
+  "Tacos": "🌮",
+  "Birria": "🥩",
+  "Tamales": "🫔",
+  "Jerk Chicken": "🍗",
+  "Oxtail": "🥩",
+  "Soul Food Plate": "🫕",
+  "Gumbo": "🍲",
+  "Meal Prep": "📦",
+  "Fresh Juice": "🥤",
+  "Smoothie": "🥤",
+  "Coffee": "☕",
+  "Custom Cake": "🎂",
+  "Cookies": "🍪",
+  "Cupcakes": "🧁",
+  "Pies": "🥧",
+  "Bread": "🍞",
+  "Ingredients": "🛒",
+  "Meat/Protein": "🥩",
+  "Produce": "🥦",
+  "Cooking Oil": "🫙",
+  "Dairy": "🥛",
+  "Baking Supplies": "🥣",
+  "Spices": "🧂",
+  "Rent": "🏠",
+  "Utilities": "💡",
+  "Delivery App Fee": "📲",
+  "Permits": "📄",
+  "Cooking Gas/Propane": "🔥",
+  "Equipment": "🍳",
+  "Kitchen Rental": "🍳",
+  "Event Fee": "🎫",
+  "Products": "🛍️",
+  "Merchandise": "👕",
+  "Gift Items": "🎁",
+  "Accessories": "💍",
+  "Online Sale": "💻",
+  "Clothing": "👗",
+  "Shoes": "👟",
+  "Jewelry": "💎",
+  "Handbags": "👜",
+  "Beauty Products": "💄",
+  "Candles": "🕯️",
+  "Home Decor": "🪴",
+  "Artwork": "🖼️",
+  "Books": "📚",
+  "Thrift Items": "♻️",
+  "Custom T-Shirts": "👕",
+  "Merch": "🏷️",
+  "Crystals": "🔮",
+  "Shipping Cost": "📮",
+  "Card Fees": "💳",
+  "Storage Unit": "📦",
+  "Marketing/Ads": "📢",
+  "Platform Fees": "💻",
+  "Business License": "📄",
+  "Labor": "🪚",
+  "Project Fee": "📋",
+  "Roofing Job": "🏠",
+  "Plumbing Job": "🚿",
+  "Electric Job": "⚡",
+  "HVAC Job": "❄️",
+  "Painting Job": "🎨",
+  "Flooring Job": "🏠",
+  "Landscaping": "🌿",
+  "Pressure Washing": "💦",
+  "Handyman Work": "🔨",
+  "Snow Removal": "❄️",
+  "Tree Service": "🌳",
+  "Lumber": "🪵",
+  "Concrete/Block": "🧱",
+  "Pipe/Plumbing": "🚿",
+  "Wire/Electrical": "⚡",
+  "Roofing Materials": "🏠",
+  "Safety Gear": "🦺",
+  "Subcontractor Pay": "🤝",
+  "Disposal": "🗑️",
+  "Tool Rental": "🔧",
+  "Insurance": "🛡️",
+  "Hair Service": "✂️",
+  "Nails": "💅",
+  "Treatment": "✨",
+  "Makeup": "💄",
+  "Lashes": "👁️",
+  "Product Sale": "🧴",
+  "Box Braids": "✂️",
+  "Knotless Braids": "✂️",
+  "Loc Retwist": "🌀",
+  "Silk Press": "💆",
+  "Faux Locs": "✂️",
+  "Fade": "✂️",
+  "Shape-Up": "✂️",
+  "Acrylic Set": "💅",
+  "Gel Nails": "💅",
+  "Lash Extensions": "👁️",
+  "Waxing": "✨",
+  "Bridal Makeup": "💍",
+  "Tattoo": "🖊️",
+  "Massage": "🤲",
+  "Booth Rent": "💈",
+  "Training": "📚",
+  "Booking App Fee": "📲",
+  "Supplies Run": "🛒",
+  "Tip": "🎁",
+  "Consultation": "💬",
+  "Retainer": "📅",
+  "Digital Product": "💾",
+  "Subscription": "🔄",
+  "Social Media Management": "📱",
+  "Video Editing": "🎬",
+  "Graphic Design": "🎨",
+  "Web Design": "🌐",
+  "Coaching Session": "🎯",
+  "Brand Deal": "⭐",
+  "Affiliate Income": "🔗",
+  "Course Sale": "🎓",
+  "UGC Content": "📸",
+  "Subscriptions": "🔄",
+  "Ads": "📢",
+  "Contractor Pay": "🤝",
+  "Internet": "🌐",
+  "Platform Fee": "💻",
+  "Cloud Storage": "☁️",
+  "Accounting Software": "📊",
+  "Co-working Space": "🏢",
+  "Route Pay": "🗺️",
+  "Freight Job": "🚛",
+  "Rush Delivery": "⚡",
+  "Amazon Route": "📦",
+  "DoorDash Income": "🛵",
+  "Instacart Income": "🛒",
+  "Tolls": "🛣️",
+  "Truck Payment": "🚛",
+  "Vehicle Insurance": "🛡️",
+  "Parking": "🅿️",
+  "Oil Change": "🛢️",
+  "Phone Plan": "📱",
+  "Online Order Payment": "💻",
+  "Catering Deposit": "🍽️",
+  "Delivery App Payout": "📲",
+  "Platform Payout": "💻",
+  "Affiliate Payout": "🔗",
+  "Progress Payment": "📋",
+  "Final Balance": "✅",
+  "Refund Received": "↩️",
+  "Business Loan": "🏦",
+  "Family Support": "❤️",
+  "Bank Transfer": "🏦",
+  "Reimbursement": "↩️",
+  "Customer Transfer": "💳",
+  "POS/Link Payment": "💳"
+};
+
+function getIconForLabel(label) {
+  if (LABEL_ICONS[label]) return LABEL_ICONS[label];
+
+  const lower = String(label || "").toLowerCase();
+  if (lower.includes("fuel") || lower.includes("petrol") || lower.includes("diesel")) return "⛽";
+  if (lower.includes("gas") || lower.includes("propane")) return "🔥";
+  if (lower.includes("rent")) return "🏠";
+  if (lower.includes("food") || lower.includes("meal")) return "🍽️";
+  if (lower.includes("drink") || lower.includes("beverage")) return "🥤";
+  if (lower.includes("meat") || lower.includes("chicken") || lower.includes("fish")) return "🥩";
+  if (lower.includes("rice")) return "🌾";
+  if (lower.includes("oil")) return "🫙";
+  if (lower.includes("water")) return "💧";
+  if (lower.includes("transport") || lower.includes("fare") || lower.includes("trip")) return "🚗";
+  if (lower.includes("delivery") || lower.includes("dispatch")) return "🛵";
+  if (lower.includes("repair") || lower.includes("fix")) return "🔧";
+  if (lower.includes("hair")) return "✂️";
+  if (lower.includes("nail")) return "💅";
+  if (lower.includes("cake")) return "🎂";
+  if (lower.includes("bread")) return "🍞";
+  if (lower.includes("pay") || lower.includes("wage") || lower.includes("salary")) return "💵";
+  if (lower.includes("fee") || lower.includes("levy") || lower.includes("tax")) return "🎫";
+  if (lower.includes("material") || lower.includes("supply")) return "📦";
+  if (lower.includes("tool")) return "🔨";
+  if (lower.includes("phone") || lower.includes("data") || lower.includes("internet")) return "📱";
+  if (lower.includes("insurance")) return "🛡️";
+  if (lower.includes("ads") || lower.includes("marketing") || lower.includes("boost")) return "📢";
+  if (lower.includes("software") || lower.includes("subscription")) return "💻";
+  if (lower.includes("stock") || lower.includes("inventory")) return "🗃️";
+  if (lower.includes("packaging") || lower.includes("nylon") || lower.includes("bag")) return "📦";
+  if (lower.includes("project") || lower.includes("consult")) return "📋";
   return "🏷️";
+}
+
+function inferIcon(displayName, action) {
+  return getIconForLabel(displayName);
 }
 
 function showScreen(id) {
