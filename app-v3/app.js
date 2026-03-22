@@ -1,4 +1,4 @@
-const DB_NAME = "confirma-v2-db";
+const DB_NAME = "confirma-v3-db";
 const DB_VERSION = 1;
 const FEATURE_TRANSFER_PRIMARY = false;
 
@@ -260,10 +260,12 @@ const state = {
   amountsHidden: false,
   pinEntry: "",
   pinAttempts: 0,
-  reminderDismissed: false
+  reminderDismissed: false,
+  isConfirming: false
 };
 
 let dashChart = null;
+let searchDebounceTimer = null;
 
 const els = {};
 
@@ -368,9 +370,7 @@ function wireEvents() {
       showScreen(target);
     });
   });
-  document.getElementById("label-search-input").addEventListener("input", () => {
-    handleSearch();
-  });
+  document.getElementById("label-search-input").addEventListener("input", queueHandleSearch);
   document.getElementById("speak-label-button").addEventListener("click", startSpeechMatch);
   document.getElementById("save-custom-label").addEventListener("click", saveCustomLabel);
   document.querySelectorAll("[data-mode]").forEach((button) => {
@@ -383,7 +383,7 @@ function wireEvents() {
 
 function registerPwa() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/app-v2/sw.js");
+    navigator.serviceWorker.register("/app-v3/sw.js");
   }
 }
 
@@ -504,6 +504,7 @@ function hydrateProfileUi() {
   const businessType = BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id);
   const sector = SECTORS.find((item) => item.id === state.profile.sector_id);
   els["profile-summary"].textContent = `${countryName(state.profile.country)} • ${sector?.name || ""} • ${businessType?.name || ""}`;
+  updateAmountInputStep();
 }
 
 async function showCapture() {
@@ -523,6 +524,7 @@ async function renderChart(records, mode) {
   const currency = state.profile?.country === "US" ? "USD" : "NGN";
   const symbol = currency === "USD" ? "$" : "₦";
   const now = new Date();
+  const effectiveRecords = getOperationalRecords(records);
   let labels, salesData, expenseData;
 
   if (mode === "weekly") {
@@ -534,7 +536,7 @@ async function renderChart(records, mode) {
       d.setDate(d.getDate() - i);
       labels.push(d.toLocaleDateString("en", { weekday: "short" }));
     }
-    records.forEach((r) => {
+    effectiveRecords.forEach((r) => {
       const d = new Date(r.confirmed_at * 1000);
       const daysAgo = Math.floor((now - d) / 86400000);
       if (daysAgo > 6) return;
@@ -549,7 +551,7 @@ async function renderChart(records, mode) {
     expenseData = new Array(5).fill(0);
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() - now.getDay());
-    records.forEach((r) => {
+    effectiveRecords.forEach((r) => {
       const d = new Date(r.confirmed_at * 1000);
       const weeksAgo = Math.floor((startOfWeek - d) / (7 * 86400000));
       if (weeksAgo > 4) return;
@@ -649,6 +651,7 @@ function wireChartToggle() {
 
 async function renderDashboard() {
   const records = await getRecords();
+  const effectiveRecords = getOperationalRecords(records);
   const currency = state.profile?.country === "US" ? "USD" : "NGN";
   const now = new Date();
   const todayKey = now.toDateString();
@@ -659,7 +662,7 @@ async function renderDashboard() {
   let monthlySales = 0;
   let monthlyExpenses = 0;
 
-  records.forEach((record) => {
+  effectiveRecords.forEach((record) => {
     const amount = Number(record.amount_minor || 0);
     const date = new Date(record.confirmed_at * 1000);
     const isToday = date.toDateString() === todayKey;
@@ -687,29 +690,24 @@ async function renderDashboard() {
 
   await renderChart(records, "weekly");
 
-  const firstRecord = records.length ? records[0] : null;
-  const daysSinceFirst = firstRecord
-    ? Math.floor((Date.now() / 1000 - firstRecord.confirmed_at) / 86400)
-    : 0;
-
   const tierFillBar = document.getElementById("tier-fill-bar");
   const tierDaysText = document.getElementById("tier-days-text");
   const tierLabelText = document.getElementById("tier-label-text");
-  if (tierFillBar) tierFillBar.style.width = Math.min((daysSinceFirst / 90) * 100, 100) + "%";
-  if (tierDaysText) tierDaysText.textContent = daysSinceFirst + " / 90 days";
-  if (tierLabelText) {
-    if (daysSinceFirst >= 180) tierLabelText.textContent = "🥇 Gold";
-    else if (daysSinceFirst >= 90) tierLabelText.textContent = "🥈 Silver";
-    else if (daysSinceFirst >= 30) tierLabelText.textContent = "🥉 Bronze";
-    else tierLabelText.textContent = "🆕 New";
-  }
-
   const daySet = new Set(records.map((r) => new Date(r.confirmed_at * 1000).toDateString()));
   let streak = 0;
   const streakDate = new Date();
   while (daySet.has(streakDate.toDateString())) {
     streak += 1;
     streakDate.setDate(streakDate.getDate() - 1);
+  }
+
+  if (tierFillBar) tierFillBar.style.width = Math.min((streak / 180) * 100, 100) + "%";
+  if (tierDaysText) tierDaysText.textContent = streak + " / 180 days";
+  if (tierLabelText) {
+    if (streak >= 180) tierLabelText.textContent = "🥇 Gold";
+    else if (streak >= 90) tierLabelText.textContent = "🥈 Silver";
+    else if (streak >= 30) tierLabelText.textContent = "🥉 Bronze";
+    else tierLabelText.textContent = "🆕 New";
   }
   const streakEl = document.getElementById("dash-streak-v2");
   if (streakEl) streakEl.textContent = streak;
@@ -718,15 +716,16 @@ async function renderDashboard() {
 async function renderSettings() {
   if (!state.profile) return;
   const records = await getRecords();
+  const effectiveRecords = getOperationalRecords(records);
   const businessType = BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id);
   const sector = SECTORS.find((item) => item.id === state.profile.sector_id);
   const preferred = state.profile.preferred_labels || [];
   const currency = state.profile.country === "US" ? "USD" : "NGN";
   const latestRecord = records.length ? records[records.length - 1] : null;
-  const totalSales = records
+  const totalSales = effectiveRecords
     .filter((record) => record.transaction_type === "sale")
     .reduce((sum, record) => sum + Number(record.amount_minor || 0), 0);
-  const totalOutflow = records
+  const totalOutflow = effectiveRecords
     .filter((record) => record.transaction_type === "payment" || record.transaction_type === "purchase")
     .reduce((sum, record) => sum + Number(record.amount_minor || 0), 0);
 
@@ -851,7 +850,7 @@ function updatePinDots() {
   });
 }
 
-function hashPin(pin) {
+function legacyHashPin(pin) {
   let hash = 0;
   for (let index = 0; index < pin.length; index += 1) {
     hash = ((hash << 5) - hash) + pin.charCodeAt(index);
@@ -860,7 +859,32 @@ function hashPin(pin) {
   return String(hash);
 }
 
-function handlePinKey(digit) {
+async function hashPin(pin, salt) {
+  return sha256(`${pin}${salt}`);
+}
+
+function createPinSalt() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function pinMatchesProfile(pin) {
+  if (!state.profile) return false;
+  if (state.profile.pinSalt) {
+    return (await hashPin(pin, state.profile.pinSalt)) === state.profile.pinHash;
+  }
+  return legacyHashPin(pin) === state.profile.pinHash;
+}
+
+async function upgradeLegacyPinHash(pin) {
+  if (!(state.profile && !state.profile.pinSalt && state.profile.pinHash)) return;
+  state.profile.pinSalt = createPinSalt();
+  state.profile.pinHash = await hashPin(pin, state.profile.pinSalt);
+  await saveProfile(state.profile);
+}
+
+async function handlePinKey(digit) {
   if (!(state.profile && state.profile.pinEnabled && state.profile.pinHash)) return;
 
   if (digit === "back") {
@@ -875,7 +899,10 @@ function handlePinKey(digit) {
 
   if (state.pinEntry.length !== 4) return;
 
-  if (hashPin(state.pinEntry) === state.profile.pinHash) {
+  if (await pinMatchesProfile(state.pinEntry)) {
+    if (!state.profile.pinSalt) {
+      await upgradeLegacyPinHash(state.pinEntry);
+    }
     state.pinAttempts = 0;
     hidePinLock();
     els["pin-error"].textContent = "";
@@ -906,6 +933,7 @@ async function togglePinLockPreference() {
   els["pin-remove-btn"].hidden = true;
   state.profile.pinEnabled = false;
   state.profile.pinHash = null;
+  state.profile.pinSalt = null;
   await saveProfile(state.profile);
 }
 
@@ -925,7 +953,8 @@ async function savePinLock() {
   }
 
   state.profile.pinEnabled = true;
-  state.profile.pinHash = hashPin(newPin);
+  state.profile.pinSalt = createPinSalt();
+  state.profile.pinHash = await hashPin(newPin, state.profile.pinSalt);
   await saveProfile(state.profile);
 
   els["pin-input-new"].value = "";
@@ -946,6 +975,7 @@ async function removePinLock() {
 
   state.profile.pinEnabled = false;
   state.profile.pinHash = null;
+  state.profile.pinSalt = null;
   await saveProfile(state.profile);
   els["pin-lock-toggle"].classList.remove("on");
   els["pin-setup-area"].hidden = true;
@@ -971,8 +1001,7 @@ async function generateExport() {
   }
 
   const currency = state.profile?.country === "US" ? "USD" : "NGN";
-  const integritySeed = records.map((record) => record.entry_hash).join("|");
-  const integrityCode = await sha256(integritySeed);
+  const ledgerRootHash = records[records.length - 1].entry_hash;
   const lines = records.map((record) => {
     const timestamp = new Date(record.confirmed_at * 1000).toLocaleString();
     return [
@@ -992,15 +1021,15 @@ async function generateExport() {
     "---",
     ...lines,
     "---",
-    `Latest Entry Hash: ${records[records.length - 1].entry_hash}`,
-    `Integrity Code: ${integrityCode}`
+    `Ledger Root Hash: ${ledgerRootHash}`,
+    "Verification Status: Device-verified on this device. Server attestation coming."
   ].join("\n");
 
   const blob = new Blob([output], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `confirma-v2-export-${Date.now()}.txt`;
+  link.download = `confirma-v3-export-${Date.now()}.txt`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1265,6 +1294,15 @@ async function openSelector() {
   await handleSearch();
 }
 
+function queueHandleSearch() {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
+  searchDebounceTimer = setTimeout(() => {
+    handleSearch();
+  }, 150);
+}
+
 function closeSelector() {
   els["selector-modal"].hidden = true;
 }
@@ -1373,8 +1411,15 @@ function prepareConfirmation() {
   if (!state.selectedLabel) {
     return showError("Pick a label first.");
   }
+  const currency = state.profile.country === "US" ? "USD" : "NGN";
+  const maxAmount = currency === "USD" ? 100000 * 100 : 10000000 * 100;
   if (!amount || amount <= 0) {
     return showError("Enter a valid amount before confirming.");
+  }
+  if (amount > maxAmount) {
+    return showError(currency === "USD"
+      ? "Amount looks too large. Confirma accepts up to $100,000 per entry."
+      : "Amount looks too large. Confirma accepts up to ₦10,000,000 per entry.");
   }
 
   const transactionType = state.currentAction === "transfer" ? "transfer" : state.currentAction;
@@ -1383,7 +1428,7 @@ function prepareConfirmation() {
     label: state.selectedLabel.display_name,
     normalized_label: state.selectedLabel.normalized_label,
     amount_minor: amount,
-    currency: state.profile.country === "US" ? "USD" : "NGN",
+    currency,
     counterparty: els["counterparty-input-v2"].value.trim() || null,
     source_account: transactionType === "transfer" ? (els["source-account-input"].value.trim() || null) : null,
     destination_account: transactionType === "transfer" ? (els["destination-account-input"].value.trim() || null) : null,
@@ -1401,24 +1446,36 @@ function prepareConfirmation() {
     <div><strong>Normalized label:</strong> ${record.normalized_label}</div>
     <div><strong>Amount:</strong> ${formatMoney(record.amount_minor, record.currency)}</div>
     <div><strong>Counterparty:</strong> ${record.counterparty || "Not provided"}</div>
+    ${record.reversed_entry_hash ? `<div><strong>Reverses:</strong> ${record.reversed_entry_hash}</div>` : ""}
   `;
   showScreen("screen-confirm");
+  speakConfirmationCopy(els["confirm-copy-v2"].textContent);
 }
 
 async function confirmAppend() {
-  if (!state.candidateRecord) return;
-  const record = {
-    ...state.candidateRecord,
-    confirmation_state: "confirmed"
-  };
-  await appendLedgerRecord(record);
-  await bumpLabelUsage(record.normalized_label);
-  resetCaptureForm();
-  await renderRecentRecords();
-  await renderHistory();
-  await renderDashboard();
-  await checkDailyReminder();
-  showScreen("screen-dashboard");
+  if (!state.candidateRecord || state.isConfirming) return;
+
+  state.isConfirming = true;
+  document.getElementById("confirm-append").disabled = true;
+  cancelConfirmationSpeech();
+
+  try {
+    const record = {
+      ...state.candidateRecord,
+      confirmation_state: "confirmed"
+    };
+    await appendLedgerRecord(record);
+    await bumpLabelUsage(record.normalized_label);
+    resetCaptureForm();
+    await renderRecentRecords();
+    await renderHistory();
+    await renderDashboard();
+    await checkDailyReminder();
+    showScreen("screen-dashboard");
+  } finally {
+    state.isConfirming = false;
+    document.getElementById("confirm-append").disabled = false;
+  }
 }
 
 function resetCaptureForm() {
@@ -1435,23 +1492,35 @@ async function renderRecentRecords() {
   const recent = [...records].reverse().slice(0, 5);
   els["recent-records-v2"].innerHTML = recent.length
     ? recent.map(renderRecordCard).join("")
-    : `<div class="record-card"><strong>No confirmed records yet.</strong><div class="record-meta">Start with a visual label, then confirm the transaction.</div></div>`;
+    : `<div class="record-card"><strong>No confirmed records yet.</strong><div class="record-meta">Tap a label, enter an amount, then review before confirming. Your first confirmed record starts your history.</div></div>`;
 }
 
 async function renderHistory() {
   const records = await getRecords();
+  const reversedHashes = getReversedEntryHashSet(records);
   els["history-records-v2"].innerHTML = records.length
-    ? [...records].reverse().map(renderRecordCard).join("")
+    ? [...records].reverse().map((record) => {
+      return renderRecordCard(record, {
+        allowReverse: record.transaction_type !== "reversal" && !reversedHashes.has(record.entry_hash)
+      });
+    }).join("")
     : `<div class="record-card"><strong>No history yet.</strong><div class="record-meta">Nothing has been appended yet.</div></div>`;
+  wireReverseButtons(records);
 }
 
-function renderRecordCard(record) {
+function renderRecordCard(record, options = {}) {
+  const reverseButton = options.allowReverse
+    ? `<button class="pill-button" type="button" data-reverse-id="${record.id}">Reverse</button>`
+    : "";
   return `
     <div class="record-card">
-      <strong>${record.label} • ${record.transaction_type}</strong>
+      <div class="action-header">
+        <strong>${record.label} • ${record.transaction_type}</strong>
+        ${reverseButton}
+      </div>
       <div class="record-meta">
         <span class="record-money">${formatMoney(record.amount_minor, record.currency)}</span> • ${new Date(record.confirmed_at * 1000).toLocaleString()}<br>
-        ${record.normalized_label}${record.counterparty ? ` • ${record.counterparty}` : ""}
+        ${record.normalized_label}${record.counterparty ? ` • ${record.counterparty}` : ""}${record.reversed_entry_hash ? ` • reverses ${record.reversed_entry_hash.slice(0, 12)}...` : ""}
       </div>
     </div>
   `;
@@ -1463,6 +1532,7 @@ function confirmationCopy(record) {
   if (record.transaction_type === "purchase") return `You bought ${record.label} for ${amount}.`;
   if (record.transaction_type === "payment") return `You paid ${amount} for ${record.label}.`;
   if (record.transaction_type === "receipt") return `You received ${amount} for ${record.label}.`;
+  if (record.transaction_type === "reversal") return `You are reversing ${record.label} for ${amount}.`;
   return `You are transferring ${amount} for ${record.label}.`;
 }
 
@@ -2018,6 +2088,9 @@ function showScreen(id) {
   const previousScreen = document.querySelector(".screen.active")?.id || null;
   document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
   document.getElementById(id).classList.add("active");
+  if (id !== "screen-confirm") {
+    cancelConfirmationSpeech();
+  }
   if (previousScreen === "screen-dashboard" && id !== "screen-dashboard" && state.amountsHidden) {
     resetPrivacyMode();
   }
@@ -2067,6 +2140,26 @@ function parseMinor(value) {
   return Number.isFinite(number) ? Math.round(number * 100) : 0;
 }
 
+function updateAmountInputStep() {
+  if (!els["amount-input-v2"]) return;
+  els["amount-input-v2"].step = state.profile?.country === "US" ? "0.01" : "1";
+}
+
+function speakConfirmationCopy(text) {
+  if (!("speechSynthesis" in window) || !text) return;
+  cancelConfirmationSpeech();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = state.profile?.country === "US" ? "en-US" : "en-NG";
+  utterance.rate = 0.95;
+  window.speechSynthesis.speak(utterance);
+}
+
+function cancelConfirmationSpeech() {
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+  }
+}
+
 function formatMoney(amountMinor, currency) {
   const amount = amountMinor / 100;
   if (currency === "USD") {
@@ -2083,6 +2176,60 @@ function showError(message) {
 function clearError() {
   els["capture-error"].hidden = true;
   els["capture-error"].textContent = "";
+}
+
+function getReversedEntryHashSet(records) {
+  return new Set(
+    records
+      .filter((record) => record.transaction_type === "reversal" && record.reversed_entry_hash)
+      .map((record) => record.reversed_entry_hash)
+  );
+}
+
+function getOperationalRecords(records) {
+  const reversedHashes = getReversedEntryHashSet(records);
+  return records.filter((record) => {
+    if (record.transaction_type === "reversal") return false;
+    return !reversedHashes.has(record.entry_hash);
+  });
+}
+
+function wireReverseButtons(records) {
+  document.querySelectorAll("[data-reverse-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const record = records.find((entry) => entry.id === Number(button.dataset.reverseId));
+      if (record) prepareReversalRecord(record);
+    });
+  });
+}
+
+function prepareReversalRecord(record) {
+  state.candidateRecord = {
+    transaction_type: "reversal",
+    label: record.label,
+    normalized_label: record.normalized_label,
+    amount_minor: record.amount_minor,
+    currency: record.currency,
+    counterparty: record.counterparty || null,
+    source_account: record.source_account || null,
+    destination_account: record.destination_account || null,
+    reversed_entry_hash: record.entry_hash,
+    reversed_transaction_type: record.transaction_type,
+    input_mode: "reversal",
+    confirmation_state: "pending",
+    business_type_id: record.business_type_id,
+    sector_id: record.sector_id,
+    country: record.country
+  };
+  els["confirm-copy-v2"].textContent = confirmationCopy(state.candidateRecord);
+  els["confirm-meta-v2"].innerHTML = `
+    <div><strong>Type:</strong> reversal</div>
+    <div><strong>Original type:</strong> ${record.transaction_type}</div>
+    <div><strong>Amount:</strong> ${formatMoney(record.amount_minor, record.currency)}</div>
+    <div><strong>Reverses:</strong> ${record.entry_hash}</div>
+  `;
+  showScreen("screen-confirm");
+  speakConfirmationCopy(els["confirm-copy-v2"].textContent);
 }
 
 function openDb() {
@@ -2132,7 +2279,7 @@ async function appendLedgerRecord(record) {
   const id = last ? last.id + 1 : 1;
   const confirmedAt = Math.floor(Date.now() / 1000);
   const prevHash = last ? last.entry_hash : "0".repeat(64);
-  const entryHash = await sha256(`${id}|${record.transaction_type}|${record.normalized_label}|${record.amount_minor}|${confirmedAt}|${prevHash}`);
+  const entryHash = await sha256(buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash));
   const payload = {
     ...record,
     id,
@@ -2187,6 +2334,7 @@ function bumpLabelUsage(normalizedLabel) {
 
 async function createUserCustomLabel(value) {
   const normalized = normalizeText(value).replace(/\s+/g, "_");
+  const learnedFrom = getCustomLabelLearnedFrom();
   const item = {
     id: `custom_${Date.now()}`,
     normalized_label: normalized,
@@ -2194,7 +2342,7 @@ async function createUserCustomLabel(value) {
     synonyms: [value],
     icon: "⭐",
     image_url: null,
-    transaction_contexts: [state.currentAction === "transfer" ? "transfer" : state.currentAction],
+    transaction_contexts: [customLabelContextForLearnedFrom(learnedFrom)],
     countries: [state.profile.country],
     business_types: [state.profile.business_type_id]
   };
@@ -2207,7 +2355,7 @@ async function createUserCustomLabel(value) {
       display_name: item.display_name,
       normalized_label: item.normalized_label,
       source: "manual_entry",
-      learned_from: state.currentAction,
+      learned_from: learnedFrom,
       business_type_id: state.profile.business_type_id
     });
     tx.oncomplete = () => resolve();
@@ -2233,7 +2381,7 @@ function loadCustomLabelsIntoCatalog() {
           synonyms: [item.display_name],
           icon: "⭐",
           image_url: null,
-          transaction_contexts: [item.learned_from === "transfer_in" || item.learned_from === "transfer_out" ? "transfer" : item.learned_from],
+          transaction_contexts: [customLabelContextForLearnedFrom(item.learned_from)],
           countries: [state.profile?.country || "NG", "US"].filter((value, index, array) => array.indexOf(value) === index),
           business_types: [item.business_type_id]
         });
@@ -2247,4 +2395,34 @@ function loadCustomLabelsIntoCatalog() {
 async function sha256(input) {
   const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
   return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash) {
+  return [
+    id,
+    record.transaction_type,
+    record.normalized_label,
+    record.amount_minor,
+    record.currency,
+    record.counterparty,
+    record.business_type_id,
+    record.country,
+    record.source_account,
+    record.destination_account,
+    record.reversed_entry_hash,
+    record.reversed_transaction_type,
+    confirmedAt,
+    prevHash
+  ].map((value) => value == null ? "" : String(value)).join("|");
+}
+
+function getCustomLabelLearnedFrom() {
+  if (state.currentAction === "transfer") return state.transferSubtype;
+  return state.currentAction;
+}
+
+function customLabelContextForLearnedFrom(learnedFrom) {
+  if (learnedFrom === "transfer_in") return "receipt";
+  if (learnedFrom === "transfer_out") return "payment";
+  return learnedFrom;
 }
