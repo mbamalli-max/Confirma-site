@@ -171,14 +171,92 @@
       </div>
     </section>
 
+    <section class="screen" id="screen-dashboard">
+      <header class="topbar">
+        <div>
+          <strong>Dashboard</strong>
+          <span>Confirmed business activity</span>
+        </div>
+      </header>
+      <div class="metric-grid">
+        <div class="metric-card">
+          <span>Today’s Sales</span>
+          <strong id="dash-today-sales-v2">₦0</strong>
+        </div>
+        <div class="metric-card">
+          <span>Monthly Sales</span>
+          <strong id="dash-monthly-sales-v2">₦0</strong>
+        </div>
+        <div class="metric-card">
+          <span>Monthly Expenses</span>
+          <strong id="dash-monthly-expenses-v2">₦0</strong>
+        </div>
+        <div class="metric-card">
+          <span>Cash Flow</span>
+          <strong id="dash-cash-flow-v2">₦0</strong>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Recent confirmed records</h2>
+        <div class="history-list" id="dashboard-records-v2"></div>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-settings">
+      <header class="topbar">
+        <div>
+          <strong>Settings</strong>
+          <span>Profile and app preferences</span>
+        </div>
+      </header>
+      <div class="panel">
+        <h2>Current profile</h2>
+        <div class="record-meta" id="settings-profile-v2"></div>
+      </div>
+      <div class="panel">
+        <h2>Common transactions</h2>
+        <div class="record-meta" id="settings-preferred-v2"></div>
+      </div>
+      <div class="panel">
+        <button class="btn btn-secondary" id="settings-change-profile-v2" type="button">Change business profile</button>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-export">
+      <header class="topbar">
+        <div>
+          <strong>Export</strong>
+          <span>Download confirmed records</span>
+        </div>
+      </header>
+      <div class="panel">
+        <h2>Free export</h2>
+        <p class="subtle">Download confirmed transactions with a simple integrity trail for review.</p>
+        <button class="btn btn-primary" id="export-button-v2" type="button">Generate export</button>
+        <p class="record-meta" id="export-status-v2"></p>
+      </div>
+    </section>
+
     <nav class="bottom-nav" id="bottom-nav-v2" hidden>
       <button class="nav-item active" id="nav-record-v2" type="button" data-target-screen="screen-capture">
         <span>🎤</span>
         <strong>Record</strong>
       </button>
+      <button class="nav-item" id="nav-dashboard-v2" type="button" data-target-screen="screen-dashboard">
+        <span>📊</span>
+        <strong>Dashboard</strong>
+      </button>
       <button class="nav-item" id="nav-history-v2" type="button" data-target-screen="screen-history">
         <span>📜</span>
         <strong>History</strong>
+      </button>
+      <button class="nav-item" id="nav-settings-v2" type="button" data-target-screen="screen-settings">
+        <span>⚙️</span>
+        <strong>Settings</strong>
+      </button>
+      <button class="nav-item" id="nav-export-v2" type="button" data-target-screen="screen-export">
+        <span>📤</span>
+        <strong>Export</strong>
       </button>
     </nav>
   </div>

@@ -319,6 +319,37 @@ body {
   background: white;
 }
 
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.metric-card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  background: white;
+  box-shadow: 0 8px 18px rgba(26, 60, 52, 0.05);
+}
+
+.metric-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.metric-card strong {
+  display: block;
+  color: var(--primary);
+  font-size: 22px;
+  line-height: 1.15;
+}
+
 .record-card strong {
   display: block;
 }
@@ -408,8 +439,8 @@ body {
   border-top-right-radius: 18px;
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
   box-shadow: 0 -8px 24px rgba(26, 60, 52, 0.18);
   z-index: 6;
 }
@@ -433,7 +464,8 @@ body {
 }
 
 .nav-item strong {
-  font-size: 13px;
+  font-size: 11px;
+  line-height: 1.1;
 }
 
 .nav-item.active {
@@ -466,6 +498,10 @@ body {
     grid-template-columns: 1fr 1fr;
   }
 
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
   .visual-card,
   .action-card,
   .ranked-item {
@@ -489,5 +525,23 @@ body {
   .visual-grid,
   .action-row {
     grid-template-columns: 1fr;
+  }
+
+  .bottom-nav {
+    gap: 4px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .nav-item {
+    min-height: 52px;
+  }
+
+  .nav-item span {
+    font-size: 18px;
+  }
+
+  .nav-item strong {
+    font-size: 10px;
   }
 }

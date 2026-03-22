@@ -291,7 +291,9 @@ function cacheElements() {
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
     "speech-results", "browse-results", "speech-status", "custom-label-input", "onboarding-back",
     "change-confirm-modal", "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
-    "bottom-nav-v2"
+    "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
+    "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
+    "settings-change-profile-v2", "export-button-v2", "export-status-v2"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -320,13 +322,24 @@ function wireEvents() {
     showScreen("screen-history");
   });
   document.getElementById("back-home").addEventListener("click", () => showScreen("screen-capture"));
+  document.getElementById("settings-change-profile-v2").addEventListener("click", openChangeProfileConfirm);
+  document.getElementById("export-button-v2").addEventListener("click", generateExport);
   document.getElementById("mic-button-v2").addEventListener("click", startVoiceRecordShortcut);
   document.getElementById("quick-text-submit").addEventListener("click", handleQuickTextRecord);
   document.querySelectorAll("[data-target-screen]").forEach((button) => {
     button.addEventListener("click", async () => {
       const target = button.dataset.targetScreen;
+      if (target === "screen-dashboard") {
+        await renderDashboard();
+      }
       if (target === "screen-history") {
         await renderHistory();
+      }
+      if (target === "screen-settings") {
+        renderSettings();
+      }
+      if (target === "screen-export") {
+        renderExportScreen();
       }
       showScreen(target);
     });
@@ -478,6 +491,112 @@ async function showCapture() {
   await renderQuickLabels();
   await renderRecentRecords();
   showScreen("screen-capture");
+}
+
+async function renderDashboard() {
+  const records = await getRecords();
+  const currency = state.profile?.country === "US" ? "USD" : "NGN";
+  const now = new Date();
+  const todayKey = now.toDateString();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  let todaySales = 0;
+  let monthlySales = 0;
+  let monthlyExpenses = 0;
+
+  records.forEach((record) => {
+    const amount = Number(record.amount_minor || 0);
+    const date = new Date(record.confirmed_at * 1000);
+    const isToday = date.toDateString() === todayKey;
+    const isThisMonth = date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+
+    if (record.transaction_type === "sale") {
+      if (isToday) todaySales += amount;
+      if (isThisMonth) monthlySales += amount;
+    }
+
+    if (record.transaction_type === "payment" || record.transaction_type === "purchase") {
+      if (isThisMonth) monthlyExpenses += amount;
+    }
+  });
+
+  els["dash-today-sales-v2"].textContent = formatMoney(todaySales, currency);
+  els["dash-monthly-sales-v2"].textContent = formatMoney(monthlySales, currency);
+  els["dash-monthly-expenses-v2"].textContent = formatMoney(monthlyExpenses, currency);
+  els["dash-cash-flow-v2"].textContent = formatMoney(monthlySales - monthlyExpenses, currency);
+
+  const recent = [...records].reverse().slice(0, 5);
+  els["dashboard-records-v2"].innerHTML = recent.length
+    ? recent.map(renderRecordCard).join("")
+    : `<div class="record-card"><strong>No confirmed records yet.</strong><div class="record-meta">Your recent confirmed transactions will appear here.</div></div>`;
+}
+
+function renderSettings() {
+  if (!state.profile) return;
+  const businessType = BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id);
+  const sector = SECTORS.find((item) => item.id === state.profile.sector_id);
+  const preferred = state.profile.preferred_labels || [];
+
+  els["settings-profile-v2"].innerHTML = `
+    <div><strong>Country:</strong> ${countryName(state.profile.country)}</div>
+    <div><strong>Sector:</strong> ${sector?.name || "Not selected"}</div>
+    <div><strong>Business type:</strong> ${businessType?.name || "Not selected"}</div>
+    <div><strong>Last action:</strong> ${friendlyActionLabel(state.profile.last_action || "sale")}</div>
+  `;
+
+  els["settings-preferred-v2"].innerHTML = preferred.length
+    ? preferred.map((label) => `<div>${getIconForLabel(label)} ${label}</div>`).join("")
+    : "No common transactions selected yet.";
+}
+
+function renderExportScreen() {
+  els["export-status-v2"].textContent = "";
+}
+
+async function generateExport() {
+  const records = await getRecords();
+  if (!records.length) {
+    els["export-status-v2"].textContent = "No confirmed records yet.";
+    return;
+  }
+
+  const currency = state.profile?.country === "US" ? "USD" : "NGN";
+  const integritySeed = records.map((record) => record.entry_hash).join("|");
+  const integrityCode = await sha256(integritySeed);
+  const lines = records.map((record) => {
+    const timestamp = new Date(record.confirmed_at * 1000).toLocaleString();
+    return [
+      record.id,
+      record.transaction_type,
+      record.label,
+      formatMoney(record.amount_minor, currency),
+      timestamp
+    ].join(" | ");
+  });
+
+  const output = [
+    "CONFIRMA V2 EXPORT",
+    `Generated: ${new Date().toLocaleString()}`,
+    `Profile: ${countryName(state.profile.country)} / ${BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id)?.name || "Unknown"}`,
+    `Entries: ${records.length}`,
+    "---",
+    ...lines,
+    "---",
+    `Latest Entry Hash: ${records[records.length - 1].entry_hash}`,
+    `Integrity Code: ${integrityCode}`
+  ].join("\n");
+
+  const blob = new Blob([output], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `confirma-v2-export-${Date.now()}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  els["export-status-v2"].textContent = "Export downloaded.";
 }
 
 function renderActionRows() {
@@ -887,6 +1006,7 @@ async function confirmAppend() {
   await bumpLabelUsage(record.normalized_label);
   resetCaptureForm();
   await renderRecentRecords();
+  await renderDashboard();
   showScreen("screen-capture");
 }
 
@@ -1490,7 +1610,14 @@ function showScreen(id) {
 }
 
 function updateBottomNav(activeScreenId) {
-  const visible = activeScreenId === "screen-capture" || activeScreenId === "screen-history";
+  const visibleScreens = new Set([
+    "screen-capture",
+    "screen-dashboard",
+    "screen-history",
+    "screen-settings",
+    "screen-export"
+  ]);
+  const visible = visibleScreens.has(activeScreenId);
   els["bottom-nav-v2"].hidden = !visible;
   document.querySelectorAll("[data-target-screen]").forEach((button) => {
     button.classList.toggle("active", button.dataset.targetScreen === activeScreenId);
