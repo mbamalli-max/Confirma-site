@@ -50,6 +50,12 @@ const LABEL_CATALOG = [
   buildLabel("tools_purchase", "Tools", "🧰", ["tool", "equipment tool"], ["purchase", "payment"], ["NG", "US"], ["ng_artisan", "us_contractor"]),
   buildLabel("consultation_fee", "Consultation", "🗂️", ["consulting", "advice fee"], ["sale", "receipt"], ["NG", "US"], ["ng_service_provider", "us_beauty_services", "us_digital_business"]),
   buildLabel("data_internet", "Data / Internet", "📶", ["data", "internet"], ["payment"], ["NG", "US"], ["ng_service_provider", "ng_online_seller", "us_digital_business"]),
+  buildLabel("online_products", "Products", "📦", ["items", "online goods"], ["sale", "purchase"], ["NG", "US"], ["ng_online_seller", "us_digital_business"]),
+  buildLabel("online_packaging", "Packaging", "📮", ["package", "wrap"], ["purchase", "payment"], ["NG", "US"], ["ng_online_seller", "us_retail", "us_digital_business"]),
+  buildLabel("online_ads", "Ads", "📣", ["advert", "promotion"], ["payment"], ["NG", "US"], ["ng_online_seller", "us_digital_business"]),
+  buildLabel("online_delivery", "Shipping Charged", "🛵", ["delivery charged", "shipping fee"], ["sale", "receipt"], ["NG", "US"], ["ng_online_seller", "us_digital_business"]),
+  buildLabel("online_shipping_cost", "Shipping Cost", "🚚", ["dispatch cost", "courier cost"], ["payment", "purchase"], ["NG", "US"], ["ng_online_seller", "us_logistics", "us_digital_business"]),
+  buildLabel("online_platform_fees", "Platform Fees", "🧾", ["marketplace fee", "listing fee"], ["payment"], ["NG", "US"], ["ng_online_seller", "us_digital_business"]),
   buildLabel("products", "Products", "🛒", ["items", "goods"], ["sale", "purchase"], ["US"], ["us_retail", "us_digital_business"]),
   buildLabel("shipping_costs", "Shipping Costs", "🚚", ["postage", "courier"], ["payment", "purchase"], ["US"], ["us_retail", "us_logistics", "us_digital_business"]),
   buildLabel("software_subscription", "Software", "💻", ["software subscription", "saas"], ["payment"], ["US"], ["us_digital_business"]),
@@ -76,6 +82,7 @@ const TRANSFER_ACTIONS = [
 const state = {
   db: null,
   profile: null,
+  onboardingStep: 1,
   selectorMode: "search",
   currentAction: "sale",
   transferSubtype: "transfer_in",
@@ -115,7 +122,8 @@ function cacheElements() {
     "quick-label-grid", "selected-label-chip", "amount-input-v2", "counterparty-input-v2", "source-account-input",
     "destination-account-input", "transfer-details", "capture-error", "confirm-copy-v2", "confirm-meta-v2",
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
-    "speech-results", "browse-results", "speech-status", "custom-label-input"
+    "speech-results", "browse-results", "speech-status", "custom-label-input", "onboarding-back",
+    "change-confirm-modal"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -123,7 +131,11 @@ function cacheElements() {
 
 function wireEvents() {
   document.getElementById("finish-onboarding").addEventListener("click", finishOnboarding);
-  document.getElementById("change-profile").addEventListener("click", () => showScreen("screen-onboarding"));
+  document.getElementById("change-profile").addEventListener("click", openChangeProfileConfirm);
+  document.getElementById("confirm-change-profile").addEventListener("click", confirmChangeProfile);
+  document.getElementById("cancel-change-profile").addEventListener("click", closeChangeProfileConfirm);
+  document.getElementById("change-confirm-close").addEventListener("click", closeChangeProfileConfirm);
+  els["onboarding-back"].addEventListener("click", goToPreviousOnboardingStep);
   document.getElementById("advanced-toggle").addEventListener("click", () => {
     els["advanced-panel"].hidden = !els["advanced-panel"].hidden;
   });
@@ -162,7 +174,7 @@ function renderOnboarding() {
   renderCountryGrid();
   renderSectorGrid();
   renderBusinessGrid();
-  updateOnboardingStep();
+  updateOnboardingStep(state.onboardingStep || 1);
 }
 
 function renderCountryGrid() {
@@ -177,7 +189,7 @@ function renderCountryGrid() {
       };
       renderSectorGrid();
       renderBusinessGrid();
-      updateOnboardingStep();
+      updateOnboardingStep(2);
     }, state.profile && state.profile.country === country.id));
   });
 }
@@ -192,7 +204,7 @@ function renderSectorGrid() {
         business_type_id: null
       };
       renderBusinessGrid();
-      updateOnboardingStep();
+      updateOnboardingStep(3);
     }, state.profile && state.profile.sector_id === sector.id));
   });
 }
@@ -214,20 +226,23 @@ function renderBusinessGrid() {
         business_type_id: item.id
       };
       renderBusinessGrid();
-      updateOnboardingStep();
+      updateOnboardingStep(3);
     }, state.profile && state.profile.business_type_id === item.id));
   });
 }
 
-function updateOnboardingStep() {
-  let step = 1;
-  if (state.profile && state.profile.country) step = 2;
-  if (state.profile && state.profile.sector_id) step = 3;
-
+function updateOnboardingStep(step) {
+  state.onboardingStep = step;
   document.querySelectorAll(".step").forEach((node) => node.classList.remove("active"));
-  document.querySelector(`.step[data-step="${step}"]`).classList.add("active");
-  els["onboarding-step-copy"].textContent = `Step ${step} of 3`;
+  document.querySelector(`.step[data-step="${state.onboardingStep}"]`).classList.add("active");
+  els["onboarding-step-copy"].textContent = `Step ${state.onboardingStep} of 3`;
+  els["onboarding-back"].hidden = state.onboardingStep <= 1;
   document.getElementById("finish-onboarding").disabled = !(state.profile && state.profile.business_type_id);
+}
+
+function goToPreviousOnboardingStep() {
+  if (state.onboardingStep <= 1) return;
+  updateOnboardingStep(state.onboardingStep - 1);
 }
 
 function buildVisualCard(icon, title, description, onClick, active) {
@@ -255,6 +270,7 @@ async function showCapture() {
   state.currentAction = state.profile.last_action || "sale";
   state.selectedLabel = null;
   state.candidateRecord = null;
+  state.onboardingStep = 3;
   hydrateProfileUi();
   renderActionRows();
   await renderQuickLabels();
@@ -263,7 +279,10 @@ async function showCapture() {
 }
 
 function renderActionRows() {
-  renderActionButtons(els["primary-actions"], PRIMARY_ACTIONS, state.currentAction, (id) => {
+  const primarySelected = state.currentAction === "transfer" ? null : state.currentAction;
+  const transferSelected = state.currentAction === "transfer" ? state.transferSubtype : null;
+
+  renderActionButtons(els["primary-actions"], PRIMARY_ACTIONS, primarySelected, (id) => {
     state.currentAction = id;
     state.profile.last_action = id;
     renderActionRows();
@@ -271,7 +290,7 @@ function renderActionRows() {
     clearSelectedLabel();
   });
 
-  renderActionButtons(els["transfer-actions"], TRANSFER_ACTIONS, state.transferSubtype, (id) => {
+  renderActionButtons(els["transfer-actions"], TRANSFER_ACTIONS, transferSelected, (id) => {
     state.currentAction = "transfer";
     state.transferSubtype = id;
     renderActionRows();
@@ -578,12 +597,29 @@ function businessSectorMatch(item) {
 }
 
 function getCatalogForCurrentProfile() {
+  const context = state.currentAction === "transfer" ? "transfer" : state.currentAction;
+  const exactBusinessMatches = LABEL_CATALOG.filter((item) => {
+    return item.transaction_contexts.includes(context)
+      && item.business_types.includes(state.profile.business_type_id);
+  });
+
+  if (exactBusinessMatches.length) return exactBusinessMatches;
+
+  const sectorBusinessIds = BUSINESS_TYPES
+    .filter((item) => item.country === state.profile.country && item.sector_id === state.profile.sector_id)
+    .map((item) => item.id);
+
+  const sectorMatches = LABEL_CATALOG.filter((item) => {
+    return item.transaction_contexts.includes(context)
+      && item.countries.includes(state.profile.country)
+      && item.business_types.some((businessId) => sectorBusinessIds.includes(businessId));
+  });
+
+  if (sectorMatches.length) return sectorMatches;
+
   return LABEL_CATALOG.filter((item) => {
-    const context = state.currentAction === "transfer" ? "transfer" : state.currentAction;
-    const contextAllowed = item.transaction_contexts.includes(context);
-    const countryAllowed = item.countries.includes(state.profile.country);
-    const businessAllowed = item.business_types.includes(state.profile.business_type_id);
-    return contextAllowed && (countryAllowed || businessAllowed);
+    return item.transaction_contexts.includes(context)
+      && item.countries.includes(state.profile.country);
   });
 }
 
@@ -609,6 +645,21 @@ function buildLabel(id, displayName, icon, synonyms, contexts, countries, busine
 function showScreen(id) {
   document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
   document.getElementById(id).classList.add("active");
+}
+
+function openChangeProfileConfirm() {
+  els["change-confirm-modal"].hidden = false;
+}
+
+function closeChangeProfileConfirm() {
+  els["change-confirm-modal"].hidden = true;
+}
+
+function confirmChangeProfile() {
+  closeChangeProfileConfirm();
+  state.onboardingStep = 3;
+  renderOnboarding();
+  showScreen("screen-onboarding");
 }
 
 function normalizeText(value) {

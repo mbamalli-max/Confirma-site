@@ -24,7 +24,10 @@
       </div>
 
       <div class="panel">
-        <div class="stepper" id="onboarding-step-copy">Step 1 of 3</div>
+        <div class="stepper-row">
+          <div class="stepper" id="onboarding-step-copy">Step 1 of 3</div>
+          <button class="pill-button" id="onboarding-back" type="button" hidden>Back</button>
+        </div>
 
         <div class="step active" data-step="1">
           <h2>Choose your country</h2>
@@ -146,6 +149,22 @@
         <div class="history-list" id="history-records-v2"></div>
       </div>
     </section>
+  </div>
+
+  <div class="modal-shell" id="change-confirm-modal" hidden>
+    <div class="modal-backdrop" id="change-confirm-close"></div>
+    <div class="modal-card">
+      <div class="action-header">
+        <div>
+          <h2>Change business profile?</h2>
+          <p class="subtle">This can change the recommended labels and action shortcuts.</p>
+        </div>
+      </div>
+      <div class="button-stack">
+        <button class="btn btn-primary" id="confirm-change-profile" type="button">Yes, change profile</button>
+        <button class="btn btn-secondary" id="cancel-change-profile" type="button">Cancel</button>
+      </div>
+    </div>
   </div>
 
   <div class="modal-shell" id="selector-modal" hidden>

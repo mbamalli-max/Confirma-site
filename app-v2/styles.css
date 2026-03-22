@@ -83,8 +83,15 @@ body {
 
 .stepper {
   color: var(--muted);
-  margin-bottom: 12px;
   font-size: 13px;
+}
+
+.stepper-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .step {
