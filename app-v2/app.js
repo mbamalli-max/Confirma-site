@@ -24,48 +24,135 @@ const BUSINESS_TYPES = [
   { id: "ng_artisan", country: "NG", sector_id: "skilled_construction", name: "Artisan", icon: "🛠️" },
   { id: "ng_service_provider", country: "NG", sector_id: "personal_professional", name: "Service Provider", icon: "🧾" },
   { id: "ng_online_seller", country: "NG", sector_id: "digital_online", name: "Online Seller", icon: "📱" },
+  { id: "ng_kiosk_phone_business", country: "NG", sector_id: "digital_online", name: "Kiosk / Phone Business", icon: "📞" },
+  { id: "ng_fashion_tailor", country: "NG", sector_id: "personal_professional", name: "Fashion / Tailor", icon: "🧵" },
+  { id: "ng_okada_keke_operator", country: "NG", sector_id: "transport_logistics", name: "Okada / Keke Operator", icon: "🛵" },
   { id: "us_retail", country: "US", sector_id: "trade_retail", name: "Retail", icon: "🛍️" },
   { id: "us_food_service", country: "US", sector_id: "food_hospitality", name: "Food Service", icon: "🍔" },
   { id: "us_logistics", country: "US", sector_id: "transport_logistics", name: "Logistics", icon: "🚚" },
   { id: "us_contractor", country: "US", sector_id: "skilled_construction", name: "Contractor", icon: "🔨" },
   { id: "us_beauty_services", country: "US", sector_id: "personal_professional", name: "Beauty Services", icon: "💇" },
-  { id: "us_digital_business", country: "US", sector_id: "digital_online", name: "Digital Business", icon: "🧑‍💻" }
+  { id: "us_digital_business", country: "US", sector_id: "digital_online", name: "Digital Business", icon: "🧑‍💻" },
+  { id: "us_personal_services_side_hustle", country: "US", sector_id: "personal_professional", name: "Personal Services / Side Hustle", icon: "🧹" }
 ];
 
-const LABEL_CATALOG = [
-  buildLabel("inventory_rice", "Rice", "🌾", ["bag of rice", "rice stock"], ["sale", "purchase"], ["NG"], ["ng_market_trader", "ng_provision_shop"]),
-  buildLabel("inventory_beans", "Beans", "🫘", ["bean", "beans stock"], ["sale", "purchase"], ["NG"], ["ng_market_trader", "ng_provision_shop"]),
-  buildLabel("inventory_palm_oil", "Palm Oil", "🫒", ["red oil", "palm kernel oil"], ["sale", "purchase"], ["NG"], ["ng_market_trader"]),
-  buildLabel("inventory_provisions", "Provisions", "🧴", ["shop items", "provision"], ["sale", "purchase"], ["NG"], ["ng_provision_shop"]),
-  buildLabel("meal_jollof", "Jollof Rice", "🍚", ["jollof", "rice plate"], ["sale"], ["NG"], ["ng_food_vendor"]),
-  buildLabel("meal_soup", "Soup", "🥣", ["pepper soup", "soup bowl"], ["sale"], ["NG"], ["ng_food_vendor"]),
-  buildLabel("ingredient_purchase", "Ingredients", "🧄", ["ingredient", "food stuff"], ["purchase", "payment"], ["NG", "US"], ["ng_food_vendor", "us_food_service"]),
-  buildLabel("cooking_gas", "Cooking Gas", "🔥", ["gas refill", "cylinder gas"], ["payment"], ["NG", "US"], ["ng_food_vendor", "us_food_service"]),
-  buildLabel("trip_fare", "Trip Fare", "🚌", ["transport fare", "ride fare"], ["sale", "receipt"], ["NG"], ["ng_transport_operator"]),
-  buildLabel("delivery_fee", "Delivery Fee", "📦", ["dispatch fee", "delivery charge"], ["sale", "receipt"], ["NG", "US"], ["ng_transport_operator", "us_logistics", "us_digital_business"]),
-  buildLabel("vehicle_fuel", "Vehicle Fuel", "⛽", ["petrol", "diesel", "gas for car"], ["payment"], ["NG", "US"], ["ng_transport_operator", "us_logistics"]),
-  buildLabel("vehicle_repairs", "Vehicle Repairs", "🛞", ["repair", "mechanic"], ["payment"], ["NG", "US"], ["ng_transport_operator", "us_logistics"]),
-  buildLabel("labour_income", "Labour", "🪚", ["hand work", "job labour"], ["sale", "receipt"], ["NG", "US"], ["ng_artisan", "us_contractor"]),
-  buildLabel("materials_purchase", "Materials", "🧱", ["building materials", "raw materials"], ["purchase", "payment"], ["NG", "US"], ["ng_artisan", "us_contractor"]),
-  buildLabel("tools_purchase", "Tools", "🧰", ["tool", "equipment tool"], ["purchase", "payment"], ["NG", "US"], ["ng_artisan", "us_contractor"]),
-  buildLabel("consultation_fee", "Consultation", "🗂️", ["consulting", "advice fee"], ["sale", "receipt"], ["NG", "US"], ["ng_service_provider", "us_beauty_services", "us_digital_business"]),
-  buildLabel("data_internet", "Data / Internet", "📶", ["data", "internet"], ["payment"], ["NG", "US"], ["ng_service_provider", "ng_online_seller", "us_digital_business"]),
-  buildLabel("online_products", "Products", "📦", ["items", "online goods"], ["sale", "purchase"], ["NG", "US"], ["ng_online_seller", "us_digital_business"]),
-  buildLabel("online_packaging", "Packaging", "📮", ["package", "wrap"], ["purchase", "payment"], ["NG", "US"], ["ng_online_seller", "us_retail", "us_digital_business"]),
-  buildLabel("online_ads", "Ads", "📣", ["advert", "promotion"], ["payment"], ["NG", "US"], ["ng_online_seller", "us_digital_business"]),
-  buildLabel("online_delivery", "Shipping Charged", "🛵", ["delivery charged", "shipping fee"], ["sale", "receipt"], ["NG", "US"], ["ng_online_seller", "us_digital_business"]),
-  buildLabel("online_shipping_cost", "Shipping Cost", "🚚", ["dispatch cost", "courier cost"], ["payment", "purchase"], ["NG", "US"], ["ng_online_seller", "us_logistics", "us_digital_business"]),
-  buildLabel("online_platform_fees", "Platform Fees", "🧾", ["marketplace fee", "listing fee"], ["payment"], ["NG", "US"], ["ng_online_seller", "us_digital_business"]),
-  buildLabel("products", "Products", "🛒", ["items", "goods"], ["sale", "purchase"], ["US"], ["us_retail", "us_digital_business"]),
-  buildLabel("shipping_costs", "Shipping Costs", "🚚", ["postage", "courier"], ["payment", "purchase"], ["US"], ["us_retail", "us_logistics", "us_digital_business"]),
-  buildLabel("software_subscription", "Software", "💻", ["software subscription", "saas"], ["payment"], ["US"], ["us_digital_business"]),
-  buildLabel("platform_fees", "Platform Fees", "🧾", ["marketplace fee", "listing fee"], ["payment"], ["US"], ["us_digital_business"]),
-  buildLabel("service_treatment", "Treatment", "✨", ["service treatment", "beauty treatment"], ["sale", "receipt"], ["US"], ["us_beauty_services"]),
-  buildLabel("inventory_purchase", "Wholesale Purchase", "📦", ["stock purchase", "inventory"], ["purchase"], ["NG"], ["ng_market_trader", "ng_provision_shop"]),
-  buildLabel("cash_receipt", "Cash Received", "💵", ["money received", "cash in"], ["receipt"], ["NG", "US"], ["ng_service_provider", "us_retail", "us_food_service"]),
-  buildLabel("rent_payment", "Rent", "🏠", ["shop rent", "stall rent"], ["payment"], ["NG", "US"], ["ng_provision_shop", "ng_service_provider", "us_retail"]),
-  buildLabel("transfer_between_accounts", "Transfer", "🔁", ["move money", "internal transfer"], ["transfer"], ["NG", "US"], BUSINESS_TYPES.map((item) => item.id))
+const QUICK_PICKS = {
+  ng_market_trader: {
+    sell: ["Rice", "Beans", "Garri", "Tomatoes", "Pepper", "Palm Oil", "Yam", "Onion"],
+    purchase: ["Rice Stock", "Beans Stock", "Palm Oil Stock", "Tomato Crate", "Pepper Bag", "Nylon Bags"],
+    payment: ["Transport", "Market Fee", "Stall Rent", "Packaging", "Helper Pay", "Mobile Data"],
+    receipt: ["Customer Payment", "POS Payment", "Debt Collected", "Esusu Payout"]
+  },
+  ng_provision_shop: {
+    sell: ["Drinks", "Biscuits", "Noodles", "Sugar", "Bread", "Water", "Airtime", "Toiletries"],
+    purchase: ["Drinks Stock", "Biscuit Carton", "Noodles Carton", "Sugar Stock", "Bread Stock", "Airtime Float"],
+    payment: ["Shop Rent", "Electricity", "Transport", "Generator Fuel", "Staff Pay", "Packaging"],
+    receipt: ["Customer Payment", "POS Payment", "Debt Collected", "Supplier Refund"]
+  },
+  ng_food_vendor: {
+    sell: ["Rice Meal", "Soup", "Swallow", "Snacks", "Drinks", "Fish", "Chicken", "Catering", "Eba", "Tuwo"],
+    purchase: ["Rice (Cooking)", "Cooking Oil", "Tomatoes", "Pepper", "Meat/Fish", "Gas", "Firewood", "Seasoning"],
+    payment: ["Stall Rent", "Helper Pay", "Transport", "Packaging", "Electricity", "Water Supply", "Waste Disposal", "Cooking Gas"],
+    receipt: ["Customer Payment", "Bulk Order Payment", "Catering Deposit", "Debt Collected"]
+  },
+  ng_transport_operator: {
+    sell: ["Trip Fare", "Delivery Fee", "Charter", "Interstate Fare", "Loading Fee", "Haulage"],
+    purchase: ["Fuel", "Engine Oil", "Spare Parts", "Tyres", "Battery", "Tools"],
+    payment: ["Fuel", "Repair", "Park Levy", "Tyre Repair", "Driver Pay", "Car Wash", "Insurance", "Road Toll"],
+    receipt: ["Passenger Payment", "Delivery Payment", "Charter Payment", "Debt Collected"]
+  },
+  ng_artisan: {
+    sell: ["Repair Job", "Installation", "Labour", "Fabrication", "Maintenance", "Inspection"],
+    purchase: ["Materials", "Spare Parts", "Tools", "Paint", "Fittings", "Safety Gear"],
+    payment: ["Transport", "Helper Pay", "Generator Fuel", "Phone/Data", "Workshop Rent", "Tool Repair"],
+    receipt: ["Job Payment", "Deposit", "Balance Payment", "Refund Received"]
+  },
+  ng_service_provider: {
+    sell: ["Consultation", "Service Fee", "Project Fee", "Training", "Retainer", "Admin Service"],
+    purchase: ["Materials", "Data Bundle", "Airtime", "Office Supplies"],
+    payment: ["Transport", "Data/Internet", "Rent", "Assistant Pay", "Power", "Marketing"],
+    receipt: ["Client Payment", "Deposit", "Balance", "Refund Received"]
+  },
+  ng_online_seller: {
+    sell: ["Product Sale", "Delivery Charged", "Wholesale Order", "Social Media Sale", "Custom Order", "Bulk Order"],
+    purchase: ["Inventory", "Packaging", "Data Bundle", "Product Photos", "Labels/Tags", "Storage"],
+    payment: ["Shipping Cost", "Platform Fee", "Ad Boost", "Data/Internet", "Packaging", "Rider Payment", "Dispatch Fee", "Printing"],
+    receipt: ["Customer Transfer", "POS/Link Payment", "Deposit", "Refund Received"]
+  },
+  ng_kiosk_phone_business: {
+    sell: ["Airtime", "Data Bundle", "Transfer Fee", "Electricity Token", "Cable Sub", "Print/Photocopy"],
+    purchase: ["Airtime Float", "Data Float", "Printer Paper", "POS Paper", "Ink", "Accessories"],
+    payment: ["Kiosk Rent", "POS Charge", "Airtime Float", "Electricity", "Mobile Data"],
+    receipt: ["Customer Payment", "POS Payment", "Transfer Receipt"]
+  },
+  ng_fashion_tailor: {
+    sell: ["Sewing Job", "Aso-Ebi", "Fabric", "Alteration", "Ready-to-Wear", "Embroidery"],
+    purchase: ["Fabric Stock", "Thread/Trimmings", "Machine Parts"],
+    payment: ["Workshop Rent", "Electricity", "Helper Wage"],
+    receipt: ["Client Payment", "Deposit", "Balance Payment"]
+  },
+  ng_okada_keke_operator: {
+    sell: ["Passenger Fare", "Errand Trip", "Delivery Run"],
+    purchase: ["Fuel", "Spare Parts", "Tyres"],
+    payment: ["Fuel", "Union Levy", "Repair", "Tyre", "Bike Loan"],
+    receipt: ["Passenger Payment", "Delivery Payment", "Debt Collected"]
+  },
+  us_retail: {
+    sell: ["Products", "Merchandise", "Gift Items", "Accessories", "Custom Order", "Online Sale", "Bundle Sale", "Clearance"],
+    purchase: ["Inventory", "Supplies", "Packaging", "Labels/Tags", "Display Items", "Thrift Haul"],
+    payment: ["Rent", "Shipping Cost", "Utilities", "Staff Pay", "Card Fees", "Platform Fees", "Storage", "Ads"],
+    receipt: ["Customer Payment", "Online Order Payment", "Deposit", "Supplier Refund"]
+  },
+  us_food_service: {
+    sell: ["Meals", "Drinks", "Catering", "Delivery", "Baked Goods", "Wings", "Meal Prep", "Custom Cake", "BBQ", "Soul Food"],
+    purchase: ["Ingredients", "Meat", "Produce", "Packaging", "Cooking Oil", "Baking Supplies", "Dairy", "Beverages"],
+    payment: ["Rent", "Utilities", "Cooking Gas/Propane", "Staff Pay", "Delivery App Fee", "Packaging", "Permits", "Equipment"],
+    receipt: ["Customer Payment", "Delivery App Payout", "Catering Deposit", "Supplier Refund"]
+  },
+  us_logistics: {
+    sell: ["Delivery Job", "Route Pay", "Freight Job", "Rush Delivery", "Charter Trip", "Moving Job"],
+    purchase: ["Vehicle Fuel", "Tires", "Parts", "Safety Gear"],
+    payment: ["Fuel", "Repairs", "Insurance", "Tolls", "Truck Payment", "Parking", "Phone/Data", "Driver Pay"],
+    receipt: ["Client Payment", "Platform Payout", "Tip", "Reimbursement"]
+  },
+  us_contractor: {
+    sell: ["Labor", "Project Fee", "Installation", "Repair Job", "Inspection", "Emergency Call"],
+    purchase: ["Materials", "Equipment Rental", "Tools", "Safety Gear", "Paint/Primer", "Fasteners"],
+    payment: ["Materials", "Subcontractor Pay", "Permits", "Fuel", "Disposal/Dumpster", "Insurance", "Helper Pay", "Tool Rental"],
+    receipt: ["Client Payment", "Deposit", "Progress Payment", "Final Balance"]
+  },
+  us_beauty_services: {
+    sell: ["Hair Service", "Nails", "Braiding", "Locs/Retwist", "Silk Press", "Sew-In", "Treatment/Wax", "Makeup", "Lashes", "Product Sale"],
+    purchase: ["Braiding Hair", "Supplies", "Products", "Lash Supplies", "Nail Supplies", "Color/Developer"],
+    payment: ["Booth Rent", "Products Used", "Platform Fee", "Supplies Run", "Training", "Utilities"],
+    receipt: ["Client Payment", "Deposit", "Tip", "Supplier Refund"]
+  },
+  us_digital_business: {
+    sell: ["Project Fee", "Subscription", "Consultation", "Digital Product", "Coaching", "Course Sale", "Brand Deal", "UGC Content"],
+    purchase: ["Software", "Equipment", "Domain/Hosting", "Stock Assets", "Content Props", "Merch Inventory"],
+    payment: ["Subscriptions", "Ads", "Contractor Pay", "Internet", "Platform Fee", "Phone Plan", "Cloud Hosting", "Accounting"],
+    receipt: ["Client Payment", "Platform Payout", "Affiliate Payout", "Deposit"]
+  },
+  us_personal_services_side_hustle: {
+    sell: ["Cleaning Job", "Dog Walking", "Babysitting", "Tutoring", "Lawn Care", "Photography", "Car Detailing", "Rideshare", "Power Washing", "Moving Help"],
+    purchase: ["Cleaning Supplies", "Equipment"],
+    payment: ["Gas", "App Fee", "Equipment", "Background Check", "Cleaning Supplies"],
+    receipt: ["Client Payment", "Tip", "Reimbursement", "App Payout"]
+  }
+};
+
+const EXTRA_SEARCH_LABELS = [
+  buildLabel("tuwo_shinkafa_sale", "Tuwo Shinkafa", "🍲", ["tuwo", "rice tuwo"], ["sale"], ["NG"], ["ng_food_vendor"]),
+  buildLabel("zobo_sale", "Zobo", "🥤", ["zobo drink"], ["sale"], ["NG"], ["ng_food_vendor"]),
+  buildLabel("crayfish_sale", "Crayfish", "🦐", ["crayfish"], ["sale"], ["NG"], ["ng_market_trader"]),
+  buildLabel("egusi_sale", "Egusi", "🥜", ["melon"], ["sale"], ["NG"], ["ng_market_trader"]),
+  buildLabel("social_media_management_sale", "Social Media Mgmt", "📱", ["social media management"], ["sale"], ["US"], ["us_digital_business"]),
+  buildLabel("video_editing_sale", "Video Editing", "🎬", ["editing"], ["sale"], ["US"], ["us_digital_business"]),
+  buildLabel("box_braids_sale", "Box Braids", "💇", ["braids"], ["sale"], ["US"], ["us_beauty_services"]),
+  buildLabel("car_detailing_sale", "Car Detailing", "🚗", ["detailing"], ["sale"], ["US"], ["us_personal_services_side_hustle"])
 ];
+
+const LABEL_CATALOG = [...buildCatalogFromQuickPicks(), ...EXTRA_SEARCH_LABELS];
 
 const PRIMARY_ACTIONS = [
   { id: "sale", label: "Sell", icon: "🟢", help: "Business sells goods or services." },
@@ -640,6 +727,62 @@ function buildLabel(id, displayName, icon, synonyms, contexts, countries, busine
     countries,
     business_types: businessTypes
   };
+}
+
+function buildCatalogFromQuickPicks() {
+  const items = [];
+  Object.entries(QUICK_PICKS).forEach(([businessTypeId, groups]) => {
+    const business = BUSINESS_TYPES.find((entry) => entry.id === businessTypeId);
+    if (!business) return;
+    const country = business.country;
+
+    Object.entries(groups).forEach(([action, labels]) => {
+      labels.forEach((displayName) => {
+        const normalized = normalizeText(displayName).replace(/\s+/g, "_");
+        const id = `${businessTypeId}_${action}_${normalized}`;
+        if (items.some((item) => item.id === id)) return;
+        items.push(buildLabel(
+          id,
+          displayName,
+          inferIcon(displayName, action),
+          [],
+          [action],
+          [country],
+          [businessTypeId]
+        ));
+      });
+    });
+  });
+  return items;
+}
+
+function inferIcon(displayName, action) {
+  const text = normalizeText(displayName);
+  if (text.includes("rice")) return "🌾";
+  if (text.includes("beans")) return "🫘";
+  if (text.includes("garri")) return "🥣";
+  if (text.includes("tomato")) return "🍅";
+  if (text.includes("pepper")) return "🌶️";
+  if (text.includes("oil")) return "🛢️";
+  if (text.includes("yam")) return "🍠";
+  if (text.includes("onion")) return "🧅";
+  if (text.includes("drink") || text.includes("water")) return "🥤";
+  if (text.includes("airtime") || text.includes("data")) return "📱";
+  if (text.includes("fuel") || text.includes("gas")) return "⛽";
+  if (text.includes("rent")) return "🏠";
+  if (text.includes("transport") || text.includes("trip") || text.includes("delivery")) return "🚚";
+  if (text.includes("packag")) return "📦";
+  if (text.includes("pay") || text.includes("wage")) return "👤";
+  if (text.includes("tool")) return "🧰";
+  if (text.includes("material")) return "🧱";
+  if (text.includes("payment") || text.includes("deposit") || text.includes("refund")) return "💵";
+  if (text.includes("platform") || text.includes("subscription")) return "🧾";
+  if (text.includes("hair") || text.includes("braid") || text.includes("loc")) return "💇";
+  if (text.includes("consult") || text.includes("project") || text.includes("service")) return "💼";
+  if (action === "receipt") return "💰";
+  if (action === "payment") return "💸";
+  if (action === "purchase") return "🛒";
+  return "🏷️";
 }
 
 function showScreen(id) {

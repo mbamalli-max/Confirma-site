@@ -332,10 +332,4 @@ body {
   display: block;
 }
 
-@media (max-width: 520px) {
-  .visual-grid,
-  .action-row,
-  .label-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
+@media (max-
