@@ -1006,8 +1006,9 @@ async function confirmAppend() {
   await bumpLabelUsage(record.normalized_label);
   resetCaptureForm();
   await renderRecentRecords();
+  await renderHistory();
   await renderDashboard();
-  showScreen("screen-capture");
+  showScreen("screen-dashboard");
 }
 
 function resetCaptureForm() {
