@@ -263,7 +263,9 @@ const state = {
   reminderDismissed: false,
   isConfirming: false,
   dashboardMetricsCache: null,
-  lowStorageWarning: ""
+  lowStorageWarning: "",
+  otpChallenge: null,
+  otpReturnScreen: "screen-capture"
 };
 
 let dashChart = null;
@@ -309,11 +311,13 @@ function cacheElements() {
     "change-confirm-modal", "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
     "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
-    "settings-capture-v2", "settings-summary-v2", "settings-change-profile-v2", "export-button-v2", "export-status-v2",
+    "settings-capture-v2", "settings-summary-v2", "settings-trust-v3", "settings-change-profile-v2",
+    "settings-open-trust-v3", "export-button-v2", "export-status-v2", "export-trust-status-v3", "export-open-trust-v3",
     "daily-reminder-banner", "dismiss-reminder-btn", "privacy-toggle-btn", "reminder-toggle", "pin-lock-toggle",
     "pin-setup-area", "pin-input-new", "pin-input-confirm", "pin-save-btn", "pin-remove-btn", "pin-setup-error",
     "settings-security-status", "pin-setup-label", "pin-lock-screen", "pin-error", "first-record-guide",
-    "storage-warning-v2"
+    "storage-warning-v2", "otp-back", "otp-status-card", "otp-phone-input", "otp-request-code",
+    "otp-helper-text", "otp-code-input", "otp-verify-code", "otp-error-text"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -344,7 +348,9 @@ function wireEvents() {
   });
   document.getElementById("back-home").addEventListener("click", () => showScreen("screen-capture"));
   document.getElementById("settings-change-profile-v2").addEventListener("click", openChangeProfileConfirm);
+  document.getElementById("settings-open-trust-v3").addEventListener("click", () => openTrustSetup("screen-settings"));
   document.getElementById("export-button-v2").addEventListener("click", generateExport);
+  document.getElementById("export-open-trust-v3").addEventListener("click", () => openTrustSetup("screen-export"));
   document.getElementById("dismiss-reminder-btn").addEventListener("click", dismissDailyReminder);
   document.getElementById("privacy-toggle-btn").addEventListener("click", togglePrivacyMode);
   document.getElementById("reminder-toggle").addEventListener("click", toggleReminderPreference);
@@ -356,6 +362,11 @@ function wireEvents() {
   document.getElementById("onboarding-name").addEventListener("input", updateFinishOnboardingState);
   document.getElementById("onboarding-phone").addEventListener("input", clearOnboardingProfileError);
   document.getElementById("onboarding-email").addEventListener("input", clearOnboardingProfileError);
+  document.getElementById("otp-back").addEventListener("click", () => showScreen(state.otpReturnScreen || "screen-capture"));
+  document.getElementById("otp-request-code").addEventListener("click", requestLocalOtpCode);
+  document.getElementById("otp-verify-code").addEventListener("click", verifyLocalOtpCode);
+  document.getElementById("otp-phone-input").addEventListener("input", clearOtpError);
+  document.getElementById("otp-code-input").addEventListener("input", clearOtpError);
   document.querySelectorAll(".pin-key").forEach((button) => {
     button.addEventListener("click", () => handlePinKey(button.dataset.digit));
   });
@@ -411,6 +422,7 @@ function renderCountryGrid() {
   COUNTRIES.forEach((country) => {
     els["country-grid"].appendChild(buildVisualCard(country.icon, country.name, "Country", () => {
       state.profile = {
+        ...(state.profile || {}),
         country: country.id,
         sector_id: null,
         business_type_id: null,
@@ -768,6 +780,13 @@ async function renderSettings() {
     ${renderSettingsRow("Last action", friendlyActionLabel(state.profile.last_action || "sale"))}
   `;
 
+  els["settings-trust-v3"].innerHTML = `
+    ${renderSettingsRow("Phone anchor", getPhoneAnchorStatusLabel())}
+    ${state.profile.identity_verified_at ? renderSettingsRow("Verified on", new Date(state.profile.identity_verified_at).toLocaleString()) : ""}
+    ${renderSettingsRow("Recovery contact", state.profile.email || state.profile.phone_number || "Not set")}
+    ${renderSettingsRow("Week A status", "Identity setup is ready. Signed ledger entries still need the protected write-path upgrade.")}
+  `;
+
   els["settings-capture-v2"].innerHTML = `
     ${renderSettingsRow("Primary recording mode", "Voice-first with text fallback")}
     ${renderSettingsRow("Confirmation rule", "Every transaction must be reviewed before append")}
@@ -1035,6 +1054,12 @@ async function removePinLock() {
 
 function renderExportScreen() {
   els["export-status-v2"].textContent = "";
+  if (els["export-trust-status-v3"]) {
+    els["export-trust-status-v3"].innerHTML = `
+      ${renderSettingsRow("Phone anchor", getPhoneAnchorStatusLabel())}
+      ${renderSettingsRow("Recovery contact", state.profile?.email || state.profile?.phone_number || "Not set")}
+    `;
+  }
   refreshStorageWarning();
 }
 
@@ -1059,11 +1084,13 @@ async function generateExport() {
   });
 
   const output = [
-    "CONFIRMA V2 EXPORT",
+    "CONFIRMA V3 EXPORT",
     `Generated: ${new Date().toLocaleString()}`,
     `Profile: ${countryName(state.profile.country)} / ${BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id)?.name || "Unknown"}`,
     state.profile.display_name ? `Name: ${state.profile.display_name}` : null,
     state.profile.region ? `Region: ${state.profile.region}` : null,
+    `Phone Anchor: ${getPhoneAnchorStatusLabel()}`,
+    `Recovery Contact: ${state.profile.email || state.profile.phone_number || "Not set"}`,
     `Entries: ${records.length}`,
     "---",
     ...lines,
@@ -2145,6 +2172,12 @@ function showScreen(id) {
   updateBottomNav(id);
 }
 
+function openTrustSetup(returnScreen = "screen-capture") {
+  state.otpReturnScreen = returnScreen;
+  renderOtpScreen();
+  showScreen("screen-otp");
+}
+
 function updateBottomNav(activeScreenId) {
   const visibleScreens = new Set([
     "screen-capture",
@@ -2191,6 +2224,99 @@ function parseMinor(value) {
 function updateAmountInputStep() {
   if (!els["amount-input-v2"]) return;
   els["amount-input-v2"].step = state.profile?.country === "US" ? "0.01" : "1";
+}
+
+function renderOtpScreen() {
+  if (!els["otp-phone-input"]) return;
+  els["otp-phone-input"].value = state.profile?.phone_number || "";
+  els["otp-code-input"].value = "";
+  els["otp-helper-text"].textContent = state.otpChallenge
+    ? `Local demo code for this device: ${state.otpChallenge.code}. It expires in 10 minutes.`
+    : "Generate a local code to prototype the phone-anchor flow before SMS delivery is connected.";
+  els["otp-status-card"].innerHTML = `
+    ${renderSettingsRow("Current status", getPhoneAnchorStatusLabel())}
+    ${renderSettingsRow("Phone on profile", state.profile?.phone_number || "Not set")}
+    ${renderSettingsRow("Email for delivery", state.profile?.email || "Not set")}
+  `;
+  clearOtpError();
+}
+
+async function requestLocalOtpCode() {
+  if (!state.profile) return;
+  const phoneNumber = els["otp-phone-input"]?.value.trim() || "";
+  if (!isValidPhoneNumber(phoneNumber)) {
+    showOtpError("Enter a valid phone number");
+    return;
+  }
+
+  const random = new Uint32Array(1);
+  crypto.getRandomValues(random);
+  const code = String(random[0] % 1000000).padStart(6, "0");
+  state.otpChallenge = {
+    code,
+    phoneNumber,
+    expiresAt: Date.now() + 10 * 60 * 1000
+  };
+  state.profile.phone_number = phoneNumber;
+  await saveProfile(state.profile);
+  renderOtpScreen();
+}
+
+async function verifyLocalOtpCode() {
+  if (!state.profile) return;
+  const enteredCode = (els["otp-code-input"]?.value || "").trim();
+  const activeChallenge = state.otpChallenge;
+  if (!activeChallenge) {
+    showOtpError("Generate a code first");
+    return;
+  }
+  if (Date.now() > activeChallenge.expiresAt) {
+    state.otpChallenge = null;
+    renderOtpScreen();
+    showOtpError("This code expired. Generate a new one");
+    return;
+  }
+  if (!/^\d{6}$/.test(enteredCode) || enteredCode !== activeChallenge.code) {
+    showOtpError("Enter the 6-digit code shown for this device");
+    return;
+  }
+
+  state.profile.phone_number = activeChallenge.phoneNumber;
+  state.profile.identity_anchor = "phone";
+  state.profile.identity_status = "verified_local";
+  state.profile.identity_verified_at = Date.now();
+  state.otpChallenge = null;
+  await saveProfile(state.profile);
+  renderOtpScreen();
+  const returnScreen = state.otpReturnScreen || "screen-capture";
+  if (returnScreen === "screen-settings") {
+    await renderSettings();
+  }
+  if (returnScreen === "screen-export") {
+    renderExportScreen();
+  }
+  showScreen(returnScreen);
+}
+
+function getPhoneAnchorStatusLabel() {
+  if (state.profile?.identity_status === "verified_local") {
+    return "Verified on this device (local Week A prototype)";
+  }
+  return "Not verified yet";
+}
+
+function isValidPhoneNumber(value) {
+  return /^\+?[\d\s\-]{7,15}$/.test(value);
+}
+
+function showOtpError(message) {
+  if (!els["otp-error-text"]) return;
+  els["otp-error-text"].hidden = !message;
+  els["otp-error-text"].textContent = message || "";
+}
+
+function clearOtpError() {
+  showOtpError("");
 }
 
 function renderFirstRecordGuide(records) {

@@ -137,6 +137,44 @@
       </div>
     </section>
 
+    <section class="screen" id="screen-otp">
+      <header class="topbar">
+        <div>
+          <strong>Phone verification</strong>
+          <span>Prepare this device for trusted exports and recovery</span>
+        </div>
+        <button class="pill-button" id="otp-back" type="button">Back</button>
+      </header>
+
+      <div class="panel">
+        <h2>Verify your phone on this device</h2>
+        <p class="subtle">This is the Week A identity setup flow. For now, the code is generated locally on this device so we can wire the trust journey before SMS delivery goes live.</p>
+        <div class="settings-list" id="otp-status-card"></div>
+      </div>
+
+      <div class="panel">
+        <label class="field">
+          Phone number
+          <input id="otp-phone-input" type="tel" placeholder="+234 or +1 ..." autocomplete="tel" inputmode="tel">
+        </label>
+        <div class="button-stack">
+          <button class="btn btn-secondary" id="otp-request-code" type="button">Generate local code</button>
+        </div>
+        <p class="record-meta" id="otp-helper-text"></p>
+      </div>
+
+      <div class="panel">
+        <label class="field">
+          Enter 6-digit code
+          <input id="otp-code-input" type="text" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+        </label>
+        <div class="button-stack">
+          <button class="btn btn-primary" id="otp-verify-code" type="button">Verify phone on this device</button>
+        </div>
+        <p class="error" id="otp-error-text" hidden></p>
+      </div>
+    </section>
+
     <section class="screen" id="screen-capture">
       <header class="topbar">
         <div>
@@ -331,6 +369,10 @@
         <div class="settings-list" id="settings-profile-v2"></div>
       </div>
       <div class="panel">
+        <h2>Device trust</h2>
+        <div class="settings-list" id="settings-trust-v3"></div>
+      </div>
+      <div class="panel">
         <h2>Recording setup</h2>
         <div class="settings-list" id="settings-capture-v2"></div>
       </div>
@@ -385,6 +427,7 @@
       </div>
       <div class="panel">
         <div class="button-stack">
+          <button class="btn btn-primary" id="settings-open-trust-v3" type="button">Set up phone verification</button>
           <button class="btn btn-secondary" id="settings-change-profile-v2" type="button">Change business profile</button>
           <button class="btn btn-secondary" id="settings-open-export-v2" type="button" data-target-screen="screen-export">Open export</button>
         </div>
@@ -401,6 +444,8 @@
       <div class="panel">
         <h2>Free export</h2>
         <p class="subtle">Download confirmed transactions with a simple integrity trail for review.</p>
+        <div class="settings-list" id="export-trust-status-v3"></div>
+        <button class="btn btn-secondary" id="export-open-trust-v3" type="button">Open phone verification</button>
         <button class="btn btn-primary" id="export-button-v2" type="button">Generate export</button>
         <p class="record-meta" id="export-status-v2"></p>
         <p class="record-meta storage-warning" id="storage-warning-v2" hidden></p>
