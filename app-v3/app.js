@@ -1,5 +1,12 @@
+import {
+  getDefaultSyncApiBaseUrl,
+  requestOtpCode,
+  syncQueuedEntries,
+  verifyOtpCode
+} from "./syncWorker.js";
+
 const DB_NAME = "confirma-v3-db";
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 const FEATURE_TRANSFER_PRIMARY = false;
 
 const SECTORS = [
@@ -265,7 +272,19 @@ const state = {
   dashboardMetricsCache: null,
   lowStorageWarning: "",
   otpChallenge: null,
-  otpReturnScreen: "screen-capture"
+  otpReturnScreen: "screen-capture",
+  devicePrivateKey: null,
+  devicePublicKey: "",
+  deviceIdentity: "",
+  publicKeyFingerprint: "",
+  authToken: "",
+  authTokenExpiresAt: "",
+  syncApiBaseUrl: "",
+  syncStatus: "Sync not configured yet.",
+  syncInFlight: false,
+  syncQueueCount: 0,
+  lastSyncAt: "",
+  lastSyncReceipt: ""
 };
 
 let dashChart = null;
@@ -281,7 +300,12 @@ async function init() {
   state.db = await openDb();
   await loadCustomLabelsIntoCatalog();
   state.profile = await getProfile();
+  await loadDeviceTrustState();
+  await loadSyncState();
   wireEvents();
+  window.addEventListener("online", () => {
+    void flushSyncQueue();
+  });
   registerPwa();
   renderOnboarding();
   renderActionRows();
@@ -293,6 +317,7 @@ async function init() {
       showPinLock();
     }
     await showCapture();
+    void flushSyncQueue();
   } else {
     showScreen("screen-onboarding");
   }
@@ -783,8 +808,16 @@ async function renderSettings() {
   els["settings-trust-v3"].innerHTML = `
     ${renderSettingsRow("Phone anchor", getPhoneAnchorStatusLabel())}
     ${state.profile.identity_verified_at ? renderSettingsRow("Verified on", new Date(state.profile.identity_verified_at).toLocaleString()) : ""}
+    ${renderSettingsRow("Device key", getDeviceKeyStatusLabel())}
+    ${state.publicKeyFingerprint ? renderSettingsRow("Public key fingerprint", state.publicKeyFingerprint) : ""}
+    ${state.deviceIdentity ? renderSettingsRow("Device identity", state.deviceIdentity) : ""}
+    ${renderSettingsRow("Sync server", state.syncApiBaseUrl || "Not configured")}
+    ${renderSettingsRow("Auth session", getAuthSessionStatusLabel())}
+    ${renderSettingsRow("Queued sync entries", String(state.syncQueueCount))}
+    ${renderSettingsRow("Sync status", state.syncStatus || "Idle")}
+    ${state.lastSyncAt ? renderSettingsRow("Last sync", new Date(state.lastSyncAt).toLocaleString()) : ""}
     ${renderSettingsRow("Recovery contact", state.profile.email || state.profile.phone_number || "Not set")}
-    ${renderSettingsRow("Week A status", "Identity setup is ready. Signed ledger entries still need the protected write-path upgrade.")}
+    ${renderSettingsRow("Week B status", isSigningReady() ? "This device can sign locally and queue entries for server sync." : "Finish phone verification and device key setup before confirming new entries.")}
   `;
 
   els["settings-capture-v2"].innerHTML = `
@@ -1057,6 +1090,10 @@ function renderExportScreen() {
   if (els["export-trust-status-v3"]) {
     els["export-trust-status-v3"].innerHTML = `
       ${renderSettingsRow("Phone anchor", getPhoneAnchorStatusLabel())}
+      ${renderSettingsRow("Device key", getDeviceKeyStatusLabel())}
+      ${state.publicKeyFingerprint ? renderSettingsRow("Public key fingerprint", state.publicKeyFingerprint) : ""}
+      ${renderSettingsRow("Sync status", state.syncStatus || "Idle")}
+      ${renderSettingsRow("Queued sync entries", String(state.syncQueueCount))}
       ${renderSettingsRow("Recovery contact", state.profile?.email || state.profile?.phone_number || "Not set")}
     `;
   }
@@ -1079,9 +1116,15 @@ async function generateExport() {
       record.transaction_type,
       record.label,
       formatMoney(record.amount_minor, currency),
-      timestamp
+      timestamp,
+      record.signature ? "signed: true" : "unsigned: true"
     ].join(" | ");
   });
+  const signedCount = records.filter((record) => Boolean(record.signature)).length;
+  const unsignedCount = records.length - signedCount;
+  const verificationStatus = signedCount
+    ? "Device-signed on this device. Server attestation coming."
+    : "Legacy unsigned history only. Complete phone verification to start device signing.";
 
   const output = [
     "CONFIRMA V3 EXPORT",
@@ -1090,13 +1133,20 @@ async function generateExport() {
     state.profile.display_name ? `Name: ${state.profile.display_name}` : null,
     state.profile.region ? `Region: ${state.profile.region}` : null,
     `Phone Anchor: ${getPhoneAnchorStatusLabel()}`,
+    `Device Key: ${getDeviceKeyStatusLabel()}`,
+    state.publicKeyFingerprint ? `Public Key Fingerprint: ${state.publicKeyFingerprint}` : null,
+    `Sync Server: ${state.syncApiBaseUrl || "Not configured"}`,
+    `Sync Status: ${state.syncStatus || "Idle"}`,
+    `Queued Sync Entries: ${state.syncQueueCount}`,
     `Recovery Contact: ${state.profile.email || state.profile.phone_number || "Not set"}`,
     `Entries: ${records.length}`,
+    `Signed entries: ${signedCount}`,
+    `Unsigned legacy entries: ${unsignedCount}`,
     "---",
     ...lines,
     "---",
     `Ledger Root Hash: ${ledgerRootHash}`,
-    "Verification Status: Device-verified on this device. Server attestation coming."
+    `Verification Status: ${verificationStatus}`
   ].filter(Boolean).join("\n");
 
   const blob = new Blob([output], { type: "text/plain" });
@@ -1481,6 +1531,10 @@ async function saveCustomLabel() {
 
 function prepareConfirmation() {
   clearError();
+  const signingBlockReason = getSigningBlockReason();
+  if (signingBlockReason) {
+    return showError(signingBlockReason);
+  }
   const amount = parseMinor(els["amount-input-v2"].value);
   if (!state.selectedLabel) {
     return showError("Pick a label first.");
@@ -1538,14 +1592,18 @@ async function confirmAppend() {
       ...state.candidateRecord,
       confirmation_state: "confirmed"
     };
-    await appendLedgerRecord(record);
+    const appendedRecord = await appendLedgerRecord(record);
     await bumpLabelUsage(record.normalized_label);
+    await queueSyncRecord(appendedRecord);
     resetCaptureForm();
     await renderRecentRecords();
     await renderHistory();
     await renderDashboard();
     await checkDailyReminder();
     showScreen("screen-dashboard");
+    void flushSyncQueue();
+  } catch (error) {
+    window.alert(error.message || "Unable to confirm this record on this device.");
   } finally {
     state.isConfirming = false;
     document.getElementById("confirm-append").disabled = false;
@@ -2231,10 +2289,14 @@ function renderOtpScreen() {
   els["otp-phone-input"].value = state.profile?.phone_number || "";
   els["otp-code-input"].value = "";
   els["otp-helper-text"].textContent = state.otpChallenge
-    ? `Local demo code for this device: ${state.otpChallenge.code}. It expires in 10 minutes.`
-    : "Generate a local code to prototype the phone-anchor flow before SMS delivery is connected.";
+    ? getOtpHelperText()
+    : "Request a code. If the server is unavailable, Confirma falls back to a local development code for this device.";
   els["otp-status-card"].innerHTML = `
     ${renderSettingsRow("Current status", getPhoneAnchorStatusLabel())}
+    ${renderSettingsRow("Device key", getDeviceKeyStatusLabel())}
+    ${state.publicKeyFingerprint ? renderSettingsRow("Public key fingerprint", state.publicKeyFingerprint) : ""}
+    ${renderSettingsRow("Sync server", state.syncApiBaseUrl || "Not configured")}
+    ${renderSettingsRow("Auth session", getAuthSessionStatusLabel())}
     ${renderSettingsRow("Phone on profile", state.profile?.phone_number || "Not set")}
     ${renderSettingsRow("Email for delivery", state.profile?.email || "Not set")}
   `;
@@ -2249,16 +2311,29 @@ async function requestLocalOtpCode() {
     return;
   }
 
-  const random = new Uint32Array(1);
-  crypto.getRandomValues(random);
-  const code = String(random[0] % 1000000).padStart(6, "0");
-  state.otpChallenge = {
-    code,
-    phoneNumber,
-    expiresAt: Date.now() + 10 * 60 * 1000
-  };
   state.profile.phone_number = phoneNumber;
   await saveProfile(state.profile);
+  try {
+    const response = await requestOtpCode(state.syncApiBaseUrl, phoneNumber);
+    state.otpChallenge = {
+      phoneNumber,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      source: "server",
+      devCode: response.dev_code || ""
+    };
+    state.syncStatus = "OTP requested from sync server.";
+  } catch (error) {
+    const random = new Uint32Array(1);
+    crypto.getRandomValues(random);
+    const code = String(random[0] % 1000000).padStart(6, "0");
+    state.otpChallenge = {
+      code,
+      phoneNumber,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      source: "local"
+    };
+    state.syncStatus = "Sync server unavailable. Using local OTP fallback.";
+  }
   renderOtpScreen();
 }
 
@@ -2276,17 +2351,50 @@ async function verifyLocalOtpCode() {
     showOtpError("This code expired. Generate a new one");
     return;
   }
-  if (!/^\d{6}$/.test(enteredCode) || enteredCode !== activeChallenge.code) {
+  if (!/^\d{6}$/.test(enteredCode)) {
+    showOtpError("Enter a valid 6-digit code");
+    return;
+  }
+  if (activeChallenge.source === "server") {
+    try {
+      const response = await verifyOtpCode(activeChallenge.serverBaseUrl || state.syncApiBaseUrl, activeChallenge.phoneNumber, enteredCode);
+      state.authToken = response.auth_token || "";
+      state.authTokenExpiresAt = response.expires_at || "";
+      state.profile.identity_anchor = "phone";
+      state.profile.identity_status = "verified_server";
+      state.profile.identity_verified_at = Date.now();
+      state.profile.phone_number = activeChallenge.phoneNumber;
+      await Promise.all([
+        saveProfile(state.profile),
+        saveSetting("auth_token", state.authToken),
+        saveSetting("auth_token_expires_at", state.authTokenExpiresAt)
+      ]);
+      state.syncStatus = "Phone verified with sync server.";
+    } catch (error) {
+      showOtpError(error.message || "Server OTP verification failed.");
+      return;
+    }
+  } else if (enteredCode !== activeChallenge.code) {
     showOtpError("Enter the 6-digit code shown for this device");
+    return;
+  } else {
+    state.profile.phone_number = activeChallenge.phoneNumber;
+    state.profile.identity_anchor = "phone";
+    state.profile.identity_status = "verified_local";
+    state.profile.identity_verified_at = Date.now();
+    await saveProfile(state.profile);
+    state.syncStatus = "Phone verified locally. Sign-in with the server still pending.";
+  }
+
+  try {
+    await ensureDeviceKeyMaterial();
+  } catch (error) {
+    showOtpError(error.message || "Phone verified, but device key setup failed.");
     return;
   }
 
-  state.profile.phone_number = activeChallenge.phoneNumber;
-  state.profile.identity_anchor = "phone";
-  state.profile.identity_status = "verified_local";
-  state.profile.identity_verified_at = Date.now();
   state.otpChallenge = null;
-  await saveProfile(state.profile);
+  await refreshSyncQueueCount();
   renderOtpScreen();
   const returnScreen = state.otpReturnScreen || "screen-capture";
   if (returnScreen === "screen-settings") {
@@ -2295,12 +2403,16 @@ async function verifyLocalOtpCode() {
   if (returnScreen === "screen-export") {
     renderExportScreen();
   }
+  void flushSyncQueue();
   showScreen(returnScreen);
 }
 
 function getPhoneAnchorStatusLabel() {
+  if (state.profile?.identity_status === "verified_server") {
+    return "Verified with sync server";
+  }
   if (state.profile?.identity_status === "verified_local") {
-    return "Verified on this device (local Week A prototype)";
+    return "Verified on this device (local fallback)";
   }
   return "Not verified yet";
 }
@@ -2491,6 +2603,11 @@ function wireReverseButtons(records) {
 }
 
 function prepareReversalRecord(record) {
+  const signingBlockReason = getSigningBlockReason();
+  if (signingBlockReason) {
+    window.alert(signingBlockReason);
+    return;
+  }
   state.candidateRecord = {
     transaction_type: "reversal",
     label: record.label,
@@ -2524,10 +2641,20 @@ function openDb() {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
-      if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings", { keyPath: "key" });
-      if (!db.objectStoreNames.contains("records")) db.createObjectStore("records", { keyPath: "id" });
-      if (!db.objectStoreNames.contains("customLabels")) db.createObjectStore("customLabels", { keyPath: "id" });
-      if (!db.objectStoreNames.contains("usage")) db.createObjectStore("usage", { keyPath: "normalized_label" });
+      if (event.oldVersion < 1) {
+        if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings", { keyPath: "key" });
+        if (!db.objectStoreNames.contains("records")) db.createObjectStore("records", { keyPath: "id" });
+        if (!db.objectStoreNames.contains("customLabels")) db.createObjectStore("customLabels", { keyPath: "id" });
+        if (!db.objectStoreNames.contains("usage")) db.createObjectStore("usage", { keyPath: "normalized_label" });
+      }
+      if (event.oldVersion < 2) {
+        if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings", { keyPath: "key" });
+      }
+      if (event.oldVersion < 3) {
+        if (!db.objectStoreNames.contains("syncQueue")) {
+          db.createObjectStore("syncQueue", { keyPath: "queue_id", autoIncrement: true });
+        }
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -2552,6 +2679,71 @@ function saveProfile(profile) {
   });
 }
 
+function getSetting(key) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readonly");
+    const request = tx.objectStore("settings").get(key);
+    request.onsuccess = () => resolve(request.result ? request.result.value : null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function saveSetting(key, value) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readwrite");
+    tx.objectStore("settings").put({ key, value });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function getSyncQueueEntries(limit = 25) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("syncQueue", "readonly");
+    const request = tx.objectStore("syncQueue").getAll();
+    request.onsuccess = () => resolve(
+      request.result
+        .sort((a, b) => a.queue_id - b.queue_id)
+        .slice(0, limit)
+    );
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function getSyncQueueCount() {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("syncQueue", "readonly");
+    const request = tx.objectStore("syncQueue").count();
+    request.onsuccess = () => resolve(request.result || 0);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function refreshSyncQueueCount() {
+  state.syncQueueCount = await getSyncQueueCount();
+}
+
+function addSyncQueueEntry(item) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("syncQueue", "readwrite");
+    tx.objectStore("syncQueue").add(item);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function removeSyncQueueEntries(queueIds) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("syncQueue", "readwrite");
+    const store = tx.objectStore("syncQueue");
+    queueIds.forEach((queueId) => {
+      store.delete(queueId);
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 function getRecords() {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("records", "readonly");
@@ -2567,12 +2759,15 @@ async function appendLedgerRecord(record) {
   const confirmedAt = Math.floor(Date.now() / 1000);
   const prevHash = last ? last.entry_hash : "0".repeat(64);
   const entryHash = await sha256(buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash));
+  const signature = await signEntryHash(entryHash);
   const payload = {
     ...record,
     id,
     confirmed_at: confirmedAt,
     prev_entry_hash: prevHash,
-    entry_hash: entryHash
+    entry_hash: entryHash,
+    signature,
+    public_key_fingerprint: state.publicKeyFingerprint || null
   };
 
   return new Promise((resolve, reject) => {
@@ -2590,6 +2785,162 @@ function getLastRecord() {
     request.onsuccess = () => resolve(request.result ? request.result.value : null);
     request.onerror = () => reject(request.error);
   });
+}
+
+async function loadDeviceTrustState() {
+  if (!state.db) return;
+  const [devicePrivateKey, devicePublicKey, deviceIdentity, publicKeyFingerprint] = await Promise.all([
+    getSetting("device_private_key"),
+    getSetting("device_public_key"),
+    getSetting("device_identity"),
+    getSetting("public_key_fingerprint")
+  ]);
+  state.devicePrivateKey = devicePrivateKey || null;
+  state.devicePublicKey = devicePublicKey || "";
+  state.deviceIdentity = deviceIdentity || "";
+  state.publicKeyFingerprint = publicKeyFingerprint || "";
+}
+
+async function loadSyncState() {
+  if (!state.db) return;
+  const [authToken, authTokenExpiresAt, syncApiBaseUrl, lastSyncAt, lastSyncReceipt] = await Promise.all([
+    getSetting("auth_token"),
+    getSetting("auth_token_expires_at"),
+    getSetting("sync_api_base_url"),
+    getSetting("last_sync_at"),
+    getSetting("last_sync_receipt")
+  ]);
+  state.authToken = authToken || "";
+  state.authTokenExpiresAt = authTokenExpiresAt || "";
+  state.syncApiBaseUrl = syncApiBaseUrl || getDefaultSyncApiBaseUrl();
+  state.lastSyncAt = lastSyncAt || "";
+  state.lastSyncReceipt = lastSyncReceipt || "";
+  if (!syncApiBaseUrl && state.syncApiBaseUrl) {
+    await saveSetting("sync_api_base_url", state.syncApiBaseUrl);
+  }
+  await refreshSyncQueueCount();
+  state.syncStatus = state.authToken
+    ? "Ready to sync queued entries."
+    : "Waiting for server OTP verification.";
+}
+
+async function ensureDeviceKeyMaterial() {
+  if (!hasVerifiedPhoneAnchor()) {
+    throw new Error("Verify a phone number before setting up this device key.");
+  }
+  if (!isWebCryptoAvailable()) {
+    throw new Error("This browser does not support WebCrypto signing.");
+  }
+  if (state.devicePrivateKey && state.devicePublicKey && state.deviceIdentity && state.publicKeyFingerprint) {
+    return;
+  }
+
+  const keyPair = await crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["sign", "verify"]
+  );
+  const exportedPublicKey = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+  const publicKeyString = canonicalizePublicJwk(exportedPublicKey);
+  const publicKeyHash = await sha256(publicKeyString);
+  const deviceIdentity = publicKeyHash.slice(0, 32);
+  const publicKeyFingerprint = publicKeyHash.slice(0, 16);
+
+  await Promise.all([
+    saveSetting("device_private_key", keyPair.privateKey),
+    saveSetting("device_public_key", publicKeyString),
+    saveSetting("device_identity", deviceIdentity),
+    saveSetting("public_key_fingerprint", publicKeyFingerprint)
+  ]);
+
+  state.devicePrivateKey = keyPair.privateKey;
+  state.devicePublicKey = publicKeyString;
+  state.deviceIdentity = deviceIdentity;
+  state.publicKeyFingerprint = publicKeyFingerprint;
+}
+
+async function signEntryHash(entryHash) {
+  const signingBlockReason = getSigningBlockReason();
+  if (signingBlockReason) {
+    throw new Error(signingBlockReason);
+  }
+  const signatureBuffer = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    state.devicePrivateKey,
+    hexToBytes(entryHash)
+  );
+  return bytesToBase64(new Uint8Array(signatureBuffer));
+}
+
+async function queueSyncRecord(record) {
+  await addSyncQueueEntry({
+    entry_id: record.id,
+    entry_hash: record.entry_hash,
+    device_identity: state.deviceIdentity || "",
+    status: "queued",
+    attempt_count: 0,
+    queued_at: Date.now(),
+    entry_payload: record
+  });
+  await refreshSyncQueueCount();
+  state.syncStatus = state.authToken
+    ? "Entry queued for server sync."
+    : "Entry signed locally and queued. Complete server OTP to sync.";
+}
+
+async function flushSyncQueue() {
+  if (state.syncInFlight || !state.db) return;
+  const queuedEntries = await getSyncQueueEntries(25);
+  if (!queuedEntries.length) {
+    state.syncStatus = state.authToken ? "All queued entries synced." : state.syncStatus;
+    await refreshSyncQueueCount();
+    return;
+  }
+  if (!state.authToken) {
+    state.syncStatus = "Queued entries are waiting for server OTP verification.";
+    await refreshSyncQueueCount();
+    return;
+  }
+  if (!state.syncApiBaseUrl) {
+    state.syncStatus = "Queued entries cannot sync until a sync server URL is configured.";
+    return;
+  }
+  if (!(state.deviceIdentity && state.devicePublicKey)) {
+    state.syncStatus = "Device identity is missing, so server sync is paused.";
+    return;
+  }
+
+  state.syncInFlight = true;
+  state.syncStatus = `Syncing ${queuedEntries.length} queued entr${queuedEntries.length === 1 ? "y" : "ies"}...`;
+
+  try {
+    const response = await syncQueuedEntries(state.syncApiBaseUrl, state.authToken, {
+      device_identity: state.deviceIdentity,
+      public_key: state.devicePublicKey,
+      entries: queuedEntries.map((item) => item.entry_payload)
+    });
+    await removeSyncQueueEntries(queuedEntries.map((item) => item.queue_id));
+    state.lastSyncAt = new Date().toISOString();
+    state.lastSyncReceipt = response.server_receipt || "";
+    await Promise.all([
+      saveSetting("last_sync_at", state.lastSyncAt),
+      saveSetting("last_sync_receipt", state.lastSyncReceipt)
+    ]);
+    await refreshSyncQueueCount();
+    state.syncStatus = response.synced_count
+      ? `Synced ${response.synced_count} entr${response.synced_count === 1 ? "y" : "ies"} to the server.`
+      : "Server already had the queued entries.";
+  } catch (error) {
+    if (error.statusCode === 401) {
+      state.syncStatus = "Sync auth expired. Re-verify your phone.";
+    } else if (error.statusCode === 409) {
+      state.syncStatus = "Server reported a fork. Sync paused until remediation.";
+    } else {
+      state.syncStatus = error.message || "Sync failed. Entries remain queued.";
+    }
+  } finally {
+    state.syncInFlight = false;
+  }
 }
 
 function getUsageMap() {
@@ -2682,6 +3033,89 @@ function loadCustomLabelsIntoCatalog() {
 async function sha256(input) {
   const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
   return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function canonicalizePublicJwk(jwk) {
+  return JSON.stringify({
+    key_ops: jwk.key_ops || ["verify"],
+    ext: Boolean(jwk.ext),
+    kty: jwk.kty,
+    crv: jwk.crv,
+    x: jwk.x,
+    y: jwk.y
+  });
+}
+
+function hasVerifiedPhoneAnchor() {
+  return Boolean(
+    (state.profile?.identity_status === "verified_local" || state.profile?.identity_status === "verified_server")
+    && state.profile?.phone_number
+  );
+}
+
+function isWebCryptoAvailable() {
+  return Boolean(window.crypto?.subtle && window.crypto?.getRandomValues);
+}
+
+function isSigningReady() {
+  return !getSigningBlockReason();
+}
+
+function getDeviceKeyStatusLabel() {
+  if (!isWebCryptoAvailable()) return "WebCrypto not available in this browser";
+  if (state.devicePrivateKey && state.publicKeyFingerprint) return "Ready on this device";
+  if (hasVerifiedPhoneAnchor()) return "Phone verified, device key still missing";
+  return "Not set up yet";
+}
+
+function getAuthSessionStatusLabel() {
+  if (state.authToken && state.authTokenExpiresAt) {
+    return `Active until ${new Date(state.authTokenExpiresAt).toLocaleString()}`;
+  }
+  if (state.authToken) return "Active";
+  return "No server session yet";
+}
+
+function getSigningBlockReason() {
+  if (!hasVerifiedPhoneAnchor()) {
+    return "Verify your phone before confirming a new record.";
+  }
+  if (!isWebCryptoAvailable()) {
+    return "This browser does not support device signing, so confirmation is disabled.";
+  }
+  if (!(state.devicePrivateKey && state.publicKeyFingerprint)) {
+    return "Finish device key setup before confirming a new record.";
+  }
+  return "";
+}
+
+function getOtpHelperText() {
+  if (!state.otpChallenge) {
+    return "";
+  }
+  if (state.otpChallenge.source === "server" && state.otpChallenge.devCode) {
+    return `Server OTP requested. Development code: ${state.otpChallenge.devCode}. It expires in 10 minutes.`;
+  }
+  if (state.otpChallenge.source === "server") {
+    return "Server OTP requested. Enter the code sent by the sync server.";
+  }
+  return `Local fallback code for this device: ${state.otpChallenge.code}. It expires in 10 minutes.`;
+}
+
+function hexToBytes(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let index = 0; index < hex.length; index += 2) {
+    bytes[index / 2] = parseInt(hex.slice(index, index + 2), 16);
+  }
+  return bytes;
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
 }
 
 function buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash) {

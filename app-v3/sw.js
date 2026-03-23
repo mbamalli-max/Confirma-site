@@ -1,9 +1,10 @@
-const CACHE_NAME = "confirma-v3-cache-v1";
+const CACHE_NAME = "confirma-v3-cache-v2";
 const FILES = [
   "/app-v3",
   "/app-v3/index.html",
   "/app-v3/styles.css",
   "/app-v3/app.js",
+  "/app-v3/syncWorker.js",
   "/app-v3/manifest.json",
   "/app/icons/icon.svg"
 ];
