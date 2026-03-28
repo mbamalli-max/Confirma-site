@@ -25,6 +25,23 @@ const COUNTRIES = [
   { id: "NG", name: "Nigeria", icon: "🇳🇬" }
 ];
 
+const CAPTURE_EXAMPLES = {
+  NG: [
+    "Sold 3 bags of rice for 75,000",
+    "Paid supplier 45,000",
+    "Received rent 150,000",
+    "Bought fuel for 12,500",
+    "Customer paid 28,000"
+  ],
+  US: [
+    "Sold 50 units for 385",
+    "Paid vendor 1,200",
+    "Received payment 2,500",
+    "Bought supplies for 89",
+    "Client paid 450"
+  ]
+};
+
 const BUSINESS_TYPES = [
   { id: "ng_market_trader", country: "NG", sector_id: "trade_retail", name: "Market Trader", icon: "🧺" },
   { id: "ng_provision_shop", country: "NG", sector_id: "trade_retail", name: "Provision Shop", icon: "🏪" },
@@ -276,6 +293,8 @@ const state = {
   otpChallenge: null,
   otpReturnScreen: "screen-capture",
   activeRecognition: null,
+  captureExampleIndex: 0,
+  captureExampleInterval: null,
   phoneVerified: false,
   devicePrivateKey: null,
   devicePublicKey: "",
@@ -340,6 +359,7 @@ function cacheElements() {
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
     "speech-results", "browse-results", "speech-status", "custom-label-input", "onboarding-back",
     "change-confirm-modal", "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
+    "voice-example-v2",
     "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-capture-v2", "settings-summary-v2", "settings-trust-v3", "settings-change-profile-v2",
@@ -1432,12 +1452,12 @@ function setVoiceRecordError(message) {
 function handleQuickTextRecord() {
   const input = els["quick-text-input-v2"].value.trim();
   if (!input) {
-    setVoiceRecordError("Type a short transaction like: Sold rice for 15000.");
+    setVoiceRecordError(`Type a short transaction like: ${getCurrentCaptureExample()}.`);
     return;
   }
   const parsed = parseNaturalTransaction(input);
   if (!parsed) {
-    setVoiceRecordError("Could not understand that. Try: Sold rice for 15000.");
+    setVoiceRecordError(`Could not understand that. Try: ${getCurrentCaptureExample()}.`);
     return;
   }
   applyParsedTransactionToCapture(parsed);
@@ -1476,6 +1496,16 @@ function parseNaturalTransaction(input) {
     return { action: "receipt", labelQuery: match[1].trim(), amountMinor: parseMinor(match[2]), counterparty: "" };
   }
 
+  match = text.match(/^(?:received|receive)\s+(.+?)\s+([0-9,.]+)$/i);
+  if (match) {
+    return { action: "receipt", labelQuery: match[1].trim(), amountMinor: parseMinor(match[2]), counterparty: "" };
+  }
+
+  match = text.match(/^(customer|client)\s+paid\s+([0-9,.]+)$/i);
+  if (match) {
+    return { action: "receipt", labelQuery: "Customer Payment", amountMinor: parseMinor(match[2]), counterparty: match[1].trim() };
+  }
+
   return null;
 }
 
@@ -1499,7 +1529,7 @@ function startVoiceRecordShortcut() {
     const transcript = event.results[0][0].transcript;
     const parsed = parseNaturalTransaction(transcript);
     if (!parsed || !parsed.amountMinor) {
-      setVoiceRecordError("Could not understand that. Try: Sold rice for 15000.");
+      setVoiceRecordError(`Could not understand that. Try: ${getCurrentCaptureExample()}.`);
     } else {
       applyParsedTransactionToCapture(parsed);
     }
@@ -2456,6 +2486,11 @@ function showScreen(id) {
   const previousScreen = document.querySelector(".screen.active")?.id || null;
   document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
   document.getElementById(id).classList.add("active");
+  if (id === "screen-capture") {
+    startCaptureExampleRotation();
+  } else if (previousScreen === "screen-capture" || state.captureExampleInterval) {
+    stopCaptureExampleRotation();
+  }
   if (id !== "screen-confirm") {
     cancelConfirmationSpeech();
   }
@@ -2534,6 +2569,49 @@ function getCountryDialCode(country) {
   if (countryId === "US") return "+1";
   if (countryId === "NG") return "+234";
   return "";
+}
+
+function getCaptureExamples(country) {
+  const countryId = getRecognizedCountryId(country);
+  return countryId === "US" ? CAPTURE_EXAMPLES.US : CAPTURE_EXAMPLES.NG;
+}
+
+function getCurrentCaptureExample(country = state.profile?.country) {
+  const examples = getCaptureExamples(country);
+  const index = state.captureExampleIndex % examples.length;
+  return examples[index] || examples[0] || "";
+}
+
+function renderCaptureExample() {
+  const example = getCurrentCaptureExample();
+  if (els["voice-label-v2"]) {
+    els["voice-label-v2"].textContent = "Tap to speak your transaction";
+  }
+  if (els["voice-example-v2"]) {
+    els["voice-example-v2"].textContent = `Try saying: "${example}"`;
+  }
+  if (els["quick-text-input-v2"]) {
+    els["quick-text-input-v2"].placeholder = example;
+  }
+}
+
+function stopCaptureExampleRotation() {
+  if (state.captureExampleInterval) {
+    window.clearInterval(state.captureExampleInterval);
+    state.captureExampleInterval = null;
+  }
+}
+
+function startCaptureExampleRotation() {
+  stopCaptureExampleRotation();
+  state.captureExampleIndex = 0;
+  renderCaptureExample();
+  if (!els["voice-example-v2"] && !els["quick-text-input-v2"]) return;
+  state.captureExampleInterval = window.setInterval(() => {
+    const examples = getCaptureExamples(state.profile?.country);
+    state.captureExampleIndex = (state.captureExampleIndex + 1) % examples.length;
+    renderCaptureExample();
+  }, 3000);
 }
 
 function getOnboardingPhonePlaceholder(country) {
@@ -2811,20 +2889,24 @@ function clearOtpError() {
 
 function renderFirstRecordGuide(records) {
   if (!els["first-record-guide"]) return;
+  const examples = getCaptureExamples(state.profile?.country);
+  const voiceExample = examples[0] || "Sold 3 bags of rice for 75,000";
+  const secondVoiceExample = examples[1] || "Paid supplier 45,000";
+  const textExample = examples[2] || voiceExample;
   els["first-record-guide"].innerHTML = `
     <strong>📋 Record your first transaction</strong>
     <div style="margin-top:8px;line-height:1.7">
       <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--primary-mid)">
         By voice
       </strong><br>
-      Tap the mic, speak naturally — "Sold rice for 15,000" or "Paid transport 2,000".<br>
+      Tap the mic, speak naturally — "${voiceExample}" or "${secondVoiceExample}".<br>
       The app fills the action, label, and amount. Review, then confirm.
     </div>
     <div style="margin-top:10px;line-height:1.7">
       <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--primary-mid)">
         By text
       </strong><br>
-      Type a short phrase in the text box — same format. Or tap a quick-pick label,
+      Type a short phrase in the text box — for example "${textExample}". Or tap a quick-pick label,
       enter the amount, then tap Review before confirming.
     </div>
     <div style="margin-top:10px;font-size:12px;color:var(--primary);font-weight:600">
@@ -3513,4 +3595,90 @@ function buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash) {
 }
 
 function getCustomLabelLearnedFrom() {
-  if (state.currentAction === "transfer") return state.tr
+  if (state.currentAction === "transfer") return state.transferSubtype;
+  return state.currentAction;
+}
+
+function customLabelContextForLearnedFrom(learnedFrom) {
+  if (learnedFrom === "transfer_in") return "receipt";
+  if (learnedFrom === "transfer_out") return "payment";
+  return learnedFrom;
+}
+
+async function requestServerOtpCode() {
+  const phoneInput = document.getElementById("otp-phone-input");
+  const country = getSelectedCountryId();
+  const phoneNumber = normalizePhoneNumber(phoneInput.value.trim(), country);
+
+  if (!phoneNumber) {
+    showOtpError(getPhoneValidationMessage(country));
+    return;
+  }
+
+  try {
+    clearOtpError();
+    const res = await fetch(`${state.syncApiBaseUrl}/auth/otp/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_number: phoneNumber })
+    });
+
+    const data = await res.json();
+    console.log("OTP request response:", data);
+
+    state.otpChallenge = {
+      phoneNumber,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      source: "server",
+      devCode: data.dev_code || ""
+    };
+    renderOtpScreen();
+  } catch (err) {
+    console.error(err);
+    showOtpError("Failed to request OTP");
+  }
+}
+
+async function verifyServerOtpCode() {
+  const phoneInput = document.getElementById("otp-phone-input");
+  const codeInput = document.getElementById("otp-code-input");
+
+  const country = getSelectedCountryId();
+  const phoneNumber = normalizePhoneNumber(phoneInput.value.trim(), country);
+  const code = codeInput.value.trim();
+
+  if (!phoneNumber || !code) {
+    showOtpError(!phoneNumber ? getPhoneValidationMessage(country) : "Enter phone and code");
+    return;
+  }
+
+  try {
+    clearOtpError();
+    const res = await fetch(`${state.syncApiBaseUrl}/auth/otp/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone_number: phoneNumber,
+        code: code
+      })
+    });
+
+    const data = await res.json();
+    console.log("OTP verify response:", data);
+
+    if (data.auth_token) {
+      localStorage.setItem("auth_token", data.auth_token);
+      alert("Server sign-in successful");
+      window.location.reload();
+
+      if (typeof syncQueuedEntries === "function") {
+        await syncQueuedEntries();
+      }
+    } else {
+      alert("Verification failed");
+    }
+  } catch (err) {
+    console.error(err);
+    showOtpError("Failed to verify OTP");
+  }
+}
