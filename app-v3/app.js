@@ -341,12 +341,12 @@ function cacheElements() {
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-capture-v2", "settings-summary-v2", "settings-trust-v3", "settings-change-profile-v2",
     "settings-open-trust-v3", "export-button-v2", "export-status-v2", "export-trust-status-v3", "export-open-trust-v3",
-    "verified-report-section", "payment-status",
+    "verified-report-section", "verified-report-region-note", "payment-tiers", "payment-status",
     "daily-reminder-banner", "dismiss-reminder-btn", "privacy-toggle-btn", "reminder-toggle", "pin-lock-toggle",
     "pin-setup-area", "pin-input-new", "pin-input-confirm", "pin-save-btn", "pin-remove-btn", "pin-setup-error",
     "settings-security-status", "pin-setup-label", "pin-lock-screen", "pin-error", "first-record-guide",
     "storage-warning-v2", "loan-readiness-banner", "banner-tier-icon", "banner-headline", "banner-subtext", "banner-cta",
-    "otp-back", "otp-status-card", "otp-phone-input", "otp-request-code",
+    "otp-back", "otp-status-card", "otp-country-prefix", "otp-phone-input", "otp-request-code",
     "otp-helper-text", "otp-code-input", "otp-verify-code", "otp-error-text"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
@@ -574,28 +574,40 @@ function buildVisualCard(icon, title, description, onClick, active) {
 
 async function finishOnboarding() {
   clearOnboardingProfileError();
-  if (!state.profile.preferred_labels) state.profile.preferred_labels = [];
-  state.profile.display_name = document.getElementById("onboarding-name")?.value.trim() || "";
-  state.profile.phone_number = document.getElementById("onboarding-phone")?.value.trim() || "";
-  state.profile.email = document.getElementById("onboarding-email")?.value.trim() || "";
-  state.profile.region = document.getElementById("onboarding-state")?.value.trim() || "";
-  state.profile.birth_year = document.getElementById("onboarding-birth-year")?.value.trim() || "";
-  state.profile.gender = document.getElementById("onboarding-gender")?.value || "";
+  const country = getSelectedCountryId();
+  const displayName = document.getElementById("onboarding-name")?.value.trim() || "";
+  const rawPhoneNumber = document.getElementById("onboarding-phone")?.value.trim() || "";
+  const normalizedPhoneNumber = rawPhoneNumber ? normalizePhoneNumber(rawPhoneNumber, country) : "";
+  const email = document.getElementById("onboarding-email")?.value.trim() || "";
+  const region = document.getElementById("onboarding-state")?.value.trim() || "";
+  const birthYear = document.getElementById("onboarding-birth-year")?.value.trim() || "";
+  const gender = document.getElementById("onboarding-gender")?.value || "";
 
-  if (!state.profile.display_name) {
+  if (!displayName) {
     updateFinishOnboardingState();
     return;
   }
 
-  if (state.profile.phone_number && !/^\+?[\d\s\-]{7,15}$/.test(state.profile.phone_number)) {
-    showOnboardingProfileError("Enter a valid phone number");
-    state.profile.phone_number = "";
+  if (rawPhoneNumber && !normalizedPhoneNumber) {
+    showOnboardingProfileError(getPhoneValidationMessage(country));
+    return;
   }
 
-  if (state.profile.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.profile.email)) {
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     showOnboardingProfileError("Enter a valid email address");
-    state.profile.email = "";
+    return;
   }
+
+  state.profile = {
+    ...(state.profile || {}),
+    preferred_labels: state.profile?.preferred_labels || [],
+    display_name: displayName,
+    phone_number: normalizedPhoneNumber,
+    email,
+    region,
+    birth_year: birthYear,
+    gender
+  };
 
   await saveProfile(state.profile);
   hydrateProfileUi();
@@ -1122,12 +1134,19 @@ async function removePinLock() {
 }
 
 function renderExportScreen() {
+  const verifiedReportsAvailable = supportsVerifiedReports(state.profile?.country);
   els["export-status-v2"].textContent = "";
   if (els["payment-status"]) {
     els["payment-status"].textContent = "";
   }
   if (els["verified-report-section"]) {
     els["verified-report-section"].hidden = !(state.authToken && state.deviceIdentity);
+  }
+  if (els["payment-tiers"]) {
+    els["payment-tiers"].hidden = !verifiedReportsAvailable;
+  }
+  if (els["verified-report-region-note"]) {
+    els["verified-report-region-note"].hidden = verifiedReportsAvailable;
   }
   if (els["export-trust-status-v3"]) {
     els["export-trust-status-v3"].innerHTML = `
@@ -1259,6 +1278,11 @@ function downloadBase64File(base64, filename, mimeType) {
 function initPaystackPayment(tier, amountKobo, windowDays) {
   if (!state.authToken || !state.deviceIdentity) {
     setPaymentStatus("Complete phone verification on this device before purchasing a verified report.");
+    return;
+  }
+
+  if (!supportsVerifiedReports(state.profile?.country)) {
+    setPaymentStatus("Verified Reports are coming soon for your region.");
     return;
   }
 
@@ -2430,7 +2454,120 @@ function normalizeText(value) {
 }
 
 function countryName(countryId) {
-  return COUNTRIES.find((item) => item.id === countryId)?.name || countryId;
+  return COUNTRIES.find((item) => item.id === normalizeCountryId(countryId))?.name || countryId;
+}
+
+function normalizeCountryId(country) {
+  if (country === "Nigeria" || country === "NG") return "NG";
+  if (country === "United States" || country === "US" || country === "USA" || country === "United States of America") return "US";
+  return country || "NG";
+}
+
+function getRecognizedCountryId(country) {
+  if (country === "Nigeria" || country === "NG") return "NG";
+  if (country === "United States" || country === "US" || country === "USA" || country === "United States of America") return "US";
+  return "";
+}
+
+function getSelectedCountryId() {
+  return normalizeCountryId(state.profile?.country);
+}
+
+function getCountryDialCode(country) {
+  const countryId = getRecognizedCountryId(country);
+  if (countryId === "US") return "+1";
+  if (countryId === "NG") return "+234";
+  return "";
+}
+
+function getOnboardingPhonePlaceholder(country) {
+  const countryId = getRecognizedCountryId(country);
+  if (countryId === "US") return "e.g. 2678867271";
+  if (countryId === "NG") return "e.g. 08099840666";
+  return "Phone number";
+}
+
+function getOtpPhonePlaceholder(country) {
+  const countryId = getRecognizedCountryId(country);
+  if (countryId === "US") return "2678867271";
+  if (countryId === "NG") return "08099840666";
+  return "Phone number";
+}
+
+function getRegionPlaceholder(country) {
+  const countryId = getRecognizedCountryId(country);
+  if (countryId === "US") {
+    return "e.g. Texas, California, New York";
+  }
+  if (countryId === "NG") {
+    return "e.g. Kano, Lagos, Abuja";
+  }
+  return "State or region";
+}
+
+function getPhoneValidationMessage(country) {
+  const countryId = getRecognizedCountryId(country);
+  if (countryId === "US") return "Enter a valid US phone number";
+  if (countryId === "NG") return "Enter a valid Nigerian phone number";
+  return "Enter a valid phone number";
+}
+
+function normalizePhoneNumber(value, country) {
+  const countryId = getRecognizedCountryId(country);
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+
+  if (countryId === "US") {
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    return "";
+  }
+
+  if (digits.length === 13 && digits.startsWith("234")) return `+${digits}`;
+  if (digits.length === 11 && digits.startsWith("0")) return `+234${digits.slice(1)}`;
+  if (digits.length === 10) return `+234${digits}`;
+  return "";
+}
+
+function isValidPhoneNumber(value, country) {
+  return Boolean(normalizePhoneNumber(value, country));
+}
+
+function formatPhoneForInput(value, country) {
+  const countryId = getRecognizedCountryId(country);
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+
+  if (countryId === "US") {
+    if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+    if (digits.length === 10) return digits;
+    return String(value || "");
+  }
+
+  if (digits.length === 13 && digits.startsWith("234")) return `0${digits.slice(3)}`;
+  if (digits.length === 11 && digits.startsWith("0")) return digits;
+  if (digits.length === 10) return `0${digits}`;
+  return String(value || "");
+}
+
+function syncCountryAwareInputs() {
+  const country = state.profile?.country;
+  if (els["onboarding-phone"]) {
+    els["onboarding-phone"].placeholder = getOnboardingPhonePlaceholder(country);
+  }
+  if (els["onboarding-state"]) {
+    els["onboarding-state"].placeholder = getRegionPlaceholder(country);
+  }
+  if (els["otp-phone-input"]) {
+    els["otp-phone-input"].placeholder = getOtpPhonePlaceholder(country);
+  }
+  if (els["otp-country-prefix"]) {
+    els["otp-country-prefix"].textContent = getCountryDialCode(country);
+  }
+}
+
+function supportsVerifiedReports(country) {
+  return normalizeCountryId(country) === "NG";
 }
 
 function parseMinor(value) {
@@ -2445,7 +2582,8 @@ function updateAmountInputStep() {
 
 function renderOtpScreen() {
   if (!els["otp-phone-input"]) return;
-  els["otp-phone-input"].value = state.profile?.phone_number || "";
+  syncCountryAwareInputs();
+  els["otp-phone-input"].value = formatPhoneForInput(state.profile?.phone_number || "", getSelectedCountryId());
   els["otp-code-input"].value = "";
   els["otp-helper-text"].textContent = state.otpChallenge
     ? getOtpHelperText()
@@ -2464,9 +2602,10 @@ function renderOtpScreen() {
 
 async function requestLocalOtpCode() {
   if (!state.profile) return;
-  const phoneNumber = els["otp-phone-input"]?.value.trim() || "";
-  if (!isValidPhoneNumber(phoneNumber)) {
-    showOtpError("Enter a valid phone number");
+  const country = getSelectedCountryId();
+  const phoneNumber = normalizePhoneNumber(els["otp-phone-input"]?.value.trim() || "", country);
+  if (!phoneNumber) {
+    showOtpError(getPhoneValidationMessage(country));
     return;
   }
 
@@ -2498,6 +2637,7 @@ async function requestLocalOtpCode() {
 
 async function verifyLocalOtpCode() {
   if (!state.profile) return;
+  const country = getSelectedCountryId();
   const enteredCode = (els["otp-code-input"]?.value || "").trim();
   const activeChallenge = state.otpChallenge;
   if (!activeChallenge) {
@@ -2514,15 +2654,20 @@ async function verifyLocalOtpCode() {
     showOtpError("Enter a valid 6-digit code");
     return;
   }
+  const normalizedChallengePhone = normalizePhoneNumber(activeChallenge.phoneNumber, country);
+  if (!normalizedChallengePhone) {
+    showOtpError(getPhoneValidationMessage(country));
+    return;
+  }
   if (activeChallenge.source === "server") {
     try {
-      const response = await verifyOtpCode(activeChallenge.serverBaseUrl || state.syncApiBaseUrl, activeChallenge.phoneNumber, enteredCode);
+      const response = await verifyOtpCode(activeChallenge.serverBaseUrl || state.syncApiBaseUrl, normalizedChallengePhone, enteredCode);
       state.authToken = response.auth_token || "";
       state.authTokenExpiresAt = response.expires_at || "";
       state.profile.identity_anchor = "phone";
       state.profile.identity_status = "verified_server";
       state.profile.identity_verified_at = Date.now();
-      state.profile.phone_number = activeChallenge.phoneNumber;
+      state.profile.phone_number = normalizedChallengePhone;
       await Promise.all([
         saveProfile(state.profile),
         saveSetting("auth_token", state.authToken),
@@ -2537,7 +2682,7 @@ async function verifyLocalOtpCode() {
     showOtpError("Enter the 6-digit code shown for this device");
     return;
   } else {
-    state.profile.phone_number = activeChallenge.phoneNumber;
+    state.profile.phone_number = normalizedChallengePhone;
     state.profile.identity_anchor = "phone";
     state.profile.identity_status = "verified_local";
     state.profile.identity_verified_at = Date.now();
@@ -2574,10 +2719,6 @@ function getPhoneAnchorStatusLabel() {
     return "Verified on this device (local fallback)";
   }
   return "Not verified yet";
-}
-
-function isValidPhoneNumber(value) {
-  return /^\+?[\d\s\-]{7,15}$/.test(value);
 }
 
 function showOtpError(message) {
@@ -2617,8 +2758,9 @@ function renderFirstRecordGuide(records) {
 
 function renderOnboardingProfileStep() {
   if (!els["onboarding-name"]) return;
+  syncCountryAwareInputs();
   els["onboarding-name"].value = state.profile?.display_name || "";
-  els["onboarding-phone"].value = state.profile?.phone_number || "";
+  els["onboarding-phone"].value = formatPhoneForInput(state.profile?.phone_number || "", getSelectedCountryId());
   els["onboarding-email"].value = state.profile?.email || "";
   els["onboarding-state"].value = state.profile?.region || "";
   els["onboarding-birth-year"].value = state.profile?.birth_year || "";
@@ -3296,14 +3438,16 @@ function customLabelContextForLearnedFrom(learnedFrom) {
 
 async function requestServerOtpCode() {
   const phoneInput = document.getElementById("otp-phone-input");
-  const phoneNumber = phoneInput.value.trim();
+  const country = getSelectedCountryId();
+  const phoneNumber = normalizePhoneNumber(phoneInput.value.trim(), country);
 
   if (!phoneNumber) {
-    alert("Enter phone number");
+    showOtpError(getPhoneValidationMessage(country));
     return;
   }
 
   try {
+    clearOtpError();
     const res = await fetch(`${state.syncApiBaseUrl}/auth/otp/request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3322,7 +3466,7 @@ async function requestServerOtpCode() {
     renderOtpScreen();
   } catch (err) {
     console.error(err);
-    alert("Failed to request OTP");
+    showOtpError("Failed to request OTP");
   }
 }
 
@@ -3330,15 +3474,17 @@ async function verifyServerOtpCode() {
   const phoneInput = document.getElementById("otp-phone-input");
   const codeInput = document.getElementById("otp-code-input");
 
-  const phoneNumber = phoneInput.value.trim();
+  const country = getSelectedCountryId();
+  const phoneNumber = normalizePhoneNumber(phoneInput.value.trim(), country);
   const code = codeInput.value.trim();
 
   if (!phoneNumber || !code) {
-    alert("Enter phone and code");
+    showOtpError(!phoneNumber ? getPhoneValidationMessage(country) : "Enter phone and code");
     return;
   }
 
   try {
+    clearOtpError();
     const res = await fetch(`${state.syncApiBaseUrl}/auth/otp/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3364,6 +3510,6 @@ async function verifyServerOtpCode() {
     }
   } catch (err) {
     console.error(err);
-    alert("Failed to verify OTP");
+    showOtpError("Failed to verify OTP");
   }
 }

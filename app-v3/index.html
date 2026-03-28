@@ -100,7 +100,7 @@
 
           <label class="field">
             Phone number
-            <input id="onboarding-phone" type="tel" placeholder="+234 or +1 ..." autocomplete="tel" inputmode="tel">
+            <input id="onboarding-phone" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel">
           </label>
 
           <label class="field">
@@ -110,7 +110,7 @@
 
           <label class="field">
             State / Region <span style="font-weight:400;color:var(--muted)">(optional)</span>
-            <input id="onboarding-state" type="text" placeholder="e.g. Kano, Lagos, Texas" autocomplete="address-level1">
+            <input id="onboarding-state" type="text" placeholder="State or region" autocomplete="address-level1">
           </label>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
@@ -157,7 +157,10 @@
       <div class="panel">
         <label class="field">
           Phone number
-          <input id="otp-phone-input" type="tel" placeholder="+234 or +1 ..." autocomplete="tel" inputmode="tel">
+          <div class="phone-input-shell">
+            <span class="phone-prefix" id="otp-country-prefix" aria-hidden="true">+234</span>
+            <input id="otp-phone-input" type="tel" placeholder="08099840666" autocomplete="tel" inputmode="tel">
+          </div>
         </label>
         <div class="button-stack">
           <button class="btn btn-secondary" id="otp-request-code" type="button">Generate local code</button>
@@ -462,6 +465,7 @@
         <div class="verified-report-section" id="verified-report-section" hidden>
           <h3>Verified Report (PDF)</h3>
           <p class="subtle">Server-attested PDF with QR code, full entry list, and integrity proof. Accepted by lenders.</p>
+          <p class="record-meta" id="verified-report-region-note" hidden>Verified Reports — coming soon for your region.</p>
           <div class="payment-tiers" id="payment-tiers">
             <button class="btn btn-secondary tier-btn" data-tier="bronze" data-amount="50000" data-window="30" type="button">
               ₦500 — 30 days
