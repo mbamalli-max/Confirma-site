@@ -2482,15 +2482,15 @@ function getCountryDialCode(country) {
 
 function getOnboardingPhonePlaceholder(country) {
   const countryId = getRecognizedCountryId(country);
-  if (countryId === "US") return "e.g. 2678867271";
-  if (countryId === "NG") return "e.g. 08099840666";
+  if (countryId === "US") return "e.g. 2125551234";
+  if (countryId === "NG") return "e.g. 08031234567";
   return "Phone number";
 }
 
 function getOtpPhonePlaceholder(country) {
   const countryId = getRecognizedCountryId(country);
-  if (countryId === "US") return "2678867271";
-  if (countryId === "NG") return "08099840666";
+  if (countryId === "US") return "2125551234";
+  if (countryId === "NG") return "08031234567";
   return "Phone number";
 }
 
