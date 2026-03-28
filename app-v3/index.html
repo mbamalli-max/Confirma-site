@@ -52,7 +52,17 @@
   <div class="app-shell">
     <section class="screen active" id="screen-onboarding">
       <div class="hero">
-        <div class="hero-mark">📒</div>
+        <div class="hero-mark" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="display:block;width:48px;height:48px">
+            <rect width="512" height="512" rx="108" fill="#1A3C34"/>
+            <rect x="120" y="90" width="272" height="332" rx="28" fill="#F7F3EE"/>
+            <rect x="154" y="122" width="36" height="268" rx="12" fill="#F4A261"/>
+            <rect x="212" y="156" width="140" height="18" rx="9" fill="#2D6A4F" opacity="0.78"/>
+            <rect x="212" y="210" width="116" height="18" rx="9" fill="#2D6A4F" opacity="0.55"/>
+            <rect x="212" y="264" width="132" height="18" rx="9" fill="#2D6A4F" opacity="0.55"/>
+            <rect x="212" y="318" width="98" height="18" rx="9" fill="#2D6A4F" opacity="0.55"/>
+          </svg>
+        </div>
         <div>
           <h1>Confirma</h1>
           <p>Voice-first transaction capture. Build verified financial history.</p>
@@ -564,4 +574,29 @@
       </div>
 
       <div class="modal-mode" data-mode-panel="speak">
-        <p class="subtle">Speak a label and Confirma will rank the best match
+        <p class="subtle">Speak a label and Confirma will rank the best matches before you confirm.</p>
+        <button class="btn btn-primary" id="speak-label-button" type="button">Speak label</button>
+        <p class="subtle" id="speech-status"></p>
+        <div class="ranked-list" id="speech-results"></div>
+      </div>
+
+      <div class="modal-mode" data-mode-panel="browse">
+        <div class="ranked-list" id="browse-results"></div>
+      </div>
+
+      <div class="modal-mode" data-mode-panel="other">
+        <p class="subtle">If you cannot find a match, confirm a custom label and Confirma will learn it for future ranking.</p>
+        <label class="field">
+          Custom label
+          <input id="custom-label-input" type="text" placeholder="Enter your label">
+        </label>
+        <button class="btn btn-secondary" id="save-custom-label" type="button">Use this custom label</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <script src="https://js.paystack.co/v2/inline.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
