@@ -3304,7 +3304,7 @@ async function requestServerOtpCode() {
   }
 
   try {
-    const res = await fetch("http://127.0.0.1:8787/auth/otp/request", {
+    const res = await fetch(`${state.syncApiBaseUrl}/auth/otp/request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone_number: phoneNumber })
