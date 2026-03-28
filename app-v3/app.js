@@ -3339,7 +3339,7 @@ async function verifyServerOtpCode() {
   }
 
   try {
-    const res = await fetch("http://127.0.0.1:8787/auth/otp/verify", {
+    const res = await fetch(`${state.syncApiBaseUrl}/auth/otp/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
