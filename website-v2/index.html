@@ -52,7 +52,7 @@
         <h1>Your business activity can become <em>financial identity.</em></h1>
         <p class="hero-lede">Confirma is a confirmation-gated, append-only ledger that turns everyday sales and expenses into permanent, bank-verifiable records. No bookkeeping jargon. No hidden edits. Only transactions you confirm.</p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="get-the-app.html">
+          <a class="btn btn-primary" data-confirma-app-link href="/app">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Open the App
           </a>
@@ -141,7 +141,7 @@
       </div>
       <div class="trust-item">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-        <span>Nigeria &amp; USA — multilingual support</span>
+        <span>Nigeria &amp; USA supported today</span>
       </div>
     </div>
   </div>
@@ -169,7 +169,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
           </div>
           <h3>For institutions</h3>
-          <p>Banks, SACCOs, microfinance lenders, and development finance partners get transaction history that is structured, tamper-resistant, and easier to verify.</p>
+          <p>Banks and lenders can review transaction history that is structured, tamper-resistant, and easier to verify than spreadsheets or memory-based summaries.</p>
         </article>
         <article class="card">
           <div class="card-icon">
@@ -192,7 +192,7 @@
           <div class="process-step">
             <div>
               <h3>Speak or type a transaction</h3>
-              <p>"Sold rice for 15,000." Voice-first on Android and Chrome, with text fallback everywhere else.</p>
+              <p>"Sold rice for 15,000." Confirma supports voice-first transaction recording with text fallback.</p>
             </div>
           </div>
           <div class="process-step">
@@ -215,8 +215,8 @@
         <p>Confirma helps record that story in a way lenders can take seriously. Over time, each confirmed entry contributes to a persistent financial trail that can support underwriting, reporting, and trust.</p>
         <ul class="check-list">
           <li>Trust tiers move from NEW → BRONZE → SILVER → GOLD based on sustained activity.</li>
-          <li>Exports include a ledger root hash and integrity code for offline verification.</li>
-          <li>Supports Nigeria and the United States, with multiple languages and accessible interaction modes.</li>
+          <li>Free exports include the ledger root hash, and verified exports can include a server attestation link and QR verification.</li>
+          <li>Supports Nigeria and the United States with country-aware onboarding, labels, and currency formatting.</li>
         </ul>
       </article>
     </div>
@@ -268,7 +268,7 @@
     <div class="shell audience-grid">
       <article class="card">
         <span class="eyebrow">Entrepreneurs</span>
-        <h2 style="font-size: clamp(1.5rem, 3vw, 2.2rem); margin-top: 0.75rem;">Build your financial history. Get access to credit.</h2>
+        <h2 style="font-size: clamp(1.5rem, 3vw, 2.2rem); margin-top: 0.75rem;">Build your financial history. Be ready for credit conversations.</h2>
         <p>Designed for informal Nigerian entrepreneurs first, then extended for global use, Confirma works with real-world business rhythms instead of demanding formal paperwork upfront.</p>
         <div class="button-row" style="margin-top: 1.5rem;">
           <a class="btn btn-blue" href="entrepreneurs.html">Explore entrepreneur view</a>
@@ -293,10 +293,10 @@
         <h2 style="font-size: clamp(1.6rem, 3vw, 2.4rem); margin-top: 0.75rem;">Open the PWA on your phone.</h2>
         <p>Confirma installs directly from the browser and works offline after setup. It is designed to feel simple and familiar on the devices people already use for business.</p>
         <div class="button-row" style="margin-top: 1.5rem;">
-          <a class="btn btn-primary" href="get-the-app.html">Install instructions</a>
-          <a class="btn btn-secondary" href="about.html">About Confirma</a>
+          <a class="btn btn-primary" data-confirma-app-link href="/app">Open the app</a>
+          <a class="btn btn-secondary" href="get-the-app.html">Install instructions</a>
         </div>
-        <p class="site-note">Available now at <strong>confirma-site.vercel.app/app</strong></p>
+        <p class="site-note">Available now at <strong data-confirma-app-text>https://confirma-site.vercel.app/app</strong></p>
       </article>
       <article class="install-card card-accent">
         <span class="badge-patent" style="margin-bottom: 1rem;">
@@ -307,8 +307,8 @@
         <p>Confirma's core design is covered by USPTO Provisional Patent Application <strong>No. 63/987,858</strong> for confirmation-gated authority architecture in constrained environments.</p>
         <ul class="simple-list" style="margin-top: 1rem;">
           <li>Inventors: Muhammad Bamalli and Ahmed Yaradua</li>
-          <li>Phase 1 complete: offline ledger, voice input, exports, dashboard, onboarding, multilingual support</li>
-          <li>Phase 2 next: signatures, sync, verified reports, live verification portal</li>
+          <li>Live today: onboarding, voice-first capture with text fallback, dashboard, and free export</li>
+          <li>Trust live today: OTP verification, entry signing, signed sync, attestation, and verified reports</li>
         </ul>
       </article>
     </div>
@@ -320,7 +320,7 @@
       <h2>Start building your financial identity today.</h2>
       <p>Confirma is free to install. Record a transaction, confirm it, and keep it permanently — no bookkeeping experience required.</p>
       <div class="cta-row" style="justify-content: center;">
-        <a class="btn btn-primary" href="get-the-app.html">
+        <a class="btn btn-primary" data-confirma-app-link href="/app">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Get the App — It's Free
         </a>
@@ -352,7 +352,7 @@
           <a href="about.html">About</a>
           <a href="about.html#patent">Patent</a>
           <a href="about.html#team">Team</a>
-          <a href="about.html#roadmap">Roadmap</a>
+          <a href="about.html#roadmap">Build status</a>
         </div>
         <div class="footer-col">
           <h4>Legal</h4>

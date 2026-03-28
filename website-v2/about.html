@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="About Confirma — mission, vision, inventors, USPTO patent filing, and product roadmap.">
+  <meta name="description" content="About Confirma — mission, vision, inventors, USPTO patent filing, and current product build status.">
   <meta name="theme-color" content="#1B2F1F">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <title>About | Confirma</title>
@@ -43,9 +43,9 @@
           <p class="hero-lede">The mission is to unlock access to formal financial services for underserved populations — including unbanked entrepreneurs and persons with disabilities — by turning daily economic activity into verifiable, unrewritable history.</p>
         </div>
         <aside class="hero-panel">
-          <span class="tag">Version</span>
+          <span class="tag">Build status</span>
           <p style="margin-top: 0.75rem; font-weight: 600; font-size: 1.05rem;">Confirma v1.0.0</p>
-          <p>Phase 1: Local Immutable Foundation</p>
+          <p>Installable PWA with a signed ledger, sync, attestation, and verified reports.</p>
           <div class="badge-patent" style="margin-top: 1rem; display: inline-flex;">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             USPTO Patent No. 63/987,858
@@ -116,25 +116,21 @@
         <div class="section-header">
           <div>
             <span class="tag">Build status</span>
-            <h2 style="margin-top: 0.75rem;">What exists now and what comes next.</h2>
+            <h2 style="margin-top: 0.75rem;">What is live today.</h2>
           </div>
         </div>
         <div class="timeline-grid">
           <article class="timeline">
-            <h3>
-              <span style="display:inline-flex; align-items:center; gap: 0.4rem; font-size:0.75rem; font-weight:700; color: var(--blue-700); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:0.5rem; background: var(--blue-50); padding: 0.25rem 0.6rem; border-radius: 999px;">Phase 1 — Complete</span>
-            </h3>
-            <p>Android PWA, voice and text input, immutable ledger, free export, dashboard chart, trust tier system, onboarding, settings, multilingual UI, Nigeria and USA support.</p>
+            <h3>Everyday recording layer</h3>
+            <p>Installable PWA, country-aware onboarding, voice-first transaction capture with text fallback, confirmation-gated append-only ledger, dashboard, and streak tracking.</p>
           </article>
           <article class="timeline">
-            <h3>
-              <span style="display:inline-flex; align-items:center; gap: 0.4rem; font-size:0.75rem; font-weight:700; color: var(--orange); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:0.5rem; background: var(--orange-light); padding: 0.25rem 0.6rem; border-radius: 999px; opacity:0.8;">Phase 2 — Next</span>
-            </h3>
-            <p>Device-bound Ed25519 signatures, server sync, fork detection, verified reports, and a live verification portal.</p>
+            <h3>Trust layer</h3>
+            <p>OTP phone verification, device identity registration, P-256 ECDSA signing on every entry, offline queueing, and signed sync with fork detection.</p>
           </article>
           <article class="timeline">
-            <h3>Phase 3</h3>
-            <p>Bank API integration, loan-readiness notifications, agent verification workflow, and an iOS native app.</p>
+            <h3>Verification layer</h3>
+            <p>Server attestation returns a `vt_id` and `verify_url`, the verification portal checks status and fork state, and Paystack powers paid Verified Report PDFs.</p>
           </article>
           <article class="timeline">
             <h3>Long-term ambition</h3>
@@ -167,7 +163,7 @@
           <a href="about.html">About</a>
           <a href="about.html#patent">Patent</a>
           <a href="about.html#team">Team</a>
-          <a href="about.html#roadmap">Roadmap</a>
+          <a href="about.html#roadmap">Build status</a>
         </div>
         <div class="footer-col">
           <h4>Legal</h4>
