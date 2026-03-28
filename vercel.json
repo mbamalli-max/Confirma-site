@@ -1,4 +1,18 @@
 {
   "cleanUrls": true,
-  "trailingSlash": false
+  "trailingSlash": false,
+  "headers": [
+    {
+      "source": "/app/sw.js",
+      "headers": [
+        { "key": "Service-Worker-Allowed", "value": "/app" }
+      ]
+    }
+  ],
+  "rewrites": [
+    { "source": "/app", "destination": "/app-v3/index.html" },
+    { "source": "/app/:match*", "destination": "/app-v3/:match*" },
+    { "source": "/verify/:vt_id", "destination": "/website-v2/verify.html" },
+    { "source": "/:match*", "destination": "/website-v2/:match*" }
+  ]
 }

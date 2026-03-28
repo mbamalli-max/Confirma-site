@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Confirma turns everyday business activity into bank-verifiable financial history with a confirmation-gated, append-only ledger. Built for informal entrepreneurs everywhere.">
+  <meta name="theme-color" content="#1B2F1F">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <title>Confirma — Financial Identity Infrastructure for Every Business</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="site.js" defer></script>
+</head>
+<body>
+
+  <!-- ── Header ──────────────────────────────────────────── -->
+  <header class="site-header">
+    <div class="shell topbar">
+      <a class="brand" href="index.html" aria-label="Confirma home">
+        <div class="brand-logo" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 12 10 16 18 8"/></svg>
+        </div>
+        <span class="brand-name">Confirma</span>
+      </a>
+      <nav class="nav" aria-label="Primary navigation" id="main-nav">
+        <a href="index.html" class="active">Home</a>
+        <a href="entrepreneurs.html">For Entrepreneurs</a>
+        <a href="banks.html">For Banks</a>
+        <a href="how-it-works.html">How It Works</a>
+        <a href="about.html">About</a>
+        <a href="get-the-app.html" class="nav-cta">Get the App</a>
+      </nav>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav" aria-label="Toggle navigation">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Hero ────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="shell hero-grid">
+      <div>
+        <div class="hero-kicker">
+          <span class="eyebrow">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+            Built for informal entrepreneurs
+          </span>
+          <span class="badge-patent" aria-label="USPTO Patent Application Filed">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            USPTO Patent Filed
+          </span>
+        </div>
+        <h1>Your business activity can become <em>financial identity.</em></h1>
+        <p class="hero-lede">Confirma is a confirmation-gated, append-only ledger that turns everyday sales and expenses into permanent, bank-verifiable records. No bookkeeping jargon. No hidden edits. Only transactions you confirm.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="get-the-app.html">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Open the App
+          </a>
+          <a class="btn btn-secondary" href="how-it-works.html">See How Verification Works</a>
+        </div>
+        <div class="stats-row" role="list" aria-label="Product facts">
+          <div class="stat-item" role="listitem">
+            <strong>Offline first</strong>
+            <span>Works on Android &amp; iPhone</span>
+          </div>
+          <div class="stat-item" role="listitem">
+            <strong>Append-only</strong>
+            <span>No edits after confirmation</span>
+          </div>
+          <div class="stat-item" role="listitem">
+            <strong>SHA-256</strong>
+            <span>Cryptographic hash chain</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phone mockup -->
+      <div class="mockup-wrap" aria-hidden="true">
+        <div class="mockup-glow"></div>
+        <div class="phone">
+          <div class="phone-screen">
+            <div class="app-top">
+              <strong>Confirma</strong>
+              <span>Record your business. Build your history.</span>
+            </div>
+            <div class="app-panel">
+              <div class="pill-row">
+                <span class="pill active">Sale</span>
+                <span class="pill">Expense</span>
+                <span class="pill">Transfer</span>
+              </div>
+              <div class="mock-input">Sold rice for 15,000</div>
+              <div class="mock-confirm-card">
+                <strong>You sold rice for ₦15,000.</strong>
+                <span>Do you confirm this transaction?</span>
+              </div>
+              <div class="mock-cta">Confirm Transaction</div>
+              <div class="metric-strip">
+                <div class="metric-box">
+                  <span>Today's sales</span>
+                  <strong>₦42,500</strong>
+                </div>
+                <div class="metric-box">
+                  <span>Trust tier</span>
+                  <strong>BRONZE</strong>
+                </div>
+              </div>
+            </div>
+            <div class="app-panel chart-card">
+              <strong style="display:block; font-size: 0.82rem; font-weight: 700; color: var(--slate-700);">Sales trend — 7 days</strong>
+              <div class="chart">
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Trust belt ───────────────────────────────────────── -->
+  <div class="trust-belt" role="complementary" aria-label="Key product attributes">
+    <div class="shell trust-belt-inner">
+      <div class="trust-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>USPTO Provisional Patent <strong>No. 63/987,858</strong></span>
+      </div>
+      <div class="trust-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span>Confirmation-gated authority architecture</span>
+      </div>
+      <div class="trust-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span>SHA-256 cryptographic hash chain</span>
+      </div>
+      <div class="trust-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        <span>Nigeria &amp; USA — multilingual support</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── What it is ────────────────────────────────────────── -->
+  <section class="section">
+    <div class="shell">
+      <div class="section-header">
+        <div>
+          <span class="tag">Plain-language product story</span>
+          <h2 style="margin-top: 0.75rem;">Not accounting software.<br>Record formation infrastructure.</h2>
+        </div>
+        <p class="section-copy">Confirma is designed for people whose businesses are real, active, and valuable — but whose financial lives are still invisible to formal lenders.</p>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <div class="card-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><line x1="16" y1="11" x2="16" y2="11"/></svg>
+          </div>
+          <h3>For entrepreneurs</h3>
+          <p>Market traders, food vendors, artisans, transport operators, and side hustlers can build usable financial history from daily activity they already understand.</p>
+        </article>
+        <article class="card">
+          <div class="card-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          </div>
+          <h3>For institutions</h3>
+          <p>Banks, SACCOs, microfinance lenders, and development finance partners get transaction history that is structured, tamper-resistant, and easier to verify.</p>
+        </article>
+        <article class="card">
+          <div class="card-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3>For trust</h3>
+          <p>Every confirmed transaction becomes permanent, receives a unique ID, and links back to the previous record through a cryptographic hash chain.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── How it works ──────────────────────────────────────── -->
+  <section class="section" style="background: var(--slate-50); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+    <div class="shell story-grid">
+      <article class="story">
+        <span class="eyebrow">How it works</span>
+        <h2>Say it. Confirm it. Keep it.</h2>
+        <div class="process-list">
+          <div class="process-step">
+            <div>
+              <h3>Speak or type a transaction</h3>
+              <p>"Sold rice for 15,000." Voice-first on Android and Chrome, with text fallback everywhere else.</p>
+            </div>
+          </div>
+          <div class="process-step">
+            <div>
+              <h3>Review the plain-language summary</h3>
+              <p>The app reads it back so the user stays in control before anything becomes final.</p>
+            </div>
+          </div>
+          <div class="process-step">
+            <div>
+              <h3>Confirm to write permanently</h3>
+              <p>Only explicit confirmation creates a ledger record. No edits, no deletes, no admin override path.</p>
+            </div>
+          </div>
+        </div>
+      </article>
+      <article class="story accent-panel">
+        <span class="eyebrow">Why it matters</span>
+        <h2>Your activity is already a credit story.</h2>
+        <p>Confirma helps record that story in a way lenders can take seriously. Over time, each confirmed entry contributes to a persistent financial trail that can support underwriting, reporting, and trust.</p>
+        <ul class="check-list">
+          <li>Trust tiers move from NEW → BRONZE → SILVER → GOLD based on sustained activity.</li>
+          <li>Exports include a ledger root hash and integrity code for offline verification.</li>
+          <li>Supports Nigeria and the United States, with multiple languages and accessible interaction modes.</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <!-- ── Trust tiers ────────────────────────────────────────── -->
+  <section class="section">
+    <div class="shell">
+      <div class="section-header">
+        <div>
+          <span class="tag">Trust tiers</span>
+          <h2 style="margin-top: 0.75rem;">Consistency becomes signal.</h2>
+        </div>
+        <p class="section-copy">Confirma rewards continuity, not hype. The more consistently a business records real activity, the stronger its financial identity becomes.</p>
+      </div>
+      <div class="trust-grid">
+        <article class="trust-band">
+          <span class="trust-stage">NEW</span>
+          <strong>Starting the record</strong>
+          <p>Every ledger begins with first use. The goal is simple: create a clear, trustworthy habit of confirmation-based recording.</p>
+        </article>
+        <article class="trust-band">
+          <span class="trust-stage">BRONZE — 30 days</span>
+          <strong>Early continuity</strong>
+          <p>After a month of active history, the ledger starts showing usable persistence and a foundation for first-level review.</p>
+        </article>
+        <article class="trust-band">
+          <span class="trust-stage">SILVER — 90 days</span>
+          <strong>Bank-relevant history</strong>
+          <p>Ninety days starts to resemble a meaningful operating picture. Reporting and underwriting conversations become stronger.</p>
+        </article>
+      </div>
+      <div style="margin-top: 1.25rem; display: grid; grid-template-columns: 1fr 2fr; gap: 1.25rem;">
+        <article class="trust-band card-accent">
+          <span class="trust-stage">GOLD — 180 days</span>
+          <strong>Established financial identity</strong>
+          <p>Six months of consistent, append-only activity creates a deeper record institutions can inspect with confidence.</p>
+        </article>
+        <article class="quote-card" style="grid-column: 2;">
+          <p>"Your business activity is your credit history — if it's recorded right." Confirma is built around that idea from the first transaction to the exported report.</p>
+          <strong>Core message</strong>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Audience ───────────────────────────────────────────── -->
+  <section class="section" style="background: var(--slate-50); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+    <div class="shell audience-grid">
+      <article class="card">
+        <span class="eyebrow">Entrepreneurs</span>
+        <h2 style="font-size: clamp(1.5rem, 3vw, 2.2rem); margin-top: 0.75rem;">Build your financial history. Get access to credit.</h2>
+        <p>Designed for informal Nigerian entrepreneurs first, then extended for global use, Confirma works with real-world business rhythms instead of demanding formal paperwork upfront.</p>
+        <div class="button-row" style="margin-top: 1.5rem;">
+          <a class="btn btn-blue" href="entrepreneurs.html">Explore entrepreneur view</a>
+        </div>
+      </article>
+      <article class="card">
+        <span class="eyebrow">Banks and institutions</span>
+        <h2 style="font-size: clamp(1.5rem, 3vw, 2.2rem); margin-top: 0.75rem;">Verified, tamper-resistant SME records.</h2>
+        <p>Confirma gives lenders a clearer window into operating businesses that have revenue but lack conventional financial statements or bookkeeping history.</p>
+        <div class="button-row" style="margin-top: 1.5rem;">
+          <a class="btn btn-ghost" href="banks.html">Explore institutional view</a>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ── Install + Patent ────────────────────────────────────── -->
+  <section class="section">
+    <div class="shell install-grid">
+      <article class="install-card">
+        <span class="eyebrow">Install</span>
+        <h2 style="font-size: clamp(1.6rem, 3vw, 2.4rem); margin-top: 0.75rem;">Open the PWA on your phone.</h2>
+        <p>Confirma installs directly from the browser and works offline after setup. It is designed to feel simple and familiar on the devices people already use for business.</p>
+        <div class="button-row" style="margin-top: 1.5rem;">
+          <a class="btn btn-primary" href="get-the-app.html">Install instructions</a>
+          <a class="btn btn-secondary" href="about.html">About Confirma</a>
+        </div>
+        <p class="site-note">Available now at <strong>confirma-site.vercel.app/app</strong></p>
+      </article>
+      <article class="install-card card-accent">
+        <span class="badge-patent" style="margin-bottom: 1rem;">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Patent Filed
+        </span>
+        <h2 style="font-size: clamp(1.6rem, 3vw, 2.4rem);">Protected architecture, practical mission.</h2>
+        <p>Confirma's core design is covered by USPTO Provisional Patent Application <strong>No. 63/987,858</strong> for confirmation-gated authority architecture in constrained environments.</p>
+        <ul class="simple-list" style="margin-top: 1rem;">
+          <li>Inventors: Muhammad Bamalli and Ahmed Yaradua</li>
+          <li>Phase 1 complete: offline ledger, voice input, exports, dashboard, onboarding, multilingual support</li>
+          <li>Phase 2 next: signatures, sync, verified reports, live verification portal</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <!-- ── CTA ────────────────────────────────────────────────── -->
+  <section class="cta-section">
+    <div class="shell" style="position: relative; z-index: 1;">
+      <h2>Start building your financial identity today.</h2>
+      <p>Confirma is free to install. Record a transaction, confirm it, and keep it permanently — no bookkeeping experience required.</p>
+      <div class="cta-row" style="justify-content: center;">
+        <a class="btn btn-primary" href="get-the-app.html">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Get the App — It's Free
+        </a>
+        <a class="btn btn-secondary" href="how-it-works.html">How it works</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ─────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="shell">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand-logo" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 12 10 16 18 8"/></svg>
+          </div>
+          <span class="footer-brand-name">Confirma</span>
+          <p class="footer-tagline">Accessible financial records for every business, everywhere. Building financial identity infrastructure for overlooked entrepreneurs.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <a href="how-it-works.html">How It Works</a>
+          <a href="entrepreneurs.html">For Entrepreneurs</a>
+          <a href="banks.html">For Banks</a>
+          <a href="get-the-app.html">Get the App</a>
+        </div>
+        <div class="footer-col">
+          <h4>Company</h4>
+          <a href="about.html">About</a>
+          <a href="about.html#patent">Patent</a>
+          <a href="about.html#team">Team</a>
+          <a href="about.html#roadmap">Roadmap</a>
+        </div>
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <a href="#">Privacy Policy</a>
+          <a href="#">Terms of Service</a>
+          <a href="#">Security</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p class="footer-copy">© 2025 Confirma. USPTO Provisional Patent Application No. 63/987,858.</p>
+        <div class="footer-links-bottom">
+          <a href="entrepreneurs.html">Entrepreneurs</a>
+          <a href="banks.html">Banks</a>
+          <a href="about.html">About</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

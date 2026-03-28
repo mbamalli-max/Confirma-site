@@ -1,11 +1,11 @@
-const CACHE_NAME = "confirma-v3-cache-v2";
+const CACHE_NAME = "confirma-cache-v3";
 const FILES = [
-  "/app-v3",
-  "/app-v3/index.html",
-  "/app-v3/styles.css",
-  "/app-v3/app.js",
-  "/app-v3/syncWorker.js",
-  "/app-v3/manifest.json",
+  "/app",
+  "/app/index.html",
+  "/app/styles.css",
+  "/app/app.js",
+  "/app/syncWorker.js",
+  "/app/manifest.json",
   "/app/icons/icon.svg"
 ];
 
@@ -33,7 +33,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.mode === "navigate") {
     event.respondWith(
-      caches.match("/app-v3/index.html").then((cached) => cached || fetch(event.request))
+      caches.match("/app/index.html").then((cached) => cached || fetch(event.request))
     );
     return;
   }

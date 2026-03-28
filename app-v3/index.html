@@ -6,13 +6,14 @@
   <meta name="theme-color" content="#1A3C34">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Confirma V3">
-  <meta name="description" content="Confirma V3 is the next-stage voice-first transaction capture system.">
-  <link rel="manifest" href="/app-v3/manifest.json">
-  <link rel="apple-touch-icon" href="/app/icons/icon.svg">
-  <link rel="stylesheet" href="/app-v3/styles.css">
+  <meta name="apple-mobile-web-app-title" content="Confirma">
+  <meta name="description" content="Confirma — voice-first transaction capture. Build verified financial history.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link rel="stylesheet" href="styles.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-  <title>Confirma V3</title>
+  <title>Confirma</title>
 </head>
 <body>
   <div id="pin-lock-screen" hidden>
@@ -52,8 +53,8 @@
       <div class="hero">
         <div class="hero-mark">📒</div>
         <div>
-          <h1>Confirma V3</h1>
-          <p>Voice-first, taxonomy-driven transaction capture.</p>
+          <h1>Confirma</h1>
+          <p>Voice-first transaction capture. Build verified financial history.</p>
         </div>
       </div>
 
@@ -178,7 +179,7 @@
     <section class="screen" id="screen-capture">
       <header class="topbar">
         <div>
-          <strong>Confirma V3</strong>
+          <strong>Confirma</strong>
           <span id="profile-summary"></span>
         </div>
         <button class="pill-button" id="change-profile" type="button">Change</button>
@@ -351,6 +352,16 @@
           <div class="streak-row">🔥 <strong id="dash-streak-v2">0</strong> day streak</div>
         </div>
       </div>
+      <div class="panel loan-readiness-banner" id="loan-readiness-banner" hidden>
+        <div class="banner-content">
+          <span class="banner-icon" id="banner-tier-icon">🥉</span>
+          <div>
+            <strong id="banner-headline">You have 30 days of verified history.</strong>
+            <p class="subtle" id="banner-subtext">Generate your Verified Report to share with lenders.</p>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="banner-cta" type="button" data-target-screen="screen-export">Get Verified Report</button>
+      </div>
       <div class="panel">
         <h2>Recent confirmed records</h2>
         <div class="history-list" id="dashboard-records-v2"></div>
@@ -447,6 +458,22 @@
         <div class="settings-list" id="export-trust-status-v3"></div>
         <button class="btn btn-secondary" id="export-open-trust-v3" type="button">Open phone verification</button>
         <button class="btn btn-primary" id="export-button-v2" type="button">Generate export</button>
+        <div class="verified-report-section" id="verified-report-section" hidden>
+          <h3>Verified Report (PDF)</h3>
+          <p class="subtle">Server-attested PDF with QR code, full entry list, and integrity proof. Accepted by lenders.</p>
+          <div class="payment-tiers" id="payment-tiers">
+            <button class="btn btn-secondary tier-btn" data-tier="bronze" data-amount="50000" data-window="30" type="button">
+              ₦500 — 30 days
+            </button>
+            <button class="btn btn-secondary tier-btn" data-tier="silver" data-amount="150000" data-window="90" type="button">
+              ₦1,500 — 90 days
+            </button>
+            <button class="btn btn-primary tier-btn" data-tier="gold" data-amount="250000" data-window="0" type="button">
+              ₦2,500 — Full history
+            </button>
+          </div>
+          <p class="record-meta" id="payment-status"></p>
+        </div>
         <p class="record-meta" id="export-status-v2"></p>
         <p class="record-meta storage-warning" id="storage-warning-v2" hidden></p>
       </div>
@@ -540,6 +567,8 @@
     </div>
   </div>
 
-  <script type="module" src="/app-v3/app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <script src="https://js.paystack.co/v2/inline.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

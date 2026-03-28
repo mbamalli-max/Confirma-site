@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Public verification portal for Confirma export attestations.">
+  <meta name="theme-color" content="#1B2F1F">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <title>Verification Portal | Confirma</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Calistoga:ital@0;1&family=Inter:wght@300;400;500;600;700&display=swap');
+
+    :root {
+      --blue-900: #1B2F1F;
+      --blue-800: #1B4332;
+      --blue-700: #2D6A4F;
+      --blue-600: #40916C;
+      --blue-100: #D8F3DC;
+      --blue-50: #E8F5E9;
+      --orange: #E8944A;
+      --orange-dark: #D07B35;
+      --orange-light: #F5D4B3;
+      --forest: #2D6A4F;
+      --forest-light: #52B788;
+      --slate-950: #0F1A10;
+      --slate-900: #1B2F1F;
+      --slate-700: #2C3E2D;
+      --slate-500: #6B7C6B;
+      --slate-300: #B8C4A8;
+      --slate-200: #D4CDB8;
+      --slate-100: #EDE8DB;
+      --slate-50: #F0EBE0;
+      --white: #ffffff;
+      --text-primary: #0F1A10;
+      --text-secondary: #6B7C6B;
+      --text-muted: #6B7C6B;
+      --bg: #F5F0E8;
+      --surface: var(--white);
+      --border: #D4CDB8;
+      --border-focus: #2D6A4F;
+      --shadow-xs: 0 1px 3px rgba(15,26,16,0.06), 0 1px 2px rgba(15,26,16,0.04);
+      --shadow-sm: 0 4px 12px rgba(15,26,16,0.07), 0 2px 6px rgba(15,26,16,0.04);
+      --shadow-md: 0 10px 30px rgba(15,26,16,0.10), 0 4px 12px rgba(15,26,16,0.05);
+      --shadow-lg: 0 24px 60px rgba(15,26,16,0.13), 0 8px 20px rgba(15,26,16,0.06);
+      --shadow-blue: 0 8px 24px rgba(45,106,79,0.22);
+      --shadow-orange: 0 8px 24px rgba(232,148,74,0.28);
+      --r-sm: 8px;
+      --r-md: 12px;
+      --r-lg: 16px;
+      --r-xl: 16px;
+      --r-2xl: 24px;
+      --r-full: 9999px;
+      --max-w: 1180px;
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+      --t-fast: 150ms;
+      --t-base: 220ms;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--text-primary);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    a { color: inherit; text-decoration: none; }
+    p { margin: 0; }
+    h1, h2, h3, h4 {
+      margin: 0;
+      line-height: 1.1;
+      font-family: 'Calistoga', Georgia, serif;
+      font-weight: 400;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--border-focus);
+      outline-offset: 3px;
+      border-radius: var(--r-sm);
+    }
+
+    .shell {
+      width: min(var(--max-w), calc(100% - 2.5rem));
+      margin-inline: auto;
+    }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(245, 240, 232, 0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+      padding: 0.9rem 0;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-shrink: 0;
+    }
+
+    .brand-logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2D6A4F, #1B4332);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 4px 14px rgba(45,106,79,0.28);
+      flex-shrink: 0;
+    }
+
+    .brand-logo svg { width: 18px; height: 18px; }
+
+    .brand-name {
+      font-family: 'Calistoga', Georgia, serif;
+      font-size: 1.15rem;
+      color: var(--slate-900);
+      letter-spacing: -0.01em;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .nav a {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--slate-500);
+      padding: 0.45rem 0.75rem;
+      border-radius: var(--r-sm);
+      transition: color var(--t-fast), background var(--t-fast);
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .nav a:hover { color: var(--slate-900); background: var(--slate-100); }
+    .nav a.active { color: #2D6A4F; background: #E8F5E9; }
+
+    .nav-cta {
+      margin-left: 0.5rem;
+      background: var(--orange) !important;
+      color: var(--white) !important;
+      padding: 0.5rem 1rem !important;
+      border-radius: var(--r-full) !important;
+      font-weight: 600 !important;
+      box-shadow: var(--shadow-orange);
+      transition: transform var(--t-fast), box-shadow var(--t-fast), background var(--t-fast) !important;
+    }
+
+    .nav-cta:hover {
+      background: var(--orange-dark) !important;
+      transform: translateY(-1px);
+      box-shadow: 0 10px 28px rgba(232,148,74,0.38) !important;
+    }
+
+    .menu-toggle {
+      display: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--slate-700);
+      padding: 0.4rem;
+      border-radius: var(--r-sm);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      min-height: 48px;
+      padding: 0 1.4rem;
+      border-radius: var(--r-full);
+      border: 1.5px solid transparent;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      cursor: pointer;
+      transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), background var(--t-fast), border-color var(--t-fast);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--orange), var(--orange-dark));
+      color: var(--white);
+      box-shadow: var(--shadow-orange);
+    }
+
+    .btn-primary:hover { box-shadow: 0 12px 32px rgba(232,148,74,0.4); }
+
+    .btn-secondary {
+      background: var(--white);
+      color: var(--slate-700);
+      border-color: var(--border);
+      box-shadow: var(--shadow-xs);
+    }
+
+    .btn-secondary:hover { border-color: var(--slate-300); background: var(--slate-50); }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.85rem;
+      border-radius: var(--r-full);
+      background: #E8F5E9;
+      color: #2D6A4F;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.3rem 0.7rem;
+      border-radius: var(--r-full);
+      background: var(--orange-light);
+      color: #7C4A1E;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .section { padding: 5rem 0; }
+
+    .section-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 2rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .section-copy {
+      color: var(--text-muted);
+      font-size: 1rem;
+      line-height: 1.7;
+      max-width: 45ch;
+    }
+
+    .hero {
+      padding: 5rem 0 4rem;
+      background: linear-gradient(160deg, #1B2F1F 0%, #0F1A10 100%);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      top: -120px;
+      right: -100px;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(45,106,79,0.18), transparent 65%);
+      pointer-events: none;
+    }
+
+    .hero h1 { color: #F5F0E8; }
+    .hero .hero-lede { color: rgba(245,240,232,0.65); }
+
+    .hero .eyebrow {
+      background: rgba(45,106,79,0.3);
+      color: #95D5B2;
+      border: 1px solid rgba(45,106,79,0.35);
+    }
+
+    .hero .btn-secondary {
+      background: rgba(255,255,255,0.08);
+      color: #F5F0E8;
+      border-color: rgba(255,255,255,0.18);
+    }
+
+    .hero .btn-secondary:hover {
+      background: rgba(255,255,255,0.14);
+      border-color: rgba(255,255,255,0.28);
+    }
+
+    .page-hero {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 2rem;
+      align-items: center;
+      padding: 4rem 0 2.5rem;
+    }
+
+    h1 {
+      font-size: clamp(2.6rem, 6vw, 4.8rem);
+      color: var(--slate-950);
+      letter-spacing: -0.03em;
+      line-height: 1.05;
+      max-width: 14ch;
+    }
+
+    h2 {
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      color: var(--slate-900);
+      letter-spacing: -0.02em;
+      margin-bottom: 0.85rem;
+    }
+
+    h3 {
+      font-size: 1.2rem;
+      color: var(--slate-900);
+      letter-spacing: -0.01em;
+      margin-bottom: 0.65rem;
+      font-family: 'Inter', sans-serif;
+      font-weight: 700;
+    }
+
+    .hero-lede {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      line-height: 1.75;
+      max-width: 52ch;
+      margin: 1.4rem 0 2rem;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .card,
+    .install-card,
+    .hero-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-xl);
+      padding: 2rem;
+      box-shadow: 0 2px 8px rgba(15,26,16,0.05), 0 8px 24px rgba(15,26,16,0.04);
+      transition: box-shadow var(--t-base) var(--ease), transform var(--t-base) var(--ease);
+    }
+
+    .card:hover {
+      box-shadow: 0 8px 32px rgba(15,26,16,0.12), 0 4px 16px rgba(15,26,16,0.06);
+      transform: translateY(-3px);
+    }
+
+    .hero-panel {
+      background: linear-gradient(135deg, #1B4332 0%, #2D6A4F 100%);
+      color: var(--white);
+      border-color: rgba(82,183,136,0.2);
+    }
+
+    .hero-panel .tag {
+      background: rgba(255,255,255,0.15);
+      color: var(--white);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    .hero-panel p { color: rgba(255,255,255,0.85); }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.25rem;
+    }
+
+    .accent-panel {
+      background: linear-gradient(135deg, rgba(232,148,74,0.08), rgba(45,106,79,0.06));
+      border-color: var(--orange-light);
+    }
+
+    .card-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--r-md);
+      display: grid;
+      place-items: center;
+      margin-bottom: 1.25rem;
+      background: linear-gradient(135deg, #2D6A4F, #1B4332);
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(45,106,79,0.2);
+    }
+
+    .card-icon svg { width: 22px; height: 22px; }
+
+    .card p, .install-card p {
+      color: var(--text-muted);
+      line-height: 1.72;
+      font-size: 0.96rem;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 0.35rem 0.9rem;
+      border-radius: var(--r-full);
+      border: 1px solid transparent;
+      font-size: 0.84rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .status-valid {
+      color: #52B788;
+      background: rgba(82,183,136,0.14);
+      border-color: #52B788;
+      box-shadow: 0 8px 20px rgba(82,183,136,0.18);
+    }
+
+    .status-danger {
+      color: #B42318;
+      background: rgba(180,35,24,0.10);
+      border-color: #B42318;
+      box-shadow: 0 8px 20px rgba(180,35,24,0.12);
+    }
+
+    .status-neutral {
+      color: #6B7C6B;
+      background: rgba(107,124,107,0.12);
+      border-color: #6B7C6B;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+
+    .ticket-id {
+      margin-top: 0.85rem;
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.95rem;
+      word-break: break-all;
+      color: rgba(255,255,255,0.95);
+    }
+
+    .site-note {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-top: 0.75rem;
+    }
+
+    .hero-panel .site-note { color: rgba(255,255,255,0.7); }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .metric-card {
+      padding: 1rem;
+      border-radius: var(--r-lg);
+      border: 1px solid var(--border);
+      background: rgba(240,235,224,0.45);
+    }
+
+    .metric-label {
+      display: block;
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--slate-500);
+      margin-bottom: 0.45rem;
+    }
+
+    .metric-value {
+      font-size: 1rem;
+      font-weight: 600;
+      line-height: 1.5;
+      color: var(--slate-900);
+      word-break: break-word;
+    }
+
+    .metric-value.mono {
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.92rem;
+    }
+
+    .simple-list {
+      display: grid;
+      gap: 0.75rem;
+      padding: 0;
+      margin: 1rem 0 0;
+      list-style: none;
+    }
+
+    .simple-list li {
+      position: relative;
+      padding-left: 1.5rem;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
+
+    .simple-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.55rem;
+      width: 6px;
+      height: 6px;
+      border-radius: var(--r-full);
+      background: #40916C;
+    }
+
+    .footer {
+      background: #0F1A10;
+      padding: 3rem 0 2.5rem;
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1.5fr repeat(3, 1fr);
+      gap: 3rem;
+      padding-bottom: 2.5rem;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+
+    .footer-brand-logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2D6A4F, #1B4332);
+      display: grid;
+      place-items: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .footer-brand-logo svg { width: 16px; height: 16px; }
+
+    .footer-brand-name {
+      font-family: 'Calistoga', serif;
+      font-size: 1.1rem;
+      color: var(--white);
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+
+    .footer-tagline {
+      font-size: 0.84rem;
+      color: rgba(255,255,255,0.45);
+      line-height: 1.6;
+    }
+
+    .footer-col h4 {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: rgba(255,255,255,0.45);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 1rem;
+    }
+
+    .footer-col a {
+      display: block;
+      font-size: 0.88rem;
+      color: rgba(255,255,255,0.6);
+      margin-bottom: 0.55rem;
+      transition: color var(--t-fast);
+    }
+
+    .footer-col a:hover { color: var(--white); }
+
+    .footer-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      padding-top: 2rem;
+    }
+
+    .footer-copy {
+      font-size: 0.83rem;
+      color: rgba(255,255,255,0.35);
+    }
+
+    .footer-links-bottom {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .footer-links-bottom a {
+      font-size: 0.83rem;
+      color: rgba(255,255,255,0.4);
+      transition: color var(--t-fast);
+    }
+
+    .footer-links-bottom a:hover { color: rgba(255,255,255,0.7); }
+
+    @media (max-width: 1024px) {
+      .footer-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+      }
+    }
+
+    @media (max-width: 960px) {
+      .page-hero,
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+
+      .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .hero { padding: 3.5rem 0 3rem; }
+
+      .nav {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--white);
+        border-bottom: 1px solid var(--border);
+        flex-direction: column;
+        padding: 1rem 1.25rem;
+        gap: 0.25rem;
+        box-shadow: var(--shadow-md);
+      }
+
+      .nav.open { display: flex; }
+      .nav a { width: 100%; }
+      .topbar { position: relative; }
+      .menu-toggle { display: block; }
+    }
+
+    @media (max-width: 640px) {
+      .shell { width: calc(100% - 2rem); }
+      .section { padding: 3.5rem 0; }
+      h1 { font-size: clamp(2.2rem, 8vw, 3.2rem); max-width: 100%; }
+      .metric-grid { grid-template-columns: 1fr; }
+
+      .footer-grid {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell topbar">
+      <a class="brand" href="/" aria-label="Confirma home">
+        <div class="brand-logo" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 12 10 16 18 8"/></svg>
+        </div>
+        <span class="brand-name">Confirma</span>
+      </a>
+      <nav class="nav" aria-label="Primary navigation" id="main-nav">
+        <a href="/">Home</a>
+        <a href="/entrepreneurs">For Entrepreneurs</a>
+        <a href="/banks">For Banks</a>
+        <a href="/how-it-works">How It Works</a>
+        <a href="/about">About</a>
+        <a href="/get-the-app" class="nav-cta">Get the App</a>
+      </nav>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav" aria-label="Toggle navigation">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" style="padding-bottom: 3rem;">
+      <div class="shell page-hero">
+        <div>
+          <span class="eyebrow">Public verification</span>
+          <h1>Check whether this Confirma export was server-attested.</h1>
+          <p class="hero-lede">This page verifies a public verification ticket without exposing personal details. It confirms the attestation window, entry count, and whether the device identity is normal, forked, or revoked.</p>
+          <div class="button-row" style="margin-top: 1.75rem;">
+            <a class="btn btn-primary" href="#verification-results">View verification</a>
+            <a class="btn btn-secondary" href="/get-the-app">Get the App</a>
+          </div>
+        </div>
+        <aside class="hero-panel">
+          <span class="tag">Verification ticket</span>
+          <p class="ticket-id" id="ticket-id">Loading ticket from URL...</p>
+          <div class="status-row">
+            <span class="status-badge status-neutral" id="status-badge">Loading</span>
+          </div>
+          <p class="site-note" id="status-note">Contacting verification server...</p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell">
+        <div class="section-header">
+          <div>
+            <span class="eyebrow">Verification portal</span>
+            <h2 id="verification-results">Attestation details</h2>
+          </div>
+          <p class="section-copy">Confirma exposes only public verification data here. No phone number, full device identity, or other personal details are shown.</p>
+        </div>
+
+        <div class="grid-2">
+          <article class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+            </div>
+            <div class="status-row" style="margin-top: 0; margin-bottom: 1rem;">
+              <span class="status-badge status-neutral" id="status-badge-secondary">Loading</span>
+            </div>
+            <p id="result-summary">Waiting for verification data.</p>
+
+            <div class="metric-grid">
+              <div class="metric-card">
+                <span class="metric-label">Attested at</span>
+                <div class="metric-value" id="attested-at">Loading...</div>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Window range</span>
+                <div class="metric-value" id="window-range">Loading...</div>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Entry count</span>
+                <div class="metric-value" id="entry-count">Loading...</div>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Key rotation events</span>
+                <div class="metric-value" id="key-rotation-events">Loading...</div>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Fork status</span>
+                <div class="metric-value" id="fork-status">Loading...</div>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Verification ticket</span>
+                <div class="metric-value mono" id="metric-ticket-id">Loading...</div>
+              </div>
+            </div>
+          </article>
+
+          <article class="card accent-panel">
+            <span class="tag">What this means</span>
+            <h3 style="margin-top: 0.9rem;">How to read the result</h3>
+            <ul class="simple-list">
+              <li><strong>VALID</strong> means the server can verify the attestation and the device is in a normal state.</li>
+              <li><strong>FORKED</strong> or <strong>REVOKED</strong> means the attestation exists, but the device identity is no longer in a normal state.</li>
+              <li><strong>UNKNOWN</strong> means the verification ticket was not found.</li>
+              <li><strong>Key rotation events</strong> show how many times the device identity has been rotated on the server.</li>
+            </ul>
+            <p class="site-note" id="error-note"></p>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand-logo" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 12 10 16 18 8"/></svg>
+          </div>
+          <span class="footer-brand-name">Confirma</span>
+          <p class="footer-tagline">Works where real business happens: on phones, in motion, and often offline.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <a href="/how-it-works">How It Works</a>
+          <a href="/entrepreneurs">For Entrepreneurs</a>
+          <a href="/banks">For Banks</a>
+          <a href="/get-the-app">Get the App</a>
+        </div>
+        <div class="footer-col">
+          <h4>Company</h4>
+          <a href="/about">About</a>
+          <a href="/about#patent">Patent</a>
+          <a href="/about#roadmap">Roadmap</a>
+        </div>
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <a href="#">Privacy Policy</a>
+          <a href="#">Terms of Service</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p class="footer-copy">© 2025 Confirma. USPTO Provisional Patent Application No. 63/987,858.</p>
+        <div class="footer-links-bottom">
+          <a href="/">Home</a>
+          <a href="/entrepreneurs">Entrepreneurs</a>
+          <a href="/banks">Banks</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const SERVER_URL = "https://confirma-server-production.up.railway.app";
+
+    function extractVerificationTicketId() {
+      return window.location.pathname.split("/").filter(Boolean).pop() || "";
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "Not available";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "Not available";
+      return date.toLocaleString(undefined, {
+        dateStyle: "long",
+        timeStyle: "short"
+      });
+    }
+
+    function formatDate(value) {
+      if (!value) return "Not available";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "Not available";
+      return date.toLocaleDateString(undefined, {
+        dateStyle: "long"
+      });
+    }
+
+    function formatWindowRange(start, end) {
+      return start && end ? formatDate(start) + " to " + formatDate(end) : "Not available";
+    }
+
+    function toCount(value) {
+      return Number.isFinite(Number(value)) ? String(Number(value)) : "0";
+    }
+
+    function getDisplayStatus(data) {
+      const status = String(data && data.status || "UNKNOWN").toUpperCase();
+      const forkStatus = String(data && data.fork_status || "").toUpperCase();
+      if (forkStatus === "FORKED" || forkStatus === "REVOKED") return forkStatus;
+      return status;
+    }
+
+    function getStatusClass(status) {
+      if (status === "VALID") return "status-valid";
+      if (status === "FORKED" || status === "REVOKED" || status === "INVALID") return "status-danger";
+      return "status-neutral";
+    }
+
+    function setStatusBadges(status) {
+      const badgeClass = getStatusClass(status);
+      document.querySelectorAll("#status-badge, #status-badge-secondary").forEach(function (badge) {
+        badge.className = "status-badge " + badgeClass;
+        badge.textContent = status;
+      });
+    }
+
+    function setSummary(message) {
+      document.getElementById("result-summary").textContent = message;
+      document.getElementById("status-note").textContent = message;
+    }
+
+    function renderVerification(data, vtId) {
+      const displayStatus = getDisplayStatus(data);
+      const forkStatus = String(data && data.fork_status || "UNKNOWN").toUpperCase();
+
+      setStatusBadges(displayStatus);
+
+      if (displayStatus === "VALID") {
+        setSummary("This verification ticket is valid and the device identity is in a normal state.");
+      } else if (displayStatus === "FORKED" || displayStatus === "REVOKED") {
+        setSummary("This attestation exists, but the device identity is not in a normal state.");
+      } else if (displayStatus === "UNKNOWN") {
+        setSummary("No public attestation was found for this verification ticket.");
+      } else {
+        setSummary("This verification ticket could not be validated.");
+      }
+
+      document.getElementById("ticket-id").textContent = vtId || "Not found";
+      document.getElementById("metric-ticket-id").textContent = vtId || "Not found";
+      document.getElementById("attested-at").textContent = formatDateTime(data && data.attested_at);
+      document.getElementById("window-range").textContent = formatWindowRange(data && data.window_start, data && data.window_end);
+      document.getElementById("entry-count").textContent = toCount(data && data.entry_count);
+      document.getElementById("key-rotation-events").textContent = toCount(data && data.key_rotation_events);
+      document.getElementById("fork-status").textContent = forkStatus || "UNKNOWN";
+    }
+
+    function renderNetworkError(vtId) {
+      setStatusBadges("UNKNOWN");
+      document.getElementById("ticket-id").textContent = vtId || "Not found";
+      document.getElementById("metric-ticket-id").textContent = vtId || "Not found";
+      document.getElementById("attested-at").textContent = "Unavailable";
+      document.getElementById("window-range").textContent = "Unavailable";
+      document.getElementById("entry-count").textContent = "Unavailable";
+      document.getElementById("key-rotation-events").textContent = "Unavailable";
+      document.getElementById("fork-status").textContent = "Unavailable";
+      document.getElementById("error-note").textContent = "Unable to reach verification server";
+      setSummary("Unable to reach verification server");
+    }
+
+    async function loadVerification() {
+      const vtId = extractVerificationTicketId();
+
+      if (!vtId || vtId === "verify" || vtId === "verify.html") {
+        setStatusBadges("UNKNOWN");
+        document.getElementById("ticket-id").textContent = "Not found";
+        document.getElementById("metric-ticket-id").textContent = "Not found";
+        setSummary("Verification ticket not found in URL.");
+        document.getElementById("attested-at").textContent = "Not available";
+        document.getElementById("window-range").textContent = "Not available";
+        document.getElementById("entry-count").textContent = "Not available";
+        document.getElementById("key-rotation-events").textContent = "Not available";
+        document.getElementById("fork-status").textContent = "Not available";
+        return;
+      }
+
+      document.getElementById("ticket-id").textContent = vtId;
+      document.getElementById("metric-ticket-id").textContent = vtId;
+
+      try {
+        const response = await fetch(SERVER_URL + "/verify/" + encodeURIComponent(vtId));
+        const data = await response.json().catch(function () {
+          return {};
+        });
+
+        if (!response.ok) {
+          throw new Error("Verification request failed.");
+        }
+
+        renderVerification(data, vtId);
+      } catch (error) {
+        renderNetworkError(vtId);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      var toggle = document.querySelector(".menu-toggle");
+      var nav = document.getElementById("main-nav");
+
+      if (toggle && nav) {
+        toggle.addEventListener("click", function () {
+          var open = nav.classList.toggle("open");
+          toggle.setAttribute("aria-expanded", String(open));
+        });
+      }
+
+      loadVerification();
+    });
+  </script>
+</body>
+</html>

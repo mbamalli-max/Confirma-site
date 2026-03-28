@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Learn how Confirma uses confirmation-gated authority, append-only records, and a SHA-256 hash chain to create bank-verifiable history.">
+  <meta name="theme-color" content="#1B2F1F">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <title>How It Works | Confirma</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="site.js" defer></script>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="shell topbar">
+      <a class="brand" href="index.html" aria-label="Confirma home">
+        <div class="brand-logo" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 12 10 16 18 8"/></svg>
+        </div>
+        <span class="brand-name">Confirma</span>
+      </a>
+      <nav class="nav" aria-label="Primary navigation" id="main-nav">
+        <a href="index.html">Home</a>
+        <a href="entrepreneurs.html">For Entrepreneurs</a>
+        <a href="banks.html">For Banks</a>
+        <a href="how-it-works.html" class="active">How It Works</a>
+        <a href="about.html">About</a>
+        <a href="get-the-app.html" class="nav-cta">Get the App</a>
+      </nav>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav" aria-label="Toggle navigation">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" style="padding-bottom: 3rem;">
+      <div class="shell page-hero">
+        <div>
+          <span class="eyebrow">Simple explanation of the cryptographic chain</span>
+          <h1>Each confirmed transaction becomes part of a protected sequence.</h1>
+          <p class="hero-lede">Confirma is built so records are formed carefully, then kept permanently. The goal is not to overwhelm users with technical terms — the goal is to make trust understandable.</p>
+        </div>
+        <aside class="hero-panel">
+          <span class="tag">Core principle</span>
+          <p style="margin-top: 0.75rem; font-style: italic; line-height: 1.65; font-size: 1.05rem;">Confirma does not treat typing as authority. <strong>Confirmation</strong> is the moment a record is formed.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell">
+        <div class="section-header">
+          <div>
+            <span class="tag">Step by step</span>
+            <h2 style="margin-top: 0.75rem;">What happens when a user records a transaction?</h2>
+          </div>
+        </div>
+        <div class="timeline-grid">
+          <article class="timeline">
+            <div style="display:flex; align-items:center; gap: 0.6rem; margin-bottom: 0.5rem;">
+              <span style="width:28px; height:28px; border-radius:50%; background:var(--blue-700); color:white; display:grid; place-items:center; font-size:0.8rem; font-weight:700; flex-shrink:0;">1</span>
+              <h3 style="margin:0;">The user enters a transaction</h3>
+            </div>
+            <p>A business owner speaks or types something like "Sold rice for 15,000."</p>
+          </article>
+          <article class="timeline">
+            <div style="display:flex; align-items:center; gap: 0.6rem; margin-bottom: 0.5rem;">
+              <span style="width:28px; height:28px; border-radius:50%; background:var(--blue-700); color:white; display:grid; place-items:center; font-size:0.8rem; font-weight:700; flex-shrink:0;">2</span>
+              <h3 style="margin:0;">Confirma interprets it</h3>
+            </div>
+            <p>The app parses the transaction and reads back a plain-language summary before anything is written permanently.</p>
+          </article>
+          <article class="timeline">
+            <div style="display:flex; align-items:center; gap: 0.6rem; margin-bottom: 0.5rem;">
+              <span style="width:28px; height:28px; border-radius:50%; background:var(--orange); color:white; display:grid; place-items:center; font-size:0.8rem; font-weight:700; flex-shrink:0;">3</span>
+              <h3 style="margin:0;">The user confirms</h3>
+            </div>
+            <p>This is the decisive step. Without confirmation, there is no permanent entry — no exceptions.</p>
+          </article>
+          <article class="timeline">
+            <div style="display:flex; align-items:center; gap: 0.6rem; margin-bottom: 0.5rem;">
+              <span style="width:28px; height:28px; border-radius:50%; background:var(--blue-700); color:white; display:grid; place-items:center; font-size:0.8rem; font-weight:700; flex-shrink:0;">4</span>
+              <h3 style="margin:0;">A new record is created</h3>
+            </div>
+            <p>The entry gets a unique ID, a confirmation timestamp, and a cryptographic link to the previous entry in the ledger.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" style="background: var(--slate-50); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+      <div class="shell story-grid">
+        <article class="story">
+          <span class="eyebrow">Append-only logic</span>
+          <h2>Why records cannot be silently changed.</h2>
+          <p>After confirmation, the transaction is not editable. It is not deletable. If another event happens later, that event becomes a new record instead of rewriting the old one.</p>
+          <p style="margin-top: 0.85rem;">This matters because institutions need to know that historical records have structure and continuity, not just convenience.</p>
+        </article>
+        <article class="story accent-panel">
+          <span class="eyebrow">Hash chaining</span>
+          <h2>How the chain works in simple terms.</h2>
+          <p>Every record contains a fingerprint of the previous record. That fingerprint is created using SHA-256. If someone tried to tamper with an older entry, the chain after it would no longer match properly.</p>
+          <p style="margin-top: 0.85rem;">That is what makes the ledger tamper-resistant and more useful for verification.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell">
+        <div class="section-header">
+          <div>
+            <span class="tag">Verification surface</span>
+            <h2 style="margin-top: 0.75rem;">What can be checked today?</h2>
+          </div>
+        </div>
+        <div class="grid-3">
+          <article class="card">
+            <div class="card-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+            </div>
+            <h3>Ledger root hash</h3>
+            <p>The export includes the final hash in the visible chain for the exported period.</p>
+          </article>
+          <article class="card">
+            <div class="card-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <h3>Integrity code</h3>
+            <p>The export includes an integrity code derived from the included transaction hashes, supporting offline checking.</p>
+          </article>
+          <article class="card">
+            <div class="card-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </div>
+            <h3>Exportable history</h3>
+            <p>Users can generate a free export of the last 30 days of confirmed transactions to share or preserve.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-section">
+      <div class="shell" style="position: relative; z-index: 1;">
+        <h2>Phase 2 deepens verification.</h2>
+        <p>Confirma's next phase adds device-bound Ed25519 signatures, server sync, fork detection, verified reports, and a live verification portal. The foundation being built now is what makes those later layers meaningful.</p>
+        <div class="cta-row" style="justify-content: center;">
+          <a class="btn btn-primary" href="about.html">See project status</a>
+          <a class="btn btn-secondary" href="get-the-app.html">Open the app</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand-logo" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 12 10 16 18 8"/></svg>
+          </div>
+          <span class="footer-brand-name">Confirma</span>
+          <p class="footer-tagline">Cryptography in service of trust, not in place of it.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <a href="how-it-works.html">How It Works</a>
+          <a href="entrepreneurs.html">For Entrepreneurs</a>
+          <a href="banks.html">For Banks</a>
+          <a href="get-the-app.html">Get the App</a>
+        </div>
+        <div class="footer-col">
+          <h4>Company</h4>
+          <a href="about.html">About</a>
+          <a href="about.html#patent">Patent</a>
+          <a href="about.html#roadmap">Roadmap</a>
+        </div>
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <a href="#">Privacy Policy</a>
+          <a href="#">Terms of Service</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p class="footer-copy">© 2025 Confirma. USPTO Provisional Patent Application No. 63/987,858.</p>
+        <div class="footer-links-bottom">
+          <a href="index.html">Home</a>
+          <a href="banks.html">Banks</a>
+          <a href="about.html">About</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

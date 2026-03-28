@@ -1,5 +1,6 @@
 import {
   getDefaultSyncApiBaseUrl,
+  postJson,
   requestOtpCode,
   syncQueuedEntries,
   verifyOtpCode
@@ -8,6 +9,7 @@ import {
 const DB_NAME = "confirma-v3-db";
 const DB_VERSION = 3;
 const FEATURE_TRANSFER_PRIMARY = false;
+const PAYSTACK_PUBLIC_KEY = "pk_test_placeholder";
 
 const SECTORS = [
   { id: "trade_retail", name: "Trade & Retail", icon: "🛍️" },
@@ -19,8 +21,8 @@ const SECTORS = [
 ];
 
 const COUNTRIES = [
-  { id: "NG", name: "Nigeria", icon: "🇳🇬" },
-  { id: "US", name: "United States", icon: "🇺🇸" }
+  { id: "US", name: "United States", icon: "🇺🇸" },
+  { id: "NG", name: "Nigeria", icon: "🇳🇬" }
 ];
 
 const BUSINESS_TYPES = [
@@ -303,6 +305,7 @@ async function init() {
   await loadDeviceTrustState();
   await loadSyncState();
   wireEvents();
+  wirePaymentTierButtons();
   window.addEventListener("online", () => {
     void flushSyncQueue();
   });
@@ -338,10 +341,12 @@ function cacheElements() {
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-capture-v2", "settings-summary-v2", "settings-trust-v3", "settings-change-profile-v2",
     "settings-open-trust-v3", "export-button-v2", "export-status-v2", "export-trust-status-v3", "export-open-trust-v3",
+    "verified-report-section", "payment-status",
     "daily-reminder-banner", "dismiss-reminder-btn", "privacy-toggle-btn", "reminder-toggle", "pin-lock-toggle",
     "pin-setup-area", "pin-input-new", "pin-input-confirm", "pin-save-btn", "pin-remove-btn", "pin-setup-error",
     "settings-security-status", "pin-setup-label", "pin-lock-screen", "pin-error", "first-record-guide",
-    "storage-warning-v2", "otp-back", "otp-status-card", "otp-phone-input", "otp-request-code",
+    "storage-warning-v2", "loan-readiness-banner", "banner-tier-icon", "banner-headline", "banner-subtext", "banner-cta",
+    "otp-back", "otp-status-card", "otp-phone-input", "otp-request-code",
     "otp-helper-text", "otp-code-input", "otp-verify-code", "otp-error-text"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
@@ -388,8 +393,8 @@ function wireEvents() {
   document.getElementById("onboarding-phone").addEventListener("input", clearOnboardingProfileError);
   document.getElementById("onboarding-email").addEventListener("input", clearOnboardingProfileError);
   document.getElementById("otp-back").addEventListener("click", () => showScreen(state.otpReturnScreen || "screen-capture"));
-  document.getElementById("otp-request-code").addEventListener("click", requestLocalOtpCode);
-  document.getElementById("otp-verify-code").addEventListener("click", verifyLocalOtpCode);
+  document.getElementById("otp-request-code").addEventListener("click", requestServerOtpCode);
+  document.getElementById("otp-verify-code").addEventListener("click", verifyServerOtpCode);
   document.getElementById("otp-phone-input").addEventListener("input", clearOtpError);
   document.getElementById("otp-code-input").addEventListener("input", clearOtpError);
   document.querySelectorAll(".pin-key").forEach((button) => {
@@ -427,9 +432,21 @@ function wireEvents() {
   wireChartToggle();
 }
 
+function wirePaymentTierButtons() {
+  document.querySelectorAll(".tier-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      initPaystackPayment(
+        button.dataset.tier,
+        Number(button.dataset.amount),
+        Number(button.dataset.window)
+      );
+    });
+  });
+}
+
 function registerPwa() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/app-v3/sw.js");
+    navigator.serviceWorker.register("/app/sw.js");
   }
 }
 
@@ -776,6 +793,25 @@ async function renderDashboard() {
   }
   const streakEl = document.getElementById("dash-streak-v2");
   if (streakEl) streakEl.textContent = streak;
+
+  const banner = document.getElementById("loan-readiness-banner");
+  if (banner && state.authToken && state.deviceIdentity) {
+    if (streak >= 90) {
+      document.getElementById("banner-tier-icon").textContent = "🥈";
+      document.getElementById("banner-headline").textContent = "You have " + streak + " days of verified history.";
+      document.getElementById("banner-subtext").textContent = "Your Verified Report is ready. Share it with lenders.";
+      banner.hidden = false;
+    } else if (streak >= 30) {
+      document.getElementById("banner-tier-icon").textContent = "🥉";
+      document.getElementById("banner-headline").textContent = "You have " + streak + " days of verified history.";
+      document.getElementById("banner-subtext").textContent = "Generate your Verified Report to share with lenders.";
+      banner.hidden = false;
+    } else {
+      banner.hidden = true;
+    }
+  } else if (banner) {
+    banner.hidden = true;
+  }
 }
 
 async function renderSettings() {
@@ -1087,6 +1123,12 @@ async function removePinLock() {
 
 function renderExportScreen() {
   els["export-status-v2"].textContent = "";
+  if (els["payment-status"]) {
+    els["payment-status"].textContent = "";
+  }
+  if (els["verified-report-section"]) {
+    els["verified-report-section"].hidden = !(state.authToken && state.deviceIdentity);
+  }
   if (els["export-trust-status-v3"]) {
     els["export-trust-status-v3"].innerHTML = `
       ${renderSettingsRow("Phone anchor", getPhoneAnchorStatusLabel())}
@@ -1122,8 +1164,34 @@ async function generateExport() {
   });
   const signedCount = records.filter((record) => Boolean(record.signature)).length;
   const unsignedCount = records.length - signedCount;
+  let attestation = null;
+  let qrDataUrl = null;
+
+  if (state.authToken && state.deviceIdentity) {
+    try {
+      const response = await postJson(state.syncApiBaseUrl, "/attest", {
+        device_identity: state.deviceIdentity,
+        window_days: 90
+      }, state.authToken);
+
+      if (response?.vt_id && response?.verify_url) {
+        attestation = response;
+        await saveSetting("last_vt_id", attestation.vt_id).catch(() => null);
+        await saveSetting("last_verify_url", attestation.verify_url).catch(() => null);
+
+        if (window.QRCode?.toDataURL) {
+          qrDataUrl = await window.QRCode.toDataURL(attestation.verify_url);
+        }
+      }
+    } catch (error) {
+      console.warn("Attestation unavailable during export.", error);
+    }
+  }
+
   const verificationStatus = signedCount
-    ? "Device-signed on this device. Server attestation coming."
+    ? (attestation?.verify_url
+      ? `Device-signed and server-attested. Verify at ${attestation.verify_url}`
+      : "Device-signed on this device. Server attestation coming.")
     : "Legacy unsigned history only. Complete phone verification to start device signing.";
 
   const output = [
@@ -1146,19 +1214,110 @@ async function generateExport() {
     ...lines,
     "---",
     `Ledger Root Hash: ${ledgerRootHash}`,
-    `Verification Status: ${verificationStatus}`
+    `Verification Status: ${verificationStatus}`,
+    attestation?.vt_id ? `vt_id: ${attestation.vt_id}` : null,
+    attestation?.verify_url ? `verify_url: ${attestation.verify_url}` : null,
+    qrDataUrl ? `qr_code_data_url: ${qrDataUrl}` : null
   ].filter(Boolean).join("\n");
 
   const blob = new Blob([output], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `confirma-v3-export-${Date.now()}.txt`;
+  link.download = `confirma-export-${Date.now()}.txt`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
   els["export-status-v2"].textContent = "Export downloaded.";
+}
+
+function setPaymentStatus(message) {
+  if (els["payment-status"]) {
+    els["payment-status"].textContent = message || "";
+  }
+}
+
+function downloadBase64File(base64, filename, mimeType) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  const blob = new Blob([bytes], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function initPaystackPayment(tier, amountKobo, windowDays) {
+  if (!state.authToken || !state.deviceIdentity) {
+    setPaymentStatus("Complete phone verification on this device before purchasing a verified report.");
+    return;
+  }
+
+  if (!window.PaystackPop) {
+    setPaymentStatus("Payment service is unavailable right now. Please try again.");
+    return;
+  }
+
+  const reference = "cfm_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+  const popup = new window.PaystackPop();
+
+  popup.newTransaction({
+    key: PAYSTACK_PUBLIC_KEY,
+    email: state.profile.email || (state.profile.phone_number + "@confirma.app"),
+    amount: amountKobo,
+    currency: "NGN",
+    ref: reference,
+    metadata: {
+      custom_fields: [
+        { display_name: "Phone", variable_name: "phone", value: state.profile.phone_number },
+        { display_name: "Tier", variable_name: "tier", value: tier },
+        { display_name: "Window Days", variable_name: "window_days", value: String(windowDays) },
+        { display_name: "Device Identity", variable_name: "device_identity", value: state.deviceIdentity }
+      ]
+    },
+    onSuccess: (transaction) => {
+      void handlePaymentSuccess(transaction, windowDays);
+    },
+    onCancel: () => {
+      setPaymentStatus("Payment cancelled.");
+    }
+  });
+}
+
+async function handlePaymentSuccess(transaction, windowDays) {
+  const reference = String(transaction?.reference || "").trim();
+  if (!reference) {
+    setPaymentStatus("Report generation failed. Contact support with reference: unknown");
+    return;
+  }
+
+  setPaymentStatus("Generating your verified report...");
+
+  try {
+    const response = await postJson(state.syncApiBaseUrl, "/payment/generate-pdf", {
+      reference,
+      window_days: windowDays
+    }, state.authToken);
+
+    if (!(response?.ok && response?.pdf_base64 && response?.filename)) {
+      throw new Error("Invalid PDF response.");
+    }
+
+    downloadBase64File(response.pdf_base64, response.filename, "application/pdf");
+    setPaymentStatus("Verified report downloaded.");
+  } catch (error) {
+    console.error("Verified report generation failed.", error);
+    setPaymentStatus("Report generation failed. Contact support with reference: " + reference);
+  }
 }
 
 function renderActionRows() {
@@ -1782,7 +1941,7 @@ function layerBActionKey(action) {
   if (action === "payment") return "pay";
   if (action === "receipt") return "receive";
   if (action === "transfer_in") return "receive";
-  if (action === "transfer_out") return "receive";
+  if (action === "transfer_out") return "pay";
   return "sell";
 }
 
@@ -2859,17 +3018,20 @@ async function ensureDeviceKeyMaterial() {
   state.publicKeyFingerprint = publicKeyFingerprint;
 }
 
+async function getDevicePrivateKey() {
+  return getSigningBlockReason() ? null : state.devicePrivateKey;
+}
+
 async function signEntryHash(entryHash) {
-  const signingBlockReason = getSigningBlockReason();
-  if (signingBlockReason) {
-    throw new Error(signingBlockReason);
-  }
+  const privateKey = await getDevicePrivateKey();
+  if (!privateKey) return null;
+  const data = new TextEncoder().encode(entryHash);
   const signatureBuffer = await crypto.subtle.sign(
-    { name: "ECDSA", hash: "SHA-256" },
-    state.devicePrivateKey,
-    hexToBytes(entryHash)
+    { name: "ECDSA", hash: { name: "SHA-256" } },
+    privateKey,
+    data
   );
-  return bytesToBase64(new Uint8Array(signatureBuffer));
+  return btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
 }
 
 async function queueSyncRecord(record) {
@@ -3102,22 +3264,6 @@ function getOtpHelperText() {
   return `Local fallback code for this device: ${state.otpChallenge.code}. It expires in 10 minutes.`;
 }
 
-function hexToBytes(hex) {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let index = 0; index < hex.length; index += 2) {
-    bytes[index / 2] = parseInt(hex.slice(index, index + 2), 16);
-  }
-  return bytes;
-}
-
-function bytesToBase64(bytes) {
-  let binary = "";
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
-  return btoa(binary);
-}
-
 function buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash) {
   return [
     id,
@@ -3146,4 +3292,72 @@ function customLabelContextForLearnedFrom(learnedFrom) {
   if (learnedFrom === "transfer_in") return "receipt";
   if (learnedFrom === "transfer_out") return "payment";
   return learnedFrom;
+}
+
+async function requestServerOtpCode() {
+  const phoneInput = document.getElementById("otp-phone-input");
+  const phoneNumber = phoneInput.value.trim();
+
+  if (!phoneNumber) {
+    alert("Enter phone number");
+    return;
+  }
+
+  try {
+    const res = await fetch("http://127.0.0.1:8787/auth/otp/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_number: phoneNumber })
+    });
+
+    const data = await res.json();
+    console.log("OTP request response:", data);
+
+    alert("Code sent. Check server terminal for dev code.");
+  } catch (err) {
+    console.error(err);
+    alert("Failed to request OTP");
+  }
+}
+
+async function verifyServerOtpCode() {
+  const phoneInput = document.getElementById("otp-phone-input");
+  const codeInput = document.getElementById("otp-code-input");
+
+  const phoneNumber = phoneInput.value.trim();
+  const code = codeInput.value.trim();
+
+  if (!phoneNumber || !code) {
+    alert("Enter phone and code");
+    return;
+  }
+
+  try {
+    const res = await fetch("http://127.0.0.1:8787/auth/otp/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone_number: phoneNumber,
+        code: code
+      })
+    });
+
+    const data = await res.json();
+    console.log("OTP verify response:", data);
+
+    if (data.auth_token) {
+      localStorage.setItem("auth_token", data.auth_token);
+      alert("Server sign-in successful");
+      window.location.reload();
+
+      if (typeof syncQueuedEntries === "function") {
+        await syncQueuedEntries();
+      }
+    } else {
+      alert("Verification failed");
+    }
+  } catch (err) {
+    console.error(err);
+    alert("Failed to verify OTP");
+  }
 }

@@ -1,26 +1,75 @@
+/* ============================================================
+   Confirma App v3 — Forest & Parchment Design System
+   Matches website-v2 aesthetic: Calistoga headings + Inter body
+   Palette: Dark Forest + Warm Parchment + Emerald + Orange CTA
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Calistoga:ital@0;1&family=Inter:wght@300;400;500;600;700&display=swap');
+
 :root {
-  --primary: #1A3C34;
+  /* Brand — Forest / Emerald (from website-v2) */
+  --primary: #1B2F1F;
   --primary-mid: #2D6A4F;
   --primary-light: #52B788;
-  --accent: #F4A261;
-  --bg: #F7F3EE;
+  --primary-50: #E8F5E9;
+  --primary-100: #D8F3DC;
+
+  /* CTA — Warm Orange (from website-v2) */
+  --accent: #E8944A;
+  --accent-dark: #D07B35;
+  --accent-light: #F5D4B3;
+
+  /* Neutrals — warm parchment tones */
+  --bg: #F5F0E8;
   --card: #FFFFFF;
-  --border: #D9D0C7;
-  --text: #1C1917;
-  --muted: #6F665E;
+  --surface: #FFFFFF;
+  --border: #D4CDB8;
+  --border-focus: #2D6A4F;
+
+  /* Text */
+  --text: #0F1A10;
+  --muted: #6B7C6B;
+
+  /* Status */
   --danger: #B42318;
+  --success: #52B788;
+
+  /* Shadows — warm undertone */
+  --shadow-xs: 0 1px 3px rgba(15,26,16,0.06), 0 1px 2px rgba(15,26,16,0.04);
+  --shadow-sm: 0 4px 12px rgba(15,26,16,0.07), 0 2px 6px rgba(15,26,16,0.04);
+  --shadow-md: 0 10px 30px rgba(15,26,16,0.10), 0 4px 12px rgba(15,26,16,0.05);
+  --shadow-green: 0 8px 24px rgba(45,106,79,0.22);
+  --shadow-orange: 0 8px 24px rgba(232,148,74,0.28);
+
+  /* Radius */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-full: 9999px;
+
+  /* Transitions */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast: 150ms;
+  --t-base: 220ms;
 }
 
-* {
-  box-sizing: border-box;
+/* ── Reset ───────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  line-height: 1.45;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body.amounts-hidden .money-value,
@@ -30,6 +79,22 @@ body.amounts-hidden .record-money {
   transition: filter 0.2s ease;
 }
 
+/* Focus visible */
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 3px;
+  border-radius: var(--r-sm);
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── App Shell ───────────────────────────────────────────── */
 .app-shell {
   width: min(100%, 560px);
   margin: 0 auto;
@@ -44,6 +109,16 @@ body.amounts-hidden .record-money {
   display: block;
 }
 
+/* ── Headings ────────────────────────────────────────────── */
+h1, h2, h3, h4 {
+  margin: 0;
+  font-family: 'Calistoga', Georgia, serif;
+  font-weight: 400;
+  line-height: 1.15;
+  color: var(--text);
+}
+
+/* ── Hero ────────────────────────────────────────────────── */
 .hero,
 .topbar {
   display: flex;
@@ -54,16 +129,37 @@ body.amounts-hidden .record-money {
 }
 
 .hero {
-  padding: 22px 20px;
-  border-radius: 22px;
-  background: linear-gradient(160deg, var(--primary), var(--primary-mid));
+  padding: 24px 22px;
+  border-radius: var(--r-xl);
+  background: linear-gradient(160deg, #1B2F1F 0%, #0F1A10 100%);
   color: white;
+  position: relative;
+  overflow: hidden;
 }
 
-.hero h1,
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -60px;
+  right: -50px;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(45,106,79,0.25), transparent 65%);
+  pointer-events: none;
+}
+
 .topbar strong,
 .panel h2 {
   margin: 0;
+}
+
+.hero h1,
+.hero h2,
+.hero h3,
+.hero strong {
+  margin: 0;
+  color: #F5F0E8;
 }
 
 .step h2 {
@@ -77,29 +173,40 @@ body.amounts-hidden .record-money {
 }
 
 .subtle {
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 .hero p {
-  color: rgba(255, 255, 255, 0.84);
+  color: rgba(245,240,232,0.65);
 }
 
 .hero-mark {
   font-size: 42px;
 }
 
+/* ── Panels / Cards ──────────────────────────────────────── */
 .panel {
   background: var(--card);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  border-radius: 18px;
-  padding: 16px;
-  box-shadow: 0 12px 28px rgba(26, 60, 52, 0.08);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
   margin-bottom: 14px;
 }
 
+/* ── Stepper ─────────────────────────────────────────────── */
 .stepper {
-  color: var(--muted);
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--r-full);
+  background: var(--primary-50);
+  color: var(--primary-mid);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .stepper-row {
@@ -118,6 +225,7 @@ body.amounts-hidden .record-money {
   display: block;
 }
 
+/* ── Visual Grid ─────────────────────────────────────────── */
 .visual-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -128,6 +236,7 @@ body.amounts-hidden .record-money {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+/* ── Cards: visual, action, ranked ───────────────────────── */
 .visual-card,
 .action-card,
 .ranked-item {
@@ -138,17 +247,27 @@ body.amounts-hidden .record-money {
   width: 100%;
   min-height: 96px;
   padding: 14px;
-  border-radius: 16px;
-  border: 2px solid var(--border);
-  background: #fff;
+  border-radius: var(--r-lg);
+  border: 1.5px solid var(--border);
+  background: var(--card);
   color: var(--text);
   text-align: left;
+  transition: border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
+  cursor: pointer;
+}
+
+.visual-card:hover,
+.action-card:hover,
+.ranked-item:hover {
+  border-color: rgba(45,106,79,0.3);
+  box-shadow: var(--shadow-xs);
 }
 
 .visual-card strong,
 .action-card strong,
 .ranked-item strong {
   font-size: 15px;
+  font-weight: 600;
   line-height: 1.3;
 }
 
@@ -157,11 +276,11 @@ body.amounts-hidden .record-money {
 .ranked-item span {
   color: var(--muted);
   line-height: 1.35;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .ranked-item small {
-  color: #8A7F76;
+  color: var(--muted);
   line-height: 1.3;
   font-size: 12px;
 }
@@ -170,7 +289,8 @@ body.amounts-hidden .record-money {
 .action-card.active,
 .ranked-item.active {
   border-color: var(--primary-light);
-  background: #F1FBF5;
+  background: var(--primary-50);
+  box-shadow: 0 0 0 3px rgba(82,183,136,0.15);
 }
 
 .visual-icon {
@@ -178,6 +298,7 @@ body.amounts-hidden .record-money {
   line-height: 1;
 }
 
+/* ── Action Layout ───────────────────────────────────────── */
 .action-header {
   display: flex;
   justify-content: space-between;
@@ -201,21 +322,34 @@ body.amounts-hidden .record-money {
   min-height: 92px;
 }
 
+/* ── Pill Buttons ────────────────────────────────────────── */
 .pill-button {
   min-height: 38px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: #F8F4EF;
+  padding: 0 14px;
+  border-radius: var(--r-full);
+  border: 1.5px solid var(--border);
+  background: var(--bg);
   color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+
+.pill-button:hover {
+  border-color: rgba(45,106,79,0.3);
+  background: var(--primary-50);
 }
 
 .pill-button.active {
   background: var(--primary-mid);
   color: white;
   border-color: var(--primary-mid);
+  box-shadow: var(--shadow-green);
 }
 
+/* ── Advanced Panel ──────────────────────────────────────── */
 .advanced-panel {
   margin-top: 12px;
   padding-top: 12px;
@@ -224,12 +358,15 @@ body.amounts-hidden .record-money {
 
 .selected-chip {
   margin-top: 12px;
-  border-radius: 14px;
+  border-radius: var(--r-md);
   padding: 12px 14px;
-  background: #F8F4EF;
+  background: var(--bg);
   color: var(--muted);
+  font-size: 14px;
+  border: 1px solid var(--border);
 }
 
+/* ── First Record Guide ──────────────────────────────────── */
 .first-record-guide[hidden],
 .storage-warning[hidden] {
   display: none;
@@ -237,22 +374,24 @@ body.amounts-hidden .record-money {
 
 .first-record-guide {
   margin: 6px 0 14px;
-  padding: 12px 14px;
-  border-radius: 14px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
   border: 1px solid rgba(82, 183, 136, 0.35);
-  background: #F1FBF5;
+  background: var(--primary-50);
   color: var(--primary);
 }
 
 .first-record-guide strong {
   display: block;
   margin-bottom: 6px;
+  font-family: 'Calistoga', Georgia, serif;
+  font-weight: 400;
 }
 
 .first-record-guide div {
   color: var(--muted);
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 #common-label-grid .ranked-item {
@@ -263,12 +402,13 @@ body.amounts-hidden .record-money {
   min-height: 100px;
 }
 
+/* ── Voice Card ──────────────────────────────────────────── */
 .voice-card {
   background: var(--card);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  border-radius: 18px;
-  padding: 18px 16px;
-  box-shadow: 0 12px 28px rgba(26, 60, 52, 0.08);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 24px 18px;
+  box-shadow: var(--shadow-sm);
   margin-bottom: 14px;
   text-align: center;
 }
@@ -276,68 +416,146 @@ body.amounts-hidden .record-money {
 .mic-button {
   width: 76px;
   height: 76px;
-  border-radius: 999px;
+  border-radius: var(--r-full);
   border: 0;
-  background: linear-gradient(135deg, var(--primary-mid), var(--primary));
+  background: linear-gradient(135deg, var(--primary-mid), #1B4332);
   color: white;
   font-size: 30px;
-  box-shadow: 0 10px 20px rgba(45, 106, 79, 0.24);
+  box-shadow: var(--shadow-green);
+  cursor: pointer;
+  transition: transform var(--t-fast), box-shadow var(--t-fast);
+}
+
+.mic-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(45,106,79,0.35);
+}
+
+.mic-button:active {
+  transform: translateY(0);
 }
 
 .quick-record-panel h2 {
   margin-bottom: 8px;
 }
 
+/* ── Form Fields ─────────────────────────────────────────── */
 .text-field-like {
   width: 100%;
   min-height: 48px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  border: 1.5px solid var(--border);
   background: white;
-  padding: 0 12px;
+  padding: 0 14px;
   margin: 8px 0 12px;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  color: var(--text);
+  transition: border-color var(--t-fast);
+}
+
+.text-field-like:focus {
+  border-color: var(--border-focus);
+  outline: none;
 }
 
 .field {
   display: block;
   color: var(--text);
   font-weight: 600;
+  font-size: 14px;
   margin-bottom: 12px;
 }
 
-.field input {
+.field input,
+.field select {
   width: 100%;
   min-height: 48px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  border: 1.5px solid var(--border);
   background: white;
   margin-top: 6px;
-  padding: 0 12px;
+  padding: 0 14px;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  color: var(--text);
+  transition: border-color var(--t-fast);
 }
 
+.field input:focus,
+.field select:focus {
+  border-color: var(--border-focus);
+  outline: none;
+}
+
+/* ── Buttons ─────────────────────────────────────────────── */
 .btn {
   width: 100%;
   min-height: 52px;
   border: 0;
-  border-radius: 14px;
-  font-weight: 700;
+  border-radius: var(--r-full);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), background var(--t-fast);
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0);
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--primary-mid), var(--primary));
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   color: white;
+  box-shadow: var(--shadow-orange);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 12px 32px rgba(232,148,74,0.4);
 }
 
 .btn-secondary {
-  background: #F8F4EF;
+  background: var(--card);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
+  box-shadow: var(--shadow-xs);
+}
+
+.btn-secondary:hover {
+  border-color: rgba(45,106,79,0.3);
+  background: var(--bg);
+}
+
+.btn-green {
+  background: linear-gradient(135deg, var(--primary-mid), #1B4332);
+  color: white;
+  box-shadow: var(--shadow-green);
+}
+
+.btn-green:hover {
+  box-shadow: 0 12px 32px rgba(45,106,79,0.38);
+}
+
+.btn-sm {
+  width: auto;
+  min-height: 36px;
+  padding: 0 1rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 .error {
   color: var(--danger);
+  font-size: 14px;
 }
 
+/* ── History / Records ───────────────────────────────────── */
 .history-list,
 .ranked-list {
   display: grid;
@@ -345,12 +563,35 @@ body.amounts-hidden .record-money {
 }
 
 .record-card {
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 14px;
   background: white;
+  transition: box-shadow var(--t-fast);
 }
 
+.record-card:hover {
+  box-shadow: var(--shadow-xs);
+}
+
+.record-card strong {
+  display: block;
+  font-weight: 600;
+}
+
+.record-meta {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.money-value,
+.record-money {
+  transition: filter 0.2s ease;
+}
+
+/* ── Metric Grid / Dashboard ─────────────────────────────── */
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -359,45 +600,97 @@ body.amounts-hidden .record-money {
 }
 
 .metric-card {
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px;
   background: white;
-  box-shadow: 0 8px 18px rgba(26, 60, 52, 0.05);
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow var(--t-fast);
+}
+
+.metric-card:hover {
+  box-shadow: var(--shadow-sm);
 }
 
 .metric-card span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   margin-bottom: 6px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  font-weight: 600;
 }
 
 .metric-card strong {
   display: block;
   color: var(--primary);
+  font-family: 'Calistoga', Georgia, serif;
   font-size: 22px;
+  font-weight: 400;
   line-height: 1.15;
 }
 
-.record-card strong {
-  display: block;
+/* ── Chart Panel ─────────────────────────────────────────── */
+.chart-panel h2 {
+  margin: 0;
 }
 
-.record-meta {
-  margin-top: 4px;
-  color: var(--muted);
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.chart-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+/* ── Tier & Streak ───────────────────────────────────────── */
+.tier-streak-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tier-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
-  line-height: 1.45;
+  color: var(--muted);
 }
 
-.money-value,
-.record-money {
-  transition: filter 0.2s ease;
+.tier-bar {
+  width: 90px;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
 }
 
+.tier-fill {
+  height: 100%;
+  background: var(--primary-light);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.streak-row {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.streak-row strong {
+  color: var(--accent);
+}
+
+/* ── Daily Reminder Banner ───────────────────────────────── */
 .daily-reminder-banner[hidden] {
   display: none;
 }
@@ -407,9 +700,9 @@ body.amounts-hidden .record-money {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--accent);
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--accent-light);
   background: #FFF8EE;
 }
 
@@ -438,8 +731,50 @@ body.amounts-hidden .record-money {
   background: transparent;
   color: var(--muted);
   font-size: 18px;
+  cursor: pointer;
 }
 
+.verified-report-section {
+  margin-top: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.payment-tiers {
+  display: grid;
+  gap: 10px;
+}
+
+.loan-readiness-banner {
+  background: linear-gradient(135deg, #E8F5E9, #D8F3DC);
+  border: 1px solid #52B788;
+  border-radius: var(--r-md);
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.loan-readiness-banner .banner-content {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.loan-readiness-banner .banner-icon {
+  font-size: 1.5rem;
+}
+
+.loan-readiness-banner .btn-sm {
+  min-height: 36px;
+  padding: 0 1rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+/* ── Settings ────────────────────────────────────────────── */
 .settings-list {
   display: grid;
   gap: 10px;
@@ -468,6 +803,7 @@ body.amounts-hidden .record-money {
 .settings-row strong {
   color: var(--text);
   font-size: 14px;
+  font-weight: 600;
   line-height: 1.35;
   text-align: right;
 }
@@ -482,12 +818,13 @@ body.amounts-hidden .record-money {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: #F8F4EF;
-  border: 1px solid var(--border);
+  padding: 8px 14px;
+  border-radius: var(--r-full);
+  background: var(--bg);
+  border: 1.5px solid var(--border);
   color: var(--text);
   font-size: 13px;
+  font-weight: 500;
 }
 
 .settings-toggle-list {
@@ -503,13 +840,13 @@ body.amounts-hidden .record-money {
 }
 
 .settings-toggle-title {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text);
   font-weight: 600;
 }
 
 .settings-toggle-copy {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   margin-top: 2px;
 }
@@ -518,11 +855,13 @@ body.amounts-hidden .record-money {
   width: 50px;
   min-width: 50px;
   height: 28px;
-  border-radius: 999px;
+  border-radius: var(--r-full);
   border: 0;
-  background: #DDD4CA;
+  background: var(--border);
   position: relative;
   padding: 0;
+  cursor: pointer;
+  transition: background var(--t-fast);
 }
 
 .settings-toggle span {
@@ -533,6 +872,7 @@ body.amounts-hidden .record-money {
   height: 22px;
   border-radius: 50%;
   background: white;
+  box-shadow: var(--shadow-xs);
   transition: transform 0.2s ease;
 }
 
@@ -544,6 +884,7 @@ body.amounts-hidden .record-money {
   transform: translateX(22px);
 }
 
+/* ── PIN Lock ────────────────────────────────────────────── */
 .pin-setup-area[hidden],
 #pin-lock-screen[hidden] {
   display: none;
@@ -562,11 +903,12 @@ body.amounts-hidden .record-money {
 .pin-field-stack input {
   width: 100%;
   min-height: 48px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  border: 1.5px solid var(--border);
   background: white;
   padding: 0 12px;
   font-size: 18px;
+  font-family: 'Inter', sans-serif;
   letter-spacing: 6px;
   text-align: center;
 }
@@ -578,7 +920,7 @@ body.amounts-hidden .record-money {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--primary);
+  background: linear-gradient(160deg, #1B2F1F 0%, #0F1A10 100%);
   padding: 24px;
 }
 
@@ -594,14 +936,15 @@ body.amounts-hidden .record-money {
 }
 
 .pin-lock-title {
-  font-size: 22px;
-  font-weight: 700;
+  font-family: 'Calistoga', Georgia, serif;
+  font-size: 24px;
+  font-weight: 400;
   margin-bottom: 4px;
 }
 
 .pin-lock-copy {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.74);
+  color: rgba(245, 240, 232, 0.65);
   margin-bottom: 36px;
 }
 
@@ -616,12 +959,14 @@ body.amounts-hidden .record-money {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid white;
+  border: 2px solid rgba(255,255,255,0.6);
   background: transparent;
+  transition: background var(--t-fast), border-color var(--t-fast);
 }
 
 .pin-dot.filled {
   background: white;
+  border-color: white;
 }
 
 .pin-error {
@@ -642,29 +987,35 @@ body.amounts-hidden .record-money {
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.1);
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
   color: white;
   font-size: 24px;
   font-weight: 600;
-  font-family: inherit;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: background var(--t-fast);
 }
 
 .pin-key:active {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.22);
 }
 
+/* ── Confirmation Screen ─────────────────────────────────── */
 .confirm-copy {
+  font-family: 'Calistoga', Georgia, serif;
   font-size: 24px;
+  font-weight: 400;
   color: var(--primary);
-  font-weight: 800;
   margin-bottom: 10px;
+  line-height: 1.2;
 }
 
 .confirm-meta {
   color: var(--muted);
   line-height: 1.6;
   margin-bottom: 14px;
+  font-size: 15px;
 }
 
 .button-stack {
@@ -672,6 +1023,7 @@ body.amounts-hidden .record-money {
   gap: 10px;
 }
 
+/* ── Modals ──────────────────────────────────────────────── */
 .modal-shell[hidden] {
   display: none;
 }
@@ -685,7 +1037,9 @@ body.amounts-hidden .record-money {
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(28, 25, 23, 0.42);
+  background: rgba(15, 26, 16, 0.42);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .modal-card {
@@ -697,9 +1051,9 @@ body.amounts-hidden .record-money {
   max-height: 85vh;
   overflow: auto;
   background: var(--card);
-  border-radius: 22px;
-  padding: 16px;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+  border-radius: var(--r-xl);
+  padding: 18px;
+  box-shadow: 0 24px 60px rgba(15,26,16,0.18), 0 8px 20px rgba(15,26,16,0.08);
 }
 
 .modal-actions {
@@ -717,6 +1071,7 @@ body.amounts-hidden .record-money {
   display: block;
 }
 
+/* ── Bottom Navigation ───────────────────────────────────── */
 .bottom-nav[hidden] {
   display: none;
 }
@@ -727,28 +1082,31 @@ body.amounts-hidden .record-money {
   bottom: 0;
   transform: translateX(-50%);
   width: min(100%, 560px);
-  background: rgba(26, 60, 52, 0.98);
-  border-top-left-radius: 18px;
-  border-top-right-radius: 18px;
+  background: linear-gradient(160deg, #1B2F1F, #0F1A10);
+  border-top-left-radius: var(--r-xl);
+  border-top-right-radius: var(--r-xl);
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
-  box-shadow: 0 -8px 24px rgba(26, 60, 52, 0.18);
+  box-shadow: 0 -8px 30px rgba(15,26,16,0.25);
   z-index: 6;
 }
 
 .nav-item {
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--r-md);
   background: transparent;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(245, 240, 232, 0.65);
   min-height: 54px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
 }
 
 .nav-item span {
@@ -758,6 +1116,7 @@ body.amounts-hidden .record-money {
 
 .nav-item strong {
   font-size: 11px;
+  font-weight: 500;
   line-height: 1.1;
 }
 
@@ -766,6 +1125,11 @@ body.amounts-hidden .record-money {
   color: white;
 }
 
+.nav-item:hover:not(.active) {
+  color: rgba(245, 240, 232, 0.85);
+}
+
+/* ── Privacy Toggle ──────────────────────────────────────── */
 .privacy-button {
   color: var(--primary);
 }
@@ -779,18 +1143,28 @@ body.amounts-hidden .record-money {
     transform: scale(1);
     box-shadow: 0 0 0 rgba(82, 183, 136, 0);
   }
-
   35% {
     transform: scale(1.08);
     box-shadow: 0 0 0 6px rgba(82, 183, 136, 0.18);
   }
-
   100% {
     transform: scale(1);
     box-shadow: 0 0 0 rgba(82, 183, 136, 0);
   }
 }
 
+/* ── Storage Warning ─────────────────────────────────────── */
+.storage-warning {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: #FFF8EE;
+  border: 1px solid var(--accent-light);
+  color: var(--primary);
+  font-size: 14px;
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
 @media (max-width: 520px) {
   .app-shell {
     padding: 14px 14px 92px;
@@ -874,70 +1248,4 @@ body.amounts-hidden .record-money {
   .nav-item strong {
     font-size: 10px;
   }
-}
-
-.chart-panel h2 {
-  margin: 0;
-}
-
-.storage-warning {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: #FFF8EE;
-  border: 1px solid rgba(244, 162, 97, 0.45);
-  color: var(--primary);
-}
-
-.chart-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.chart-toggle {
-  display: flex;
-  gap: 4px;
-}
-
-.tier-streak-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 14px;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.tier-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.tier-bar {
-  width: 90px;
-  height: 6px;
-  background: var(--border);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.tier-fill {
-  height: 100%;
-  background: var(--primary-light);
-  border-radius: 3px;
-  transition: width 0.5s ease;
-}
-
-.streak-row {
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.streak-row strong {
-  color: var(--accent);
 }

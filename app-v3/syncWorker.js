@@ -2,7 +2,7 @@ function normalizeApiBaseUrl(rawUrl) {
   return String(rawUrl || "").trim().replace(/\/+$/, "");
 }
 
-async function postJson(baseUrl, path, body, authToken) {
+export async function postJson(baseUrl, path, body, authToken) {
   const normalizedBaseUrl = normalizeApiBaseUrl(baseUrl);
   if (!normalizedBaseUrl) {
     const error = new Error("Sync server URL is not configured.");
