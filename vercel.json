@@ -1,18 +1,15 @@
 {
-  "cleanUrls": true,
-  "trailingSlash": false,
-  "headers": [
+  "routes": [
     {
-      "source": "/app/sw.js",
-      "headers": [
-        { "key": "Service-Worker-Allowed", "value": "/app" }
-      ]
-    }
-  ],
-  "rewrites": [
-    { "source": "/app", "destination": "/app-v3/index.html" },
-    { "source": "/app/:match*", "destination": "/app-v3/:match*" },
-    { "source": "/verify/:vt_id", "destination": "/website-v2/verify.html" },
-    { "source": "/:match*", "destination": "/website-v2/:match*" }
+      "src": "/app/sw.js",
+      "dest": "/app-v3/sw.js",
+      "headers": { "Service-Worker-Allowed": "/app" }
+    },
+    { "src": "/app/manifest.json", "dest": "/app-v3/manifest.json" },
+    { "src": "/app/icons/(.*)", "dest": "/app-v3/icons/$1" },
+    { "src": "/app/(.*)", "dest": "/app-v3/$1" },
+    { "src": "/app", "dest": "/app-v3/index.html" },
+    { "src": "/verify/(?<vt_id>[^/]+)", "dest": "/website-v2/verify.html" },
+    { "src": "/(.*)", "dest": "/website-v2/$1" }
   ]
 }
