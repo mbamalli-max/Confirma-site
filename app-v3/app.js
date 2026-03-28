@@ -3313,7 +3313,13 @@ async function requestServerOtpCode() {
     const data = await res.json();
     console.log("OTP request response:", data);
 
-    alert("Code sent. Check server terminal for dev code.");
+    state.otpChallenge = {
+      phoneNumber,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      source: "server",
+      devCode: data.dev_code || ""
+    };
+    renderOtpScreen();
   } catch (err) {
     console.error(err);
     alert("Failed to request OTP");
