@@ -42,7 +42,7 @@ export function getDefaultSyncApiBaseUrl() {
   if (host === "127.0.0.1" || host === "localhost") {
     return "http://127.0.0.1:8787";
   }
-  return "";
+  return "https://confirma-server-production.up.railway.app";
 }
 
 export async function requestOtpCode(baseUrl, phoneNumber) {
