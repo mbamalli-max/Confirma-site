@@ -295,6 +295,7 @@ const state = {
   activeRecognition: null,
   captureExampleIndex: 0,
   captureExampleInterval: null,
+  preferredLabelEditorOpen: false,
   phoneVerified: false,
   devicePrivateKey: null,
   devicePublicKey: "",
@@ -336,7 +337,13 @@ async function init() {
   renderActionRows();
 
   if (state.profile) {
-    state.profile.preferred_labels = Array.isArray(state.profile.preferred_labels) ? state.profile.preferred_labels : [];
+    state.profile.preferred_labels = normalizePreferredLabels(state.profile.preferred_labels, state.profile.business_type_id);
+    if (!state.profile.display_name) {
+      state.onboardingStep = 5;
+      renderOnboarding();
+      showScreen("screen-onboarding");
+      return;
+    }
     hydrateProfileUi();
     if (state.profile.pinEnabled && state.profile.pinHash) {
       showPinLock();
@@ -362,6 +369,7 @@ function cacheElements() {
     "voice-example-v2",
     "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
+    "settings-preferred-edit-v2", "settings-preferred-editor", "settings-preferred-grid", "settings-preferred-done-v2",
     "settings-capture-v2", "settings-summary-v2", "settings-trust-v3", "settings-change-profile-v2",
     "settings-open-trust-v3", "export-button-v2", "export-status-v2", "export-trust-status-v3", "export-open-trust-v3",
     "verified-report-section", "verified-report-region-note", "payment-tiers", "payment-status",
@@ -402,6 +410,8 @@ function wireEvents() {
   document.getElementById("back-home").addEventListener("click", () => showScreen("screen-capture"));
   document.getElementById("settings-change-profile-v2").addEventListener("click", openChangeProfileConfirm);
   document.getElementById("settings-open-trust-v3").addEventListener("click", () => openTrustSetup("screen-settings"));
+  document.getElementById("settings-preferred-edit-v2").addEventListener("click", () => togglePreferredLabelEditor());
+  document.getElementById("settings-preferred-done-v2").addEventListener("click", () => togglePreferredLabelEditor(false));
   document.getElementById("export-button-v2").addEventListener("click", generateExport);
   document.getElementById("export-open-trust-v3").addEventListener("click", () => openTrustSetup("screen-export"));
   document.getElementById("dismiss-reminder-btn").addEventListener("click", dismissDailyReminder);
@@ -550,20 +560,25 @@ function renderBusinessGrid() {
   });
 }
 
-function renderCommonLabelGrid() {
-  els["common-label-grid"].innerHTML = "";
+function renderCommonLabelGrid(containerId = "common-label-grid") {
+  const container = els[containerId] || document.getElementById(containerId);
+  if (!container) return;
+
+  container.innerHTML = "";
   if (!(state.profile && state.profile.business_type_id)) return;
 
   const labels = getCommonTransactionOptions(state.profile.business_type_id);
-  const selected = state.profile.preferred_labels || [];
+  const selected = normalizePreferredLabels(state.profile.preferred_labels, state.profile.business_type_id);
 
   labels.forEach((item) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `ranked-item${selected.includes(item.display_name) ? " active" : ""}`;
     button.innerHTML = `<strong>${getIconForLabel(item.display_name)} ${item.display_name}</strong><span>${friendlyActionLabel(item.context)}</span><small>Show more often while recording</small>`;
-    button.addEventListener("click", () => togglePreferredLabel(item.display_name));
-    els["common-label-grid"].appendChild(button);
+    button.addEventListener("click", () => {
+      void togglePreferredLabel(item.display_name);
+    });
+    container.appendChild(button);
   });
 }
 
@@ -856,7 +871,8 @@ async function renderSettings() {
   const effectiveRecords = getOperationalRecords(records);
   const businessType = BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id);
   const sector = SECTORS.find((item) => item.id === state.profile.sector_id);
-  const preferred = state.profile.preferred_labels || [];
+  const preferred = normalizePreferredLabels(state.profile.preferred_labels, state.profile.business_type_id);
+  state.profile.preferred_labels = preferred;
   const currency = state.profile.country === "US" ? "USD" : "NGN";
   const latestRecord = records.length ? records[records.length - 1] : null;
   const totalSales = effectiveRecords
@@ -892,12 +908,7 @@ async function renderSettings() {
     ${renderSettingsRow("Week B status", isSigningReady() ? "This device can sign locally and queue entries for server sync." : "Finish phone verification and device key setup before confirming new entries.")}
   `;
 
-  els["settings-capture-v2"].innerHTML = `
-    ${renderSettingsRow("Primary recording mode", "Voice-first with text fallback")}
-    ${renderSettingsRow("Confirmation rule", "Every transaction must be reviewed before append")}
-    ${renderSettingsRow("Quick-pick strategy", preferred.length ? `${preferred.length} common transaction${preferred.length === 1 ? "" : "s"} boosted` : "Using business defaults")}
-    ${renderSettingsRow("Transfer handling", "Separate from income and expense")}
-  `;
+  renderRecordingSetupSummary();
 
   if (state.profile.reminderEnabled === false) {
     els["reminder-toggle"].classList.remove("on");
@@ -919,9 +930,8 @@ async function renderSettings() {
     els["pin-setup-error"].textContent = "";
   }
 
-  els["settings-preferred-v2"].innerHTML = preferred.length
-    ? preferred.map((label) => `<div class="settings-chip">${getIconForLabel(label)} ${label}</div>`).join("")
-    : `<div class="record-meta">No common transactions selected yet.</div>`;
+  renderPreferredLabelsSummary();
+  syncPreferredLabelEditor();
 
   els["settings-summary-v2"].innerHTML = `
     ${renderSettingsRow("Confirmed records", String(records.length))}
@@ -939,6 +949,48 @@ async function renderSettings() {
 
 function renderSettingsRow(label, value) {
   return `<div class="settings-row"><span>${label}</span><strong>${value}</strong></div>`;
+}
+
+function renderRecordingSetupSummary() {
+  if (!(els["settings-capture-v2"] && state.profile)) return;
+  const preferred = normalizePreferredLabels(state.profile.preferred_labels, state.profile.business_type_id);
+  els["settings-capture-v2"].innerHTML = `
+    ${renderSettingsRow("Primary recording mode", "Voice-first with text fallback")}
+    ${renderSettingsRow("Confirmation rule", "Every transaction must be reviewed before append")}
+    ${renderSettingsRow("Quick-pick strategy", preferred.length ? `${preferred.length} common transaction${preferred.length === 1 ? "" : "s"} boosted` : "Using business defaults")}
+    ${renderSettingsRow("Transfer handling", "Separate from income and expense")}
+  `;
+}
+
+function renderPreferredLabelsSummary() {
+  if (!els["settings-preferred-v2"]) return;
+  const preferred = normalizePreferredLabels(state.profile?.preferred_labels, state.profile?.business_type_id);
+  els["settings-preferred-v2"].innerHTML = preferred.length
+    ? preferred.map((label) => `<div class="settings-chip">${getIconForLabel(label)} ${label}</div>`).join("")
+    : `<div class="record-meta">No common transactions selected yet.</div>`;
+}
+
+function syncPreferredLabelEditor() {
+  if (els["settings-preferred-edit-v2"]) {
+    els["settings-preferred-edit-v2"].textContent = state.preferredLabelEditorOpen ? "Close" : "Edit";
+  }
+  if (els["settings-preferred-editor"]) {
+    els["settings-preferred-editor"].hidden = !state.preferredLabelEditorOpen;
+  }
+  if (!els["settings-preferred-grid"]) return;
+  if (state.preferredLabelEditorOpen) {
+    renderCommonLabelGrid("settings-preferred-grid");
+  } else {
+    els["settings-preferred-grid"].innerHTML = "";
+  }
+}
+
+function togglePreferredLabelEditor(forceOpen) {
+  if (!(state.profile && state.profile.business_type_id)) return;
+  state.preferredLabelEditorOpen = typeof forceOpen === "boolean"
+    ? forceOpen
+    : !state.preferredLabelEditorOpen;
+  syncPreferredLabelEditor();
 }
 
 function dismissDailyReminder() {
@@ -1645,13 +1697,46 @@ function getCommonTransactionOptions(businessTypeId) {
   return items.slice(0, 16);
 }
 
-function togglePreferredLabel(label) {
+function normalizePreferredLabels(labels, businessTypeId = state.profile?.business_type_id) {
+  const values = Array.isArray(labels) ? labels : [];
+  const availableLabels = businessTypeId
+    ? new Set(getCommonTransactionOptions(businessTypeId).map((item) => item.display_name))
+    : null;
+  const normalized = [];
+
+  values.forEach((label) => {
+    const value = String(label || "").trim();
+    if (!value) return;
+    if (availableLabels && availableLabels.size && !availableLabels.has(value)) return;
+    if (!normalized.includes(value)) normalized.push(value);
+  });
+
+  return normalized;
+}
+
+async function togglePreferredLabel(label) {
   if (!state.profile) return;
-  const selected = new Set(state.profile.preferred_labels || []);
+  const previous = normalizePreferredLabels(state.profile.preferred_labels, state.profile.business_type_id);
+  const selected = new Set(previous);
   if (selected.has(label)) selected.delete(label);
   else selected.add(label);
-  state.profile.preferred_labels = [...selected];
+  state.profile.preferred_labels = normalizePreferredLabels([...selected], state.profile.business_type_id);
+  try {
+    await saveProfile(state.profile);
+  } catch (error) {
+    state.profile.preferred_labels = previous;
+    console.error("Unable to save preferred labels.", error);
+    renderCommonLabelGrid();
+    renderPreferredLabelsSummary();
+    renderRecordingSetupSummary();
+    syncPreferredLabelEditor();
+    return;
+  }
   renderCommonLabelGrid();
+  renderPreferredLabelsSummary();
+  renderRecordingSetupSummary();
+  syncPreferredLabelEditor();
+  await renderQuickLabels();
 }
 
 async function openSelector() {
@@ -2491,6 +2576,10 @@ function showScreen(id) {
   } else if (previousScreen === "screen-capture" || state.captureExampleInterval) {
     stopCaptureExampleRotation();
   }
+  if (previousScreen === "screen-settings" && id !== "screen-settings" && state.preferredLabelEditorOpen) {
+    state.preferredLabelEditorOpen = false;
+    syncPreferredLabelEditor();
+  }
   if (id !== "screen-confirm") {
     cancelConfirmationSpeech();
   }
@@ -3126,7 +3215,16 @@ function getProfile() {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("settings", "readonly");
     const request = tx.objectStore("settings").get("profile");
-    request.onsuccess = () => resolve(request.result || null);
+    request.onsuccess = () => {
+      if (!request.result) {
+        resolve(null);
+        return;
+      }
+      resolve({
+        ...request.result,
+        preferred_labels: normalizePreferredLabels(request.result.preferred_labels, request.result.business_type_id)
+      });
+    };
     request.onerror = () => reject(request.error);
   });
 }
@@ -3134,7 +3232,15 @@ function getProfile() {
 function saveProfile(profile) {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("settings", "readwrite");
-    tx.objectStore("settings").put({ ...profile, key: "profile" });
+    const normalizedProfile = {
+      ...profile,
+      preferred_labels: normalizePreferredLabels(profile?.preferred_labels, profile?.business_type_id),
+      key: "profile"
+    };
+    if (profile) {
+      profile.preferred_labels = normalizedProfile.preferred_labels;
+    }
+    tx.objectStore("settings").put(normalizedProfile);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
@@ -3388,297 +3494,4 @@ async function flushSyncQueue() {
     state.lastSyncReceipt = response.server_receipt || "";
     await Promise.all([
       saveSetting("last_sync_at", state.lastSyncAt),
-      saveSetting("last_sync_receipt", state.lastSyncReceipt)
-    ]);
-    await refreshSyncQueueCount();
-    state.syncStatus = response.synced_count
-      ? `Synced ${response.synced_count} entr${response.synced_count === 1 ? "y" : "ies"} to the server.`
-      : "Server already had the queued entries.";
-  } catch (error) {
-    if (error.statusCode === 401) {
-      state.syncStatus = "Sync auth expired. Re-verify your phone.";
-    } else if (error.statusCode === 409) {
-      state.syncStatus = "Server reported a fork. Sync paused until remediation.";
-    } else {
-      state.syncStatus = error.message || "Sync failed. Entries remain queued.";
-    }
-  } finally {
-    state.syncInFlight = false;
-  }
-}
-
-function getUsageMap() {
-  return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("usage", "readonly");
-    const request = tx.objectStore("usage").getAll();
-    request.onsuccess = () => {
-      const map = new Map();
-      request.result.forEach((item) => map.set(item.normalized_label, item.count));
-      resolve(map);
-    };
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function bumpLabelUsage(normalizedLabel) {
-  return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("usage", "readwrite");
-    const store = tx.objectStore("usage");
-    const getRequest = store.get(normalizedLabel);
-    getRequest.onsuccess = () => {
-      const current = getRequest.result || { normalized_label: normalizedLabel, count: 0 };
-      store.put({ normalized_label: normalizedLabel, count: current.count + 1 });
-    };
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function createUserCustomLabel(value) {
-  const normalized = normalizeText(value).replace(/\s+/g, "_");
-  const learnedFrom = getCustomLabelLearnedFrom();
-  const item = {
-    id: `custom_${Date.now()}`,
-    normalized_label: normalized,
-    display_name: value,
-    synonyms: [value],
-    icon: "⭐",
-    image_url: null,
-    transaction_contexts: [customLabelContextForLearnedFrom(learnedFrom)],
-    countries: [state.profile.country],
-    business_types: [state.profile.business_type_id]
-  };
-
-  await new Promise((resolve, reject) => {
-    const tx = state.db.transaction("customLabels", "readwrite");
-    tx.objectStore("customLabels").put({
-      id: item.id,
-      user_id: "local-user",
-      display_name: item.display_name,
-      normalized_label: item.normalized_label,
-      source: "manual_entry",
-      learned_from: learnedFrom,
-      business_type_id: state.profile.business_type_id
-    });
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-
-  LABEL_CATALOG.push(item);
-  return item;
-}
-
-function loadCustomLabelsIntoCatalog() {
-  return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("customLabels", "readonly");
-    const request = tx.objectStore("customLabels").getAll();
-    request.onsuccess = () => {
-      request.result.forEach((item) => {
-        const alreadyExists = LABEL_CATALOG.some((label) => label.id === item.id);
-        if (alreadyExists) return;
-        LABEL_CATALOG.push({
-          id: item.id,
-          normalized_label: item.normalized_label,
-          display_name: item.display_name,
-          synonyms: [item.display_name],
-          icon: "⭐",
-          image_url: null,
-          transaction_contexts: [customLabelContextForLearnedFrom(item.learned_from)],
-          countries: [state.profile?.country || "NG", "US"].filter((value, index, array) => array.indexOf(value) === index),
-          business_types: [item.business_type_id]
-        });
-      });
-      resolve();
-    };
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function sha256(input) {
-  const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
-  return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function canonicalizePublicJwk(jwk) {
-  return JSON.stringify({
-    key_ops: jwk.key_ops || ["verify"],
-    ext: Boolean(jwk.ext),
-    kty: jwk.kty,
-    crv: jwk.crv,
-    x: jwk.x,
-    y: jwk.y
-  });
-}
-
-function hasVerifiedPhoneAnchor() {
-  return Boolean(
-    (state.profile?.identity_status === "verified_local" || state.profile?.identity_status === "verified_server")
-    && state.profile?.phone_number
-  );
-}
-
-function stopActiveRecognition() {
-  if (!state.activeRecognition) return;
-  try {
-    state.activeRecognition.stop();
-  } catch (error) {
-    state.activeRecognition = null;
-  }
-}
-
-function isWebCryptoAvailable() {
-  return Boolean(window.crypto?.subtle && window.crypto?.getRandomValues);
-}
-
-function isSigningReady() {
-  return !getSigningBlockReason();
-}
-
-function getDeviceKeyStatusLabel() {
-  if (!isWebCryptoAvailable()) return "WebCrypto not available in this browser";
-  if (state.devicePrivateKey && state.publicKeyFingerprint) return "Ready on this device";
-  if (hasVerifiedPhoneAnchor()) return "Phone verified, device key still missing";
-  return "Not set up yet";
-}
-
-function getAuthSessionStatusLabel() {
-  if (state.authToken && state.authTokenExpiresAt) {
-    return `Active until ${new Date(state.authTokenExpiresAt).toLocaleString()}`;
-  }
-  if (state.authToken) return "Active";
-  return "No server session yet";
-}
-
-function getSigningBlockReason() {
-  if (!hasVerifiedPhoneAnchor()) {
-    return "Verify your phone before confirming a new record.";
-  }
-  if (!isWebCryptoAvailable()) {
-    return "This browser does not support device signing, so confirmation is disabled.";
-  }
-  if (!(state.devicePrivateKey && state.publicKeyFingerprint)) {
-    return "Finish device key setup before confirming a new record.";
-  }
-  return "";
-}
-
-function getOtpHelperText() {
-  if (!state.otpChallenge) {
-    return "";
-  }
-  if (state.otpChallenge.source === "server" && state.otpChallenge.devCode) {
-    return `Server OTP requested. Development code: ${state.otpChallenge.devCode}. It expires in 10 minutes.`;
-  }
-  if (state.otpChallenge.source === "server") {
-    return "Server OTP requested. Enter the code sent by the sync server.";
-  }
-  return `Local fallback code for this device: ${state.otpChallenge.code}. It expires in 10 minutes.`;
-}
-
-function buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash) {
-  return [
-    id,
-    record.transaction_type,
-    record.normalized_label,
-    record.amount_minor,
-    record.currency,
-    record.counterparty,
-    record.business_type_id,
-    record.country,
-    record.source_account,
-    record.destination_account,
-    record.reversed_entry_hash,
-    record.reversed_transaction_type,
-    confirmedAt,
-    prevHash
-  ].map((value) => value == null ? "" : String(value)).join("|");
-}
-
-function getCustomLabelLearnedFrom() {
-  if (state.currentAction === "transfer") return state.transferSubtype;
-  return state.currentAction;
-}
-
-function customLabelContextForLearnedFrom(learnedFrom) {
-  if (learnedFrom === "transfer_in") return "receipt";
-  if (learnedFrom === "transfer_out") return "payment";
-  return learnedFrom;
-}
-
-async function requestServerOtpCode() {
-  const phoneInput = document.getElementById("otp-phone-input");
-  const country = getSelectedCountryId();
-  const phoneNumber = normalizePhoneNumber(phoneInput.value.trim(), country);
-
-  if (!phoneNumber) {
-    showOtpError(getPhoneValidationMessage(country));
-    return;
-  }
-
-  try {
-    clearOtpError();
-    const res = await fetch(`${state.syncApiBaseUrl}/auth/otp/request`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone_number: phoneNumber })
-    });
-
-    const data = await res.json();
-    console.log("OTP request response:", data);
-
-    state.otpChallenge = {
-      phoneNumber,
-      expiresAt: Date.now() + 10 * 60 * 1000,
-      source: "server",
-      devCode: data.dev_code || ""
-    };
-    renderOtpScreen();
-  } catch (err) {
-    console.error(err);
-    showOtpError("Failed to request OTP");
-  }
-}
-
-async function verifyServerOtpCode() {
-  const phoneInput = document.getElementById("otp-phone-input");
-  const codeInput = document.getElementById("otp-code-input");
-
-  const country = getSelectedCountryId();
-  const phoneNumber = normalizePhoneNumber(phoneInput.value.trim(), country);
-  const code = codeInput.value.trim();
-
-  if (!phoneNumber || !code) {
-    showOtpError(!phoneNumber ? getPhoneValidationMessage(country) : "Enter phone and code");
-    return;
-  }
-
-  try {
-    clearOtpError();
-    const res = await fetch(`${state.syncApiBaseUrl}/auth/otp/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        phone_number: phoneNumber,
-        code: code
-      })
-    });
-
-    const data = await res.json();
-    console.log("OTP verify response:", data);
-
-    if (data.auth_token) {
-      localStorage.setItem("auth_token", data.auth_token);
-      alert("Server sign-in successful");
-      window.location.reload();
-
-      if (typeof syncQueuedEntries === "function") {
-        await syncQueuedEntries();
-      }
-    } else {
-      alert("Verification failed");
-    }
-  } catch (err) {
-    console.error(err);
-    showOtpError("Failed to verify OTP");
-  }
-}
+      saveSetting("last_sync_receipt", state.l

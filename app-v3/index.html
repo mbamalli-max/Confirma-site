@@ -406,8 +406,21 @@
         </div>
       </div>
       <div class="panel">
-        <h2>Common transactions</h2>
+        <div class="action-header">
+          <div>
+            <h2>Common transactions</h2>
+            <p class="subtle">Boost the labels you want to see first on the Record screen.</p>
+          </div>
+          <button class="pill-button" id="settings-preferred-edit-v2" type="button">Edit</button>
+        </div>
         <div class="settings-chip-list" id="settings-preferred-v2"></div>
+        <div id="settings-preferred-editor" hidden style="margin-top:14px">
+          <p class="record-meta">Toggle the labels you want to surface more often while recording.</p>
+          <div class="visual-grid label-grid" id="settings-preferred-grid" style="margin-top:10px"></div>
+          <div class="button-stack" style="margin-top:12px">
+            <button class="btn btn-secondary" id="settings-preferred-done-v2" type="button">Done</button>
+          </div>
+        </div>
       </div>
       <div class="panel">
         <h2>Security</h2>
@@ -551,29 +564,4 @@
       </div>
 
       <div class="modal-mode" data-mode-panel="speak">
-        <p class="subtle">Speak a label and Confirma will rank the best matches before you confirm.</p>
-        <button class="btn btn-primary" id="speak-label-button" type="button">Speak label</button>
-        <p class="subtle" id="speech-status"></p>
-        <div class="ranked-list" id="speech-results"></div>
-      </div>
-
-      <div class="modal-mode" data-mode-panel="browse">
-        <div class="ranked-list" id="browse-results"></div>
-      </div>
-
-      <div class="modal-mode" data-mode-panel="other">
-        <p class="subtle">If you cannot find a match, confirm a custom label and Confirma will learn it for future ranking.</p>
-        <label class="field">
-          Custom label
-          <input id="custom-label-input" type="text" placeholder="Enter your label">
-        </label>
-        <button class="btn btn-secondary" id="save-custom-label" type="button">Use this custom label</button>
-      </div>
-    </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
-  <script src="https://js.paystack.co/v2/inline.js"></script>
-  <script type="module" src="app.js"></script>
-</body>
-</html>
+        <p class="subtle">Speak a label and Confirma will rank the best match
