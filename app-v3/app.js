@@ -275,6 +275,8 @@ const state = {
   lowStorageWarning: "",
   otpChallenge: null,
   otpReturnScreen: "screen-capture",
+  activeRecognition: null,
+  phoneVerified: false,
   devicePrivateKey: null,
   devicePublicKey: "",
   deviceIdentity: "",
@@ -302,6 +304,7 @@ async function init() {
   state.db = await openDb();
   await loadCustomLabelsIntoCatalog();
   state.profile = await getProfile();
+  syncPhoneVerificationState();
   await loadDeviceTrustState();
   await loadSyncState();
   wireEvents();
@@ -828,6 +831,7 @@ async function renderDashboard() {
 
 async function renderSettings() {
   if (!state.profile) return;
+  refreshTrustSetupButtons();
   const records = await getRecords();
   const effectiveRecords = getOperationalRecords(records);
   const businessType = BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id);
@@ -1134,6 +1138,7 @@ async function removePinLock() {
 }
 
 function renderExportScreen() {
+  refreshTrustSetupButtons();
   const verifiedReportsAvailable = supportsVerifiedReports(state.profile?.country);
   els["export-status-v2"].textContent = "";
   if (els["payment-status"]) {
@@ -1482,8 +1487,11 @@ function startVoiceRecordShortcut() {
     return;
   }
 
+  stopActiveRecognition();
   const recognition = new SpeechRec();
+  state.activeRecognition = recognition;
   recognition.lang = state.profile.country === "US" ? "en-US" : "en-NG";
+  recognition.continuous = false;
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
@@ -1492,13 +1500,34 @@ function startVoiceRecordShortcut() {
     const parsed = parseNaturalTransaction(transcript);
     if (!parsed || !parsed.amountMinor) {
       setVoiceRecordError("Could not understand that. Try: Sold rice for 15000.");
-      return;
+    } else {
+      applyParsedTransactionToCapture(parsed);
     }
-    applyParsedTransactionToCapture(parsed);
+    try {
+      recognition.stop();
+    } catch (error) {
+      if (state.activeRecognition === recognition) {
+        state.activeRecognition = null;
+      }
+    }
   };
 
   recognition.onerror = () => {
     setVoiceRecordError("Microphone error. Please try again or use text input.");
+    try {
+      recognition.stop();
+    } catch (error) {
+      // Ignore stop errors after the recognition session has already ended.
+    }
+    if (state.activeRecognition === recognition) {
+      state.activeRecognition = null;
+    }
+  };
+
+  recognition.onend = () => {
+    if (state.activeRecognition === recognition) {
+      state.activeRecognition = null;
+    }
   };
 
   recognition.start();
@@ -1667,8 +1696,11 @@ async function startSpeechMatch() {
   }
 
   els["speech-status"].textContent = "Listening...";
+  stopActiveRecognition();
   const recognition = new SpeechRec();
+  state.activeRecognition = recognition;
   recognition.lang = state.profile.country === "US" ? "en-US" : "en-NG";
+  recognition.continuous = false;
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
   recognition.onresult = (event) => {
@@ -1677,9 +1709,29 @@ async function startSpeechMatch() {
       state.speechResults = results;
       renderSpeechResults(utterance, results);
     });
+    try {
+      recognition.stop();
+    } catch (error) {
+      if (state.activeRecognition === recognition) {
+        state.activeRecognition = null;
+      }
+    }
   };
   recognition.onerror = () => {
     els["speech-status"].textContent = "Speech capture failed. Try again or use search.";
+    try {
+      recognition.stop();
+    } catch (error) {
+      // Ignore stop errors after the recognition session has already ended.
+    }
+    if (state.activeRecognition === recognition) {
+      state.activeRecognition = null;
+    }
+  };
+  recognition.onend = () => {
+    if (state.activeRecognition === recognition) {
+      state.activeRecognition = null;
+    }
   };
   recognition.start();
 }
@@ -2414,6 +2466,10 @@ function showScreen(id) {
 }
 
 function openTrustSetup(returnScreen = "screen-capture") {
+  syncPhoneVerificationState();
+  if (state.authToken && state.phoneVerified) {
+    return;
+  }
   state.otpReturnScreen = returnScreen;
   renderOtpScreen();
   showScreen("screen-otp");
@@ -2582,6 +2638,7 @@ function updateAmountInputStep() {
 
 function renderOtpScreen() {
   if (!els["otp-phone-input"]) return;
+  syncPhoneVerificationState();
   syncCountryAwareInputs();
   els["otp-phone-input"].value = formatPhoneForInput(state.profile?.phone_number || "", getSelectedCountryId());
   els["otp-code-input"].value = "";
@@ -2719,6 +2776,27 @@ function getPhoneAnchorStatusLabel() {
     return "Verified on this device (local fallback)";
   }
   return "Not verified yet";
+}
+
+function syncPhoneVerificationState() {
+  state.phoneVerified = hasVerifiedPhoneAnchor();
+  return state.phoneVerified;
+}
+
+function refreshTrustSetupButtons() {
+  syncPhoneVerificationState();
+  const deviceVerified = Boolean(state.authToken && state.phoneVerified);
+  const trustButtons = [
+    { id: "settings-open-trust-v3", defaultText: "Set up phone verification" },
+    { id: "export-open-trust-v3", defaultText: "Open phone verification" }
+  ];
+
+  trustButtons.forEach(({ id, defaultText }) => {
+    const button = els[id];
+    if (!button) return;
+    button.disabled = deviceVerified;
+    button.textContent = deviceVerified ? "Device verified" : defaultText;
+  });
 }
 
 function showOtpError(message) {
@@ -3357,6 +3435,15 @@ function hasVerifiedPhoneAnchor() {
   );
 }
 
+function stopActiveRecognition() {
+  if (!state.activeRecognition) return;
+  try {
+    state.activeRecognition.stop();
+  } catch (error) {
+    state.activeRecognition = null;
+  }
+}
+
 function isWebCryptoAvailable() {
   return Boolean(window.crypto?.subtle && window.crypto?.getRandomValues);
 }
@@ -3426,90 +3513,4 @@ function buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash) {
 }
 
 function getCustomLabelLearnedFrom() {
-  if (state.currentAction === "transfer") return state.transferSubtype;
-  return state.currentAction;
-}
-
-function customLabelContextForLearnedFrom(learnedFrom) {
-  if (learnedFrom === "transfer_in") return "receipt";
-  if (learnedFrom === "transfer_out") return "payment";
-  return learnedFrom;
-}
-
-async function requestServerOtpCode() {
-  const phoneInput = document.getElementById("otp-phone-input");
-  const country = getSelectedCountryId();
-  const phoneNumber = normalizePhoneNumber(phoneInput.value.trim(), country);
-
-  if (!phoneNumber) {
-    showOtpError(getPhoneValidationMessage(country));
-    return;
-  }
-
-  try {
-    clearOtpError();
-    const res = await fetch(`${state.syncApiBaseUrl}/auth/otp/request`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone_number: phoneNumber })
-    });
-
-    const data = await res.json();
-    console.log("OTP request response:", data);
-
-    state.otpChallenge = {
-      phoneNumber,
-      expiresAt: Date.now() + 10 * 60 * 1000,
-      source: "server",
-      devCode: data.dev_code || ""
-    };
-    renderOtpScreen();
-  } catch (err) {
-    console.error(err);
-    showOtpError("Failed to request OTP");
-  }
-}
-
-async function verifyServerOtpCode() {
-  const phoneInput = document.getElementById("otp-phone-input");
-  const codeInput = document.getElementById("otp-code-input");
-
-  const country = getSelectedCountryId();
-  const phoneNumber = normalizePhoneNumber(phoneInput.value.trim(), country);
-  const code = codeInput.value.trim();
-
-  if (!phoneNumber || !code) {
-    showOtpError(!phoneNumber ? getPhoneValidationMessage(country) : "Enter phone and code");
-    return;
-  }
-
-  try {
-    clearOtpError();
-    const res = await fetch(`${state.syncApiBaseUrl}/auth/otp/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        phone_number: phoneNumber,
-        code: code
-      })
-    });
-
-    const data = await res.json();
-    console.log("OTP verify response:", data);
-
-    if (data.auth_token) {
-      localStorage.setItem("auth_token", data.auth_token);
-      alert("Server sign-in successful");
-      window.location.reload();
-
-      if (typeof syncQueuedEntries === "function") {
-        await syncQueuedEntries();
-      }
-    } else {
-      alert("Verification failed");
-    }
-  } catch (err) {
-    console.error(err);
-    showOtpError("Failed to verify OTP");
-  }
-}
+  if (state.currentAction === "transfer") return state.tr
