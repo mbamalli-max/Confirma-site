@@ -394,7 +394,7 @@ function wireEvents() {
   document.getElementById("onboarding-email").addEventListener("input", clearOnboardingProfileError);
   document.getElementById("otp-back").addEventListener("click", () => showScreen(state.otpReturnScreen || "screen-capture"));
   document.getElementById("otp-request-code").addEventListener("click", requestServerOtpCode);
-  document.getElementById("otp-verify-code").addEventListener("click", verifyServerOtpCode);
+  document.getElementById("otp-verify-code").addEventListener("click", verifyLocalOtpCode);
   document.getElementById("otp-phone-input").addEventListener("input", clearOtpError);
   document.getElementById("otp-code-input").addEventListener("input", clearOtpError);
   document.querySelectorAll(".pin-key").forEach((button) => {
