@@ -129,6 +129,46 @@
       font-size: 0.7rem;
       margin-left: 0.5rem;
     }
+
+    .pin-forgot-link {
+      margin-top: 0.9rem;
+      align-self: center;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.85rem;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+
+    .pin-forgot-link:hover,
+    .pin-forgot-link:focus-visible {
+      color: white;
+    }
+
+    .pin-wipe-warning {
+      margin: 0.75rem 0 1rem;
+      padding: 0.85rem 0.95rem;
+      border-radius: 10px;
+      border: 1px solid #f4b183;
+      background: #fff3e8;
+      color: #8a4b0f;
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    .btn-danger {
+      background: #b42318;
+      color: white;
+      border-color: #b42318;
+    }
+
+    .btn-danger:hover,
+    .btn-danger:focus-visible {
+      background: #991f16;
+      border-color: #991f16;
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
   <title>Confirma</title>
@@ -163,6 +203,8 @@
         <button class="pin-key" data-digit="0" type="button">0</button>
         <button class="pin-key" data-digit="back" type="button" aria-label="Delete last digit">⌫</button>
       </div>
+
+      <button id="pin-forgot-link" class="pin-forgot-link" type="button">Forgot PIN?</button>
     </div>
   </div>
 
@@ -717,6 +759,51 @@
       <div class="button-stack">
         <button class="btn btn-primary" id="pin-confirm-submit" type="button">Confirm</button>
         <button class="btn btn-secondary" id="pin-confirm-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-shell" id="pin-forgot-modal" hidden>
+    <div class="modal-backdrop" id="pin-forgot-close"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="pin-forgot-title">
+      <div class="action-header">
+        <div>
+          <h2 id="pin-forgot-title">Reset your PIN</h2>
+          <p class="subtle">We'll send a code to your verified phone number to reset your PIN.</p>
+        </div>
+      </div>
+      <p class="record-meta" id="pin-forgot-helper">Request a reset code to continue.</p>
+      <div id="pin-forgot-code-wrap" hidden>
+        <label class="field">
+          6-digit code
+          <input id="pin-forgot-code" type="text" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="Enter code">
+        </label>
+      </div>
+      <p id="pin-forgot-error" class="error" role="alert" aria-live="polite" aria-atomic="true"></p>
+      <div class="button-stack">
+        <button class="btn btn-primary" id="pin-forgot-send" type="button">Send reset code</button>
+        <button class="btn btn-primary" id="pin-forgot-confirm" type="button" hidden>Confirm reset</button>
+        <button class="btn btn-secondary" id="pin-forgot-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-shell" id="pin-wipe-modal" hidden>
+    <div class="modal-backdrop" id="pin-wipe-close"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="pin-wipe-title">
+      <div class="action-header">
+        <div>
+          <h2 id="pin-wipe-title">Reset this device</h2>
+          <p class="subtle">This device cannot verify a PIN reset by phone yet.</p>
+        </div>
+      </div>
+      <div class="pin-wipe-warning">
+        Your phone number is not verified on this device. The only way to remove the PIN is to wipe all local data
+        and start fresh. Records not yet synced will be permanently lost.
+      </div>
+      <div class="button-stack">
+        <button class="btn btn-danger" id="pin-wipe-confirm" type="button">Wipe and restart</button>
+        <button class="btn btn-secondary" id="pin-wipe-cancel" type="button">Cancel</button>
       </div>
     </div>
   </div>

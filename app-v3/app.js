@@ -366,6 +366,7 @@ const state = {
   lastVoiceLearnedCorrection: "",
   pinConfirmResolver: null,
   pinConfirmWrongMessage: "",
+  pinRecoveryReturnScreen: "screen-capture",
   pendingAdAction: null,
   interstitialDismiss: null,
   preferredLabelEditorOpen: false,
@@ -459,6 +460,9 @@ function cacheElements() {
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
     "speech-results", "browse-results", "speech-status", "custom-label-input", "onboarding-back",
     "change-confirm-modal", "pin-confirm-modal", "pin-confirm-title", "pin-confirm-copy", "pin-confirm-input", "pin-confirm-error", "pin-confirm-submit", "pin-confirm-cancel", "pin-confirm-close",
+    "pin-forgot-link", "pin-forgot-modal", "pin-forgot-close", "pin-forgot-helper", "pin-forgot-code-wrap",
+    "pin-forgot-code", "pin-forgot-send", "pin-forgot-confirm", "pin-forgot-cancel", "pin-forgot-error",
+    "pin-wipe-modal", "pin-wipe-close", "pin-wipe-confirm", "pin-wipe-cancel",
     "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
     "voice-example-v2", "voice-announce", "banner-history", "banner-dashboard", "banner-export",
     "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
@@ -496,6 +500,23 @@ function wireEvents() {
   document.getElementById("pin-confirm-cancel").addEventListener("click", () => resolvePinConfirmation(""));
   document.getElementById("pin-confirm-close").addEventListener("click", () => resolvePinConfirmation(""));
   document.getElementById("pin-confirm-input").addEventListener("input", clearPinConfirmationError);
+  document.getElementById("pin-forgot-link").addEventListener("click", () => {
+    void openForgotPinFlow();
+  });
+  document.getElementById("pin-forgot-send").addEventListener("click", () => {
+    void sendForgotPinResetCode();
+  });
+  document.getElementById("pin-forgot-confirm").addEventListener("click", () => {
+    void confirmForgotPinReset();
+  });
+  document.getElementById("pin-forgot-cancel").addEventListener("click", closeForgotPinModal);
+  document.getElementById("pin-forgot-close").addEventListener("click", closeForgotPinModal);
+  document.getElementById("pin-forgot-code").addEventListener("input", clearForgotPinError);
+  document.getElementById("pin-wipe-cancel").addEventListener("click", closePinWipeModal);
+  document.getElementById("pin-wipe-close").addEventListener("click", closePinWipeModal);
+  document.getElementById("pin-wipe-confirm").addEventListener("click", () => {
+    void handlePinWipeRestart();
+  });
   els["onboarding-back"].addEventListener("click", goToPreviousOnboardingStep);
   document.getElementById("advanced-toggle").addEventListener("click", () => {
     els["advanced-panel"].hidden = !els["advanced-panel"].hidden;
@@ -1900,6 +1921,7 @@ function showPinLock() {
   updatePinDots();
   els["pin-error"].textContent = "";
   els["pin-lock-screen"].hidden = false;
+  focusFirstInteractive(els["pin-lock-screen"]);
 }
 
 function hidePinLock() {
@@ -3768,6 +3790,195 @@ async function submitPinConfirmation() {
   }
 }
 
+function getActiveScreenId() {
+  return document.querySelector(".screen.active")?.id || "screen-capture";
+}
+
+function canRecoverPinWithOtp() {
+  syncPhoneVerificationState();
+  return Boolean(state.authToken && state.phoneVerified);
+}
+
+function clearForgotPinError() {
+  if (els["pin-forgot-error"]) {
+    els["pin-forgot-error"].textContent = "";
+  }
+}
+
+function showForgotPinError(message) {
+  if (!els["pin-forgot-error"]) return;
+  els["pin-forgot-error"].textContent = message || "";
+}
+
+function syncForgotPinHelperText() {
+  if (!els["pin-forgot-helper"]) return;
+  els["pin-forgot-helper"].textContent = state.otpChallenge
+    ? getOtpHelperText()
+    : "Request a reset code to continue.";
+}
+
+function resetForgotPinModalState() {
+  state.otpChallenge = null;
+  clearForgotPinError();
+  if (els["pin-forgot-code"]) {
+    els["pin-forgot-code"].value = "";
+  }
+  if (els["pin-forgot-code-wrap"]) {
+    els["pin-forgot-code-wrap"].hidden = true;
+  }
+  if (els["pin-forgot-send"]) {
+    els["pin-forgot-send"].hidden = false;
+    els["pin-forgot-send"].disabled = false;
+  }
+  if (els["pin-forgot-confirm"]) {
+    els["pin-forgot-confirm"].hidden = true;
+    els["pin-forgot-confirm"].disabled = false;
+  }
+  syncForgotPinHelperText();
+}
+
+function closeForgotPinModal() {
+  if (els["pin-forgot-modal"]) {
+    els["pin-forgot-modal"].hidden = true;
+  }
+  resetForgotPinModalState();
+}
+
+function openForgotPinModal() {
+  closePinWipeModal();
+  resetForgotPinModalState();
+  if (els["pin-forgot-modal"]) {
+    els["pin-forgot-modal"].hidden = false;
+    focusFirstInteractive(els["pin-forgot-modal"]);
+  }
+}
+
+function closePinWipeModal() {
+  if (els["pin-wipe-modal"]) {
+    els["pin-wipe-modal"].hidden = true;
+  }
+}
+
+function openPinWipeModal() {
+  closeForgotPinModal();
+  if (els["pin-wipe-modal"]) {
+    els["pin-wipe-modal"].hidden = false;
+    focusFirstInteractive(els["pin-wipe-modal"]);
+  }
+}
+
+async function openForgotPinFlow() {
+  state.pinRecoveryReturnScreen = getActiveScreenId();
+  if (canRecoverPinWithOtp()) {
+    openForgotPinModal();
+    return;
+  }
+  openPinWipeModal();
+}
+
+async function sendForgotPinResetCode() {
+  if (!state.profile) return;
+  const country = getSelectedCountryId();
+  const phoneNumber = normalizePhoneNumber(state.profile.phone_number || "", country);
+
+  if (!phoneNumber) {
+    showForgotPinError(getPhoneValidationMessage(country));
+    return;
+  }
+
+  clearForgotPinError();
+  try {
+    await requestOtpChallengeForPhone(phoneNumber);
+    if (els["pin-forgot-code-wrap"]) {
+      els["pin-forgot-code-wrap"].hidden = false;
+    }
+    if (els["pin-forgot-send"]) {
+      els["pin-forgot-send"].hidden = true;
+    }
+    if (els["pin-forgot-confirm"]) {
+      els["pin-forgot-confirm"].hidden = false;
+    }
+    syncForgotPinHelperText();
+    focusFirstInteractive(els["pin-forgot-modal"]);
+  } catch (error) {
+    showForgotPinError(error.message || "Failed to request reset code.");
+  }
+}
+
+function showPinRecoverySuccess(message) {
+  showScreen("screen-capture");
+  els["capture-error"].hidden = false;
+  els["capture-error"].textContent = message;
+  els["capture-error"].style.color = "var(--primary)";
+  window.setTimeout(() => {
+    if (els["capture-error"]) {
+      els["capture-error"].hidden = true;
+      els["capture-error"].textContent = "";
+      els["capture-error"].style.color = "";
+    }
+  }, 3000);
+}
+
+async function clearLocalData() {
+  stopActiveRecognition();
+  stopCaptureExampleRotation();
+  if (state.db) {
+    try {
+      state.db.close();
+    } catch (error) {
+      console.warn("Unable to close IndexedDB cleanly before reset.", error);
+    } finally {
+      state.db = null;
+    }
+  }
+
+  await new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DB_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error || new Error("Failed to clear local database."));
+    request.onblocked = () => reject(new Error("Close other open Confirma tabs before wiping this device."));
+  });
+
+  localStorage.clear();
+  window.location.reload();
+}
+
+async function handlePinWipeRestart() {
+  try {
+    await clearLocalData();
+  } catch (error) {
+    closePinWipeModal();
+    if (els["pin-error"]) {
+      els["pin-error"].textContent = error.message || "Unable to wipe this device right now.";
+    }
+  }
+}
+
+async function confirmForgotPinReset() {
+  if (!state.profile) return;
+  const enteredCode = (els["pin-forgot-code"]?.value || "").trim();
+  try {
+    clearForgotPinError();
+    await verifyActiveOtpChallenge(enteredCode);
+    state.profile.pinEnabled = false;
+    delete state.profile.pinHash;
+    delete state.profile.pinSalt;
+    await saveProfile(state.profile);
+    state.pinAttempts = 0;
+    state.pinEntry = "";
+    updatePinDots();
+    hidePinLock();
+    closeForgotPinModal();
+    await showCapture();
+    showPinRecoverySuccess("PIN removed. You can set a new one in Settings.");
+  } catch (error) {
+    const message = /expired|generate a code/i.test(error.message || "")
+      ? error.message
+      : "Incorrect code. Please try again.";
+    showForgotPinError(message);
+  }
+}
+
 function confirmChangeProfile() {
   closeChangeProfileConfirm();
   state.onboardingStep = 1;
@@ -3976,27 +4187,25 @@ function renderOtpScreen() {
   clearOtpError();
 }
 
-async function requestLocalOtpCode() {
-  if (!state.profile) return;
-  const country = getSelectedCountryId();
-  const phoneNumber = normalizePhoneNumber(els["otp-phone-input"]?.value.trim() || "", country);
+async function requestOtpChallengeForPhone(phoneNumber, { fallbackToLocal = true } = {}) {
   if (!phoneNumber) {
-    showOtpError(getPhoneValidationMessage(country));
-    return;
+    throw new Error(getPhoneValidationMessage(getSelectedCountryId()));
   }
 
-  state.profile.phone_number = phoneNumber;
-  await saveProfile(state.profile);
   try {
     const response = await requestOtpCode(state.syncApiBaseUrl, phoneNumber);
     state.otpChallenge = {
       phoneNumber,
       expiresAt: Date.now() + 10 * 60 * 1000,
       source: "server",
-      devCode: response.dev_code || ""
+      devCode: response.dev_code || "",
+      serverBaseUrl: state.syncApiBaseUrl
     };
     state.syncStatus = "OTP requested from sync server.";
   } catch (error) {
+    if (!fallbackToLocal) {
+      throw error;
+    }
     const random = new Uint32Array(1);
     crypto.getRandomValues(random);
     const code = String(random[0] % 1000000).padStart(6, "0");
@@ -4008,55 +4217,50 @@ async function requestLocalOtpCode() {
     };
     state.syncStatus = "Sync server unavailable. Using local OTP fallback.";
   }
-  renderOtpScreen();
+
+  return state.otpChallenge;
 }
 
-async function verifyLocalOtpCode() {
-  if (!state.profile) return;
-  const country = getSelectedCountryId();
-  const enteredCode = (els["otp-code-input"]?.value || "").trim();
+async function verifyActiveOtpChallenge(enteredCode, { country = getSelectedCountryId() } = {}) {
+  if (!state.profile) {
+    throw new Error("Profile not loaded yet.");
+  }
+
   const activeChallenge = state.otpChallenge;
   if (!activeChallenge) {
-    showOtpError("Generate a code first");
-    return;
+    throw new Error("Generate a code first");
   }
+
   if (Date.now() > activeChallenge.expiresAt) {
     state.otpChallenge = null;
-    renderOtpScreen();
-    showOtpError("This code expired. Generate a new one");
-    return;
+    throw new Error("This code expired. Generate a new one");
   }
+
   if (!/^\d{6}$/.test(enteredCode)) {
-    showOtpError("Enter a valid 6-digit code");
-    return;
+    throw new Error("Enter a valid 6-digit code");
   }
+
   const normalizedChallengePhone = normalizePhoneNumber(activeChallenge.phoneNumber, country);
   if (!normalizedChallengePhone) {
-    showOtpError(getPhoneValidationMessage(country));
-    return;
+    throw new Error(getPhoneValidationMessage(country));
   }
+
   if (activeChallenge.source === "server") {
-    try {
-      const response = await verifyOtpCode(activeChallenge.serverBaseUrl || state.syncApiBaseUrl, normalizedChallengePhone, enteredCode);
-      state.authToken = response.auth_token || "";
-      state.authTokenExpiresAt = response.expires_at || "";
-      state.profile.identity_anchor = "phone";
-      state.profile.identity_status = "verified_server";
-      state.profile.identity_verified_at = Date.now();
-      state.profile.phone_number = normalizedChallengePhone;
-      await Promise.all([
-        saveProfile(state.profile),
-        saveSetting("auth_token", state.authToken),
-        saveSetting("auth_token_expires_at", state.authTokenExpiresAt)
-      ]);
-      state.syncStatus = "Phone verified with sync server.";
-    } catch (error) {
-      showOtpError(error.message || "Server OTP verification failed.");
-      return;
-    }
+    const response = await verifyOtpCode(activeChallenge.serverBaseUrl || state.syncApiBaseUrl, normalizedChallengePhone, enteredCode);
+    state.authToken = response.auth_token || "";
+    state.authTokenExpiresAt = response.expires_at || "";
+    state.profile.identity_anchor = "phone";
+    state.profile.identity_status = "verified_server";
+    state.profile.identity_verified_at = Date.now();
+    state.profile.phone_number = normalizedChallengePhone;
+    await Promise.all([
+      saveProfile(state.profile),
+      saveSetting("auth_token", state.authToken),
+      saveSetting("auth_token_expires_at", state.authTokenExpiresAt)
+    ]);
+    state.syncStatus = "Phone verified with sync server.";
   } else if (enteredCode !== activeChallenge.code) {
-    showOtpError("Enter the 6-digit code shown for this device");
-    return;
+    throw new Error("Incorrect code. Please try again.");
   } else {
     state.profile.phone_number = normalizedChallengePhone;
     state.profile.identity_anchor = "phone";
@@ -4069,13 +4273,49 @@ async function verifyLocalOtpCode() {
   try {
     await ensureDeviceKeyMaterial();
   } catch (error) {
-    showOtpError(error.message || "Phone verified, but device key setup failed.");
-    return;
+    throw new Error(error.message || "Phone verified, but device key setup failed.");
   }
 
   state.otpChallenge = null;
+  syncPhoneVerificationState();
   await refreshSyncQueueCount();
+  return normalizedChallengePhone;
+}
+
+async function requestLocalOtpCode() {
+  if (!state.profile) return;
+  const country = getSelectedCountryId();
+  const phoneNumber = normalizePhoneNumber(els["otp-phone-input"]?.value.trim() || "", country);
+  if (!phoneNumber) {
+    showOtpError(getPhoneValidationMessage(country));
+    return;
+  }
+
+  state.profile.phone_number = phoneNumber;
+  await saveProfile(state.profile);
+  try {
+    await requestOtpChallengeForPhone(phoneNumber);
+  } catch (error) {
+    showOtpError(error.message || "Failed to request OTP");
+    return;
+  }
   renderOtpScreen();
+}
+
+async function verifyLocalOtpCode() {
+  if (!state.profile) return;
+  const enteredCode = (els["otp-code-input"]?.value || "").trim();
+  try {
+    clearOtpError();
+    await verifyActiveOtpChallenge(enteredCode);
+    renderOtpScreen();
+  } catch (error) {
+    if (!state.otpChallenge) {
+      renderOtpScreen();
+    }
+    showOtpError(error.message || "Server OTP verification failed.");
+    return;
+  }
   const returnScreen = state.otpReturnScreen || "screen-capture";
   if (returnScreen === "screen-settings") {
     await renderSettings();
@@ -4878,6 +5118,7 @@ function customLabelContextForLearnedFrom(learnedFrom) {
 }
 
 async function requestServerOtpCode() {
+  if (!state.profile) return;
   const phoneInput = document.getElementById("otp-phone-input");
   const country = getSelectedCountryId();
   const phoneNumber = normalizePhoneNumber(phoneInput.value.trim(), country);
@@ -4887,31 +5128,19 @@ async function requestServerOtpCode() {
     return;
   }
 
+  state.profile.phone_number = phoneNumber;
+  await saveProfile(state.profile);
   try {
     clearOtpError();
-    const res = await fetch(`${state.syncApiBaseUrl}/auth/otp/request`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone_number: phoneNumber })
-    });
-
-    const data = await res.json();
-    console.log("OTP request response:", data);
-
-    state.otpChallenge = {
-      phoneNumber,
-      expiresAt: Date.now() + 10 * 60 * 1000,
-      source: "server",
-      devCode: data.dev_code || ""
-    };
+    await requestOtpChallengeForPhone(phoneNumber);
     renderOtpScreen();
   } catch (err) {
-    console.error(err);
-    showOtpError("Failed to request OTP");
+    showOtpError(err.message || "Failed to request OTP");
   }
 }
 
 async function verifyServerOtpCode() {
+  if (!state.profile) return;
   const phoneInput = document.getElementById("otp-phone-input");
   const codeInput = document.getElementById("otp-code-input");
 
@@ -4926,31 +5155,14 @@ async function verifyServerOtpCode() {
 
   try {
     clearOtpError();
-    const res = await fetch(`${state.syncApiBaseUrl}/auth/otp/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        phone_number: phoneNumber,
-        code: code
-      })
-    });
-
-    const data = await res.json();
-    console.log("OTP verify response:", data);
-
-    if (data.auth_token) {
-      localStorage.setItem("auth_token", data.auth_token);
-      alert("Server sign-in successful");
-      window.location.reload();
-
-      if (typeof syncQueuedEntries === "function") {
-        await syncQueuedEntries();
-      }
-    } else {
-      alert("Verification failed");
-    }
+    state.profile.phone_number = phoneNumber;
+    await saveProfile(state.profile);
+    await verifyActiveOtpChallenge(code, { country });
+    renderOtpScreen();
   } catch (err) {
-    console.error(err);
-    showOtpError("Failed to verify OTP");
+    if (!state.otpChallenge) {
+      renderOtpScreen();
+    }
+    showOtpError(err.message || "Failed to verify OTP");
   }
 }
