@@ -33,4 +33,15 @@ async function main() {
 
   await registerAuthRoutes(app);
   await registerAccountRoutes(app);
-  await regis
+  await registerSyncRoutes(app);
+  await registerIdentityRoutes(app);
+  await registerAttestRoutes(app);
+  await registerPaymentRoutes(app);
+
+  await app.listen({ host: config.host, port: config.port });
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -68,4 +68,17 @@ export async function verifyOtpCode(baseUrl, identifier, code, extra = {}) {
   if (!("phone_number" in payload)) {
     payload.phone_number = identifier;
   }
-  return postJson(b
+  return postJson(baseUrl, "/auth/otp/verify", {
+    ...payload
+  });
+}
+
+export async function syncQueuedEntries(baseUrl, authToken, payload) {
+  return postJson(baseUrl, "/sync/entries", payload, authToken);
+}
+
+export async function rotateDeviceIdentity(baseUrl, authToken, payload) {
+  return postJson(baseUrl, "/identity/rotate", payload, authToken);
+}
+
+export { normalizeApiBaseUrl };

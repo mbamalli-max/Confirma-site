@@ -1,0 +1,14 @@
+
+confirma-site/
+server/node_modules/
+server/.env
+server/.env.save
+.DS_Store
+.claude/
+
+confirma-site/
+server/node_modules/
+server/.env
+server/.env.save
+.DS_Store
+.claude/

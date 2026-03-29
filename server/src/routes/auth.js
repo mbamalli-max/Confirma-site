@@ -357,4 +357,40 @@ export async function registerAuthRoutes(app) {
     } catch (error) {
       return reply.code(error.statusCode || 500).send({
         error: error.message || "Unable to verify this account right now.",
-  
+        ...(error.code ? { code: error.code } : {}),
+        ...(error.missing ? { missing: error.missing } : {})
+      });
+    }
+
+    if (!user) {
+      return reply.code(500).send({ error: "Verified account could not be loaded." });
+    }
+
+    if (deviceIdentity && publicKey) {
+      await query(
+        `
+          INSERT INTO device_identities (
+            device_identity,
+            public_key,
+            phone_number,
+            status,
+            last_seen_at,
+            revoked_at
+          )
+          VALUES ($1, $2, $3, 'ACTIVE', NOW(), NULL)
+          ON CONFLICT (device_identity)
+          DO UPDATE SET
+            public_key = EXCLUDED.public_key,
+            phone_number = EXCLUDED.phone_number,
+            status = 'ACTIVE',
+            revoked_at = NULL,
+            last_seen_at = NOW(),
+            updated_at = NOW()
+        `,
+        [deviceIdentity, publicKey, user.phone_number]
+      );
+    }
+
+    return buildVerificationResponse(user, channel, deviceIdentity);
+  });
+}

@@ -87,4 +87,33 @@ CREATE TABLE IF NOT EXISTS profiles (
 
 CREATE TABLE IF NOT EXISTS attestations (
   vt_id            TEXT PRIMARY KEY,
-  device_identity  TEXT NOT NU
+  device_identity  TEXT NOT NULL REFERENCES device_identities(device_identity),
+  phone_number     TEXT NOT NULL REFERENCES users(phone_number),
+  ledger_root_hash TEXT NOT NULL,
+  window_start     TIMESTAMPTZ NOT NULL,
+  window_end       TIMESTAMPTZ NOT NULL,
+  entry_count      INTEGER NOT NULL,
+  server_signature TEXT NOT NULL,
+  status           TEXT NOT NULL DEFAULT 'VALID',
+  issued_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_attestations_device
+  ON attestations (device_identity, issued_at DESC);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id BIGSERIAL PRIMARY KEY,
+  phone_number TEXT NOT NULL REFERENCES users(phone_number),
+  device_identity TEXT NOT NULL,
+  reference TEXT UNIQUE NOT NULL,
+  amount_kobo INTEGER NOT NULL,
+  tier TEXT NOT NULL,
+  window_days INTEGER NOT NULL,
+  paystack_status TEXT NOT NULL DEFAULT 'pending',
+  vt_id TEXT REFERENCES attestations(vt_id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_payments_phone
+  ON payments (phone_number, created_at DESC);

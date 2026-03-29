@@ -4865,4 +4865,1584 @@ function renderOtpScreen() {
     ${renderSettingsRow("Sync server", state.syncApiBaseUrl || "Not configured")}
     ${renderSettingsRow("Auth session", getAuthSessionStatusLabel())}
     ${renderSettingsRow("Recovery contact", channel === "sms" ? (state.profile?.phone_number || "Not set") : (state.profile?.email || "Not set"))}
-    ${state.profile?.phone_number ? renderS
+    ${state.profile?.phone_number ? renderSettingsRow("Phone on profile", state.profile.phone_number) : ""}
+    ${renderSettingsRow("Email for delivery", state.profile?.email || "Not set")}
+  `;
+  clearOtpError();
+}
+
+function getCurrentOtpIdentifier(channel = getPreferredOtpChannel()) {
+  if (channel === "sms") {
+    return normalizePhoneNumber(els["otp-phone-input"]?.value.trim() || state.profile?.phone_number || "", getPhoneInputCountry());
+  }
+  return normalizeEmailAddress(els["otp-email-input"]?.value.trim() || state.profile?.email || "");
+}
+
+function getCurrentRestoreIdentifier(channel = getPreferredOtpChannel()) {
+  if (channel === "sms") {
+    return normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", getPhoneInputCountry());
+  }
+  return normalizeEmailAddress(els["restore-email-input"]?.value.trim() || state.profile?.email || "");
+}
+
+function getIdentifierValidationMessage(channel = getPreferredOtpChannel(), country = getPhoneInputCountry()) {
+  return channel === "sms" ? getPhoneValidationMessage(country) : "Enter a valid email address";
+}
+
+async function requestOtpChallenge(identifier, {
+  channel = getPreferredOtpChannel(),
+  fallbackToLocal = true,
+  phoneNumber = state.profile?.phone_number || ""
+} = {}) {
+  const normalizedChannel = normalizeOtpChannel(channel);
+  if (!identifier) {
+    throw new Error(getIdentifierValidationMessage(normalizedChannel));
+  }
+
+  try {
+    const response = await requestOtpCode(state.syncApiBaseUrl, identifier, {
+      channel: normalizedChannel,
+      phone_number: normalizedChannel === "email" ? phoneNumber || "" : identifier,
+      email: normalizedChannel === "email" ? identifier : (state.profile?.email || "")
+    });
+    state.smsSupported = Boolean(response?.sms_available);
+    state.otpChallenge = {
+      identifier,
+      phoneNumber: phoneNumber || "",
+      channel: normalizedChannel,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      source: "server",
+      devCode: response.dev_code || "",
+      serverBaseUrl: state.syncApiBaseUrl
+    };
+    state.syncStatus = `${getVerificationChannelLabel(normalizedChannel)} requested from sync server.`;
+    syncDevQaSnapshot("otp_requested");
+  } catch (error) {
+    const allowLocalFallback = fallbackToLocal
+      && normalizedChannel === "email"
+      && isLocalDevelopmentOtpFallbackAllowed();
+    if (!allowLocalFallback) {
+      throw error;
+    }
+    const random = new Uint32Array(1);
+    crypto.getRandomValues(random);
+    const code = String(random[0] % 1000000).padStart(6, "0");
+    state.otpChallenge = {
+      code,
+      identifier,
+      phoneNumber: phoneNumber || "",
+      channel: normalizedChannel,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      source: "local"
+    };
+    state.syncStatus = "Sync server unavailable in local development. Using a local verification fallback.";
+    syncDevQaSnapshot("otp_local_fallback");
+  }
+
+  return state.otpChallenge;
+}
+
+async function verifyActiveOtpChallenge(
+  enteredCode,
+  {
+    country = getPhoneInputCountry(),
+    persistProfileRemotely = true
+  } = {}
+) {
+  if (!state.profile) {
+    throw new Error("Profile not loaded yet.");
+  }
+
+  const activeChallenge = state.otpChallenge;
+  if (!activeChallenge) {
+    throw new Error("Generate a code first");
+  }
+
+  if (Date.now() > activeChallenge.expiresAt) {
+    state.otpChallenge = null;
+    throw new Error("This code expired. Generate a new one");
+  }
+
+  if (!/^\d{6}$/.test(enteredCode)) {
+    throw new Error("Enter a valid 6-digit code");
+  }
+
+  const challengeChannel = normalizeOtpChannel(activeChallenge.channel || getPreferredOtpChannel());
+  const normalizedChallengeIdentifier = challengeChannel === "sms"
+    ? normalizePhoneNumber(activeChallenge.identifier, country)
+    : normalizeEmailAddress(activeChallenge.identifier);
+  const normalizedChallengePhone = normalizePhoneNumber(activeChallenge.phoneNumber, country);
+
+  if (!normalizedChallengeIdentifier) {
+    throw new Error(getIdentifierValidationMessage(challengeChannel, country));
+  }
+
+  if (activeChallenge.source === "server") {
+    await createAndStoreDeviceKeyMaterial();
+    const response = await verifyOtpCode(
+      activeChallenge.serverBaseUrl || state.syncApiBaseUrl,
+      normalizedChallengeIdentifier,
+      enteredCode,
+      {
+        channel: challengeChannel,
+        phone_number: normalizedChallengePhone || state.profile.phone_number || "",
+        email: challengeChannel === "email" ? normalizedChallengeIdentifier : (state.profile.email || ""),
+        device_identity: state.deviceIdentity || "",
+        public_key: state.devicePublicKey || ""
+      }
+    );
+    state.authToken = response.auth_token || "";
+    state.authTokenExpiresAt = response.expires_at || "";
+    state.smsSupported = Boolean(response?.sms_available ?? state.smsSupported);
+    if (response.device_identity) {
+      state.deviceIdentity = response.device_identity;
+      await saveSetting("device_identity", state.deviceIdentity);
+      syncGlobalDeviceIdentity();
+    }
+    state.profile.identity_anchor = challengeChannel;
+    state.profile.identity_status = "verified_server";
+    state.profile.identity_verified_at = Date.now();
+    if (challengeChannel === "email") {
+      state.profile.email = response.email || normalizedChallengeIdentifier;
+      state.profile.email_verified = Boolean(response.email_verified ?? true);
+      if (response.phone_number) {
+        state.profile.phone_number = response.phone_number;
+      }
+    } else {
+      state.profile.phone_number = response.phone_number || normalizedChallengeIdentifier;
+      state.profile.phone_verified = Boolean(response.phone_verified ?? true);
+      if (response.email) {
+        state.profile.email = response.email;
+      }
+    }
+    state.profile.email_verified = Boolean(response.email_verified ?? state.profile.email_verified);
+    state.profile.phone_verified = Boolean(response.phone_verified ?? state.profile.phone_verified);
+    await Promise.all([
+      saveProfile(state.profile, { skipPush: !persistProfileRemotely }),
+      saveSetting("auth_token", state.authToken),
+      saveSetting("auth_token_expires_at", state.authTokenExpiresAt)
+    ]);
+    state.syncStatus = `${getVerificationChannelLabel(challengeChannel)} completed with sync server.`;
+  } else if (enteredCode !== activeChallenge.code) {
+    throw new Error("Incorrect code. Please try again.");
+  } else {
+    if (challengeChannel === "email") {
+      state.profile.email = normalizedChallengeIdentifier;
+      state.profile.email_verified = true;
+    } else {
+      state.profile.phone_number = normalizedChallengeIdentifier;
+      state.profile.phone_verified = true;
+    }
+    state.profile.identity_anchor = challengeChannel;
+    state.profile.identity_status = "verified_local";
+    state.profile.identity_verified_at = Date.now();
+    await saveProfile(state.profile, { skipPush: !persistProfileRemotely });
+    state.syncStatus = `${getVerificationChannelLabel(challengeChannel)} completed locally. Server sign-in is still pending.`;
+  }
+
+  try {
+    await ensureDeviceKeyMaterial();
+  } catch (error) {
+    throw new Error(error.message || "Verification succeeded, but device key setup failed.");
+  }
+
+  state.otpChallenge = null;
+  syncVerificationState();
+  await refreshSyncQueueCount();
+  syncDevQaSnapshot("otp_verified");
+  return challengeChannel === "email"
+    ? (state.profile.email || normalizedChallengeIdentifier)
+    : (state.profile.phone_number || normalizedChallengeIdentifier);
+}
+
+async function requestLocalOtpCode() {
+  if (!state.profile) return;
+  const channel = getPreferredOtpChannel();
+  const identifier = getCurrentOtpIdentifier(channel);
+  const phoneNumber = normalizePhoneNumber(state.profile.phone_number || "", getPhoneInputCountry());
+  if (needsPhoneAnchorForFullActivation(channel)) {
+    showOtpError(getPhoneAnchorRequirementMessage(channel));
+    return;
+  }
+  if (!identifier) {
+    showOtpError(getIdentifierValidationMessage(channel, getPhoneInputCountry()));
+    return;
+  }
+
+  if (channel === "email") {
+    state.profile.email = identifier;
+  } else {
+    state.profile.phone_number = identifier;
+  }
+  await saveProfile(state.profile);
+  try {
+    await requestOtpChallenge(identifier, {
+      channel,
+      phoneNumber
+    });
+  } catch (error) {
+    showOtpError(error.message || "Failed to request OTP");
+    return;
+  }
+  renderOtpScreen();
+}
+
+async function verifyLocalOtpCode() {
+  if (!state.profile) return;
+  const enteredCode = (els["otp-code-input"]?.value || "").trim();
+  try {
+    clearOtpError();
+    await verifyActiveOtpChallenge(enteredCode);
+    renderOtpScreen();
+  } catch (error) {
+    if (!state.otpChallenge) {
+      renderOtpScreen();
+    }
+    showOtpError(error.message || "Verification failed.");
+    return;
+  }
+  const returnScreen = state.otpReturnScreen || "screen-capture";
+  if (returnScreen === "screen-settings") {
+    await renderSettings();
+  }
+  if (returnScreen === "screen-export") {
+    renderExportScreen();
+  }
+  void flushSyncQueue();
+  showScreen(returnScreen);
+}
+
+function getVerificationStatusLabel(channel = getPreferredOtpChannel()) {
+  const channelName = channel === "sms" ? "Phone" : "Email";
+  if (state.profile?.identity_status === "verified_server" && isChannelVerified(channel)) {
+    return `${channelName} verified with sync server`;
+  }
+  if (state.profile?.identity_status === "verified_local" && isChannelVerified(channel)) {
+    return `${channelName} verified on this device (local fallback)`;
+  }
+  return `${channelName} not verified yet`;
+}
+
+function getPhoneAnchorStatusLabel() {
+  const phoneAnchor = getStoredPhoneAnchor();
+  if (phoneAnchor) {
+    return phoneAnchor;
+  }
+  return getPhoneAnchorRequirementMessage();
+}
+
+function syncVerificationState() {
+  state.emailVerified = Boolean(state.profile?.email_verified);
+  state.phoneVerified = Boolean(state.profile?.phone_verified);
+  return {
+    emailVerified: state.emailVerified,
+    phoneVerified: state.phoneVerified
+  };
+}
+
+function syncPhoneVerificationState() {
+  syncVerificationState();
+  return state.phoneVerified;
+}
+
+function refreshTrustSetupButtons() {
+  syncVerificationState();
+  const channel = getPreferredOtpChannel();
+  const deviceVerified = hasVerifiedSessionForChannel(channel);
+  const trustButtons = [
+    { id: "settings-open-trust-v3", defaultText: getVerificationActionLabel(channel) },
+    { id: "export-open-trust-v3", defaultText: `Open ${getVerificationChannelLabel(channel).toLowerCase()}` }
+  ];
+
+  trustButtons.forEach(({ id, defaultText }) => {
+    const button = els[id];
+    if (!button) return;
+    button.disabled = deviceVerified;
+    button.textContent = deviceVerified ? "Device verified" : defaultText;
+  });
+}
+
+function showOtpError(message) {
+  if (!els["otp-error-text"]) return;
+  els["otp-error-text"].hidden = !message;
+  els["otp-error-text"].textContent = message || "";
+}
+
+function clearOtpError() {
+  showOtpError("");
+}
+
+async function fetchAuthenticatedJson(path, options = {}) {
+  const normalizedBaseUrl = String(state.syncApiBaseUrl || "").trim().replace(/\/+$/, "");
+  if (!normalizedBaseUrl) {
+    const error = new Error("Sync server URL is not configured.");
+    error.statusCode = 0;
+    throw error;
+  }
+
+  const response = await fetch(`${normalizedBaseUrl}${path}`, {
+    method: options.method || "GET",
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(state.deviceIdentity ? { "X-Device-Identity": state.deviceIdentity } : {}),
+      ...(state.authToken ? { Authorization: `Bearer ${state.authToken}` } : {})
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch (error) {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const message = data?.error || data?.message || `Request failed with status ${response.status}`;
+    const error = new Error(message);
+    error.statusCode = response.status;
+    error.payload = data;
+    if (response.status === 401 && data?.error === "device_revoked") {
+      state.syncStatus = "This device has been revoked. Restore your account again to continue.";
+    }
+    throw error;
+  }
+
+  return data || {};
+}
+
+async function logoutFromServerSession() {
+  state.authToken = "";
+  state.authTokenExpiresAt = "";
+  state.otpChallenge = null;
+  state.syncStatus = "Signed out. Re-open verification to sync again.";
+  await Promise.all([
+    saveSetting("auth_token", ""),
+    saveSetting("auth_token_expires_at", "")
+  ]);
+  refreshTrustSetupButtons();
+  renderExportScreen();
+  await renderSettings();
+}
+
+function buildProfileSyncPayload(profile = state.profile) {
+  if (!profile) return null;
+  const displayName = String(profile.display_name || "").trim();
+  const country = getRecognizedCountryId(profile.country);
+  return {
+    name: displayName || null,
+    business_name: displayName || null,
+    country: country || null,
+    business_type_id: String(profile.business_type_id || "").trim() || null,
+    sector_id: String(profile.sector_id || "").trim() || null,
+    preferred_labels: normalizePreferredLabels(profile.preferred_labels, profile.business_type_id),
+    email: normalizeEmailAddress(profile.email || "") || null
+  };
+}
+
+async function pushProfile() {
+  if (!(state.profile && state.authToken && state.syncApiBaseUrl)) return;
+  const payload = buildProfileSyncPayload();
+  if (!payload) return;
+  try {
+    await postJson(state.syncApiBaseUrl, "/profile", payload, state.authToken);
+  } catch (error) {
+    console.warn("Profile push skipped.", error);
+  }
+}
+
+function mergeServerProfile(serverProfile, fallbackCountry = getSelectedCountryId()) {
+  if (!serverProfile) return null;
+  const displayName = String(serverProfile.business_name || serverProfile.name || "").trim();
+  return normalizeLocalProfile({
+    ...(state.profile || {}),
+    plan: normalizePlan(state.profile?.plan),
+    display_name: displayName || state.profile?.display_name || "",
+    phone_number: String(serverProfile.phone || state.profile?.phone_number || "").trim(),
+    email: normalizeEmailAddress(serverProfile.email || state.profile?.email || ""),
+    country: normalizeCountryId(serverProfile.country || fallbackCountry || state.profile?.country),
+    business_type_id: String(serverProfile.business_type_id || state.profile?.business_type_id || "").trim() || null,
+    sector_id: String(serverProfile.sector_id || state.profile?.sector_id || "").trim() || null,
+    preferred_labels: normalizePreferredLabels(
+      serverProfile.preferred_labels,
+      serverProfile.business_type_id || state.profile?.business_type_id
+    ),
+    passcodeReminder: clonePasscodeReminder(getPasscodeReminder(state.profile)),
+    email_verified: Boolean(serverProfile.email_verified ?? state.profile?.email_verified),
+    phone_verified: Boolean(serverProfile.phone_verified ?? state.profile?.phone_verified),
+    last_action: state.profile?.last_action || "sale",
+    identity_anchor: state.profile?.identity_anchor || getPreferredOtpChannel(),
+    identity_status: state.profile?.identity_status || "verified_server",
+    identity_verified_at: state.profile?.identity_verified_at || Date.now()
+  });
+}
+
+async function pullProfile(fallbackCountry = getSelectedCountryId()) {
+  const response = await fetchAuthenticatedJson("/profile");
+  if (!response.profile) {
+    return null;
+  }
+
+  state.profile = mergeServerProfile(response.profile, fallbackCountry);
+  initializeAuthPhoneCountry();
+  await saveProfile(state.profile, { skipPush: true });
+  syncDevQaSnapshot("profile_pulled");
+  return response.profile;
+}
+
+function normalizeServerTransactionType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "sell") return "sale";
+  if (normalized === "buy") return "purchase";
+  if (normalized === "pay") return "payment";
+  if (normalized === "receive") return "receipt";
+  return normalized || "sale";
+}
+
+function normalizeImportedRecord(record, index) {
+  const transactionType = normalizeServerTransactionType(record.transaction_type || record.action);
+  const confirmedAt = Number(record.confirmed_at || 0);
+  return {
+    id: 1000000000 + index + 1,
+    server_entry_id: Number(record.entry_id || 0),
+    importedFromServer: true,
+    device_identity: String(record.device_identity || "").trim(),
+    transaction_type: transactionType,
+    label: String(record.label || "").trim() || "Imported record",
+    normalized_label: String(record.normalized_label || "").trim() || normalizeText(record.label || transactionType),
+    amount_minor: Number(record.amount_minor || 0),
+    currency: record.currency || (state.profile?.country === "US" ? "USD" : "NGN"),
+    counterparty: record.counterparty ?? null,
+    source_account: record.source_account ?? null,
+    destination_account: record.destination_account ?? null,
+    input_mode: record.input_mode || "server_restore",
+    confirmation_state: "confirmed",
+    business_type_id: record.business_type_id || state.profile?.business_type_id || null,
+    sector_id: record.sector_id || state.profile?.sector_id || null,
+    country: record.country || state.profile?.country || getSelectedCountryId(),
+    reversed_entry_hash: record.reversed_entry_hash ?? null,
+    reversed_transaction_type: record.reversed_transaction_type ?? null,
+    confirmed_at: confirmedAt,
+    prev_entry_hash: record.prev_entry_hash || "0".repeat(64),
+    entry_hash: record.entry_hash || "",
+    signature: record.signature || null,
+    public_key_fingerprint: record.public_key_fingerprint || null
+  };
+}
+
+async function replaceLocalRecordsWithImported(records) {
+  const importedRecords = records.map((record, index) => normalizeImportedRecord(record, index));
+  await new Promise((resolve, reject) => {
+    const tx = state.db.transaction(["records", "syncQueue"], "readwrite");
+    const recordsStore = tx.objectStore("records");
+    const syncQueueStore = tx.objectStore("syncQueue");
+    recordsStore.clear();
+    syncQueueStore.clear();
+    importedRecords.forEach((record) => {
+      recordsStore.add(record);
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  await refreshSyncQueueCount();
+}
+
+async function pullRecordsFromServer() {
+  const response = await fetchAuthenticatedJson("/records");
+  return Array.isArray(response.records) ? response.records : [];
+}
+
+function getRestoreCountryId() {
+  return getPhoneInputCountry();
+}
+
+function syncRestoreModalCopy() {
+  const country = getRestoreCountryId();
+  const channel = getPreferredOtpChannel();
+  if (els["restore-copy"]) {
+    els["restore-copy"].textContent = getRecoveryChannelCopy(channel);
+  }
+  if (els["restore-phone-input"]) {
+    els["restore-phone-input"].placeholder = getOtpPhonePlaceholder(country);
+  }
+  if (els["restore-country-prefix"]) {
+    els["restore-country-prefix"].textContent = getCountryDialCode(country);
+  }
+  if (els["restore-helper-text"]) {
+    els["restore-helper-text"].textContent = state.otpChallenge
+      ? getOtpHelperText()
+      : channel === "sms"
+        ? "Request a restore code to continue."
+        : "Request a restore code by email to continue.";
+  }
+}
+
+function clearRestoreError() {
+  if (!els["restore-error-text"]) return;
+  els["restore-error-text"].hidden = true;
+  els["restore-error-text"].textContent = "";
+}
+
+function showRestoreError(message) {
+  if (!els["restore-error-text"]) return;
+  els["restore-error-text"].hidden = !message;
+  els["restore-error-text"].textContent = message || "";
+}
+
+function resetRestoreModal() {
+  state.otpChallenge = null;
+  if (els["restore-code-input"]) {
+    els["restore-code-input"].value = "";
+  }
+  if (els["restore-code-wrap"]) {
+    els["restore-code-wrap"].hidden = true;
+  }
+  if (els["restore-send-code"]) {
+    els["restore-send-code"].hidden = false;
+    els["restore-send-code"].disabled = false;
+  }
+  if (els["restore-verify-code"]) {
+    els["restore-verify-code"].hidden = true;
+    els["restore-verify-code"].disabled = false;
+  }
+  clearRestoreError();
+  syncRestoreModalCopy();
+}
+
+function openRestoreModal() {
+  if (!state.profile) {
+    state.profile = {
+      ...(state.profile || {}),
+      plan: normalizePlan(state.profile?.plan),
+      country: getSelectedCountryId()
+    };
+  }
+  initializeAuthPhoneCountry();
+  syncCountryAwareInputs();
+  if (els["restore-email-input"]) {
+    els["restore-email-input"].value = state.profile?.email || "";
+  }
+  if (els["restore-phone-input"]) {
+    els["restore-phone-input"].value = formatPhoneForInput(state.profile?.phone_number || "", getRestoreCountryId());
+  }
+  resetRestoreModal();
+  if (els["restore-modal"]) {
+    els["restore-modal"].hidden = false;
+    focusFirstInteractive(els["restore-modal"]);
+  }
+  syncDevQaSnapshot("restore_modal_open");
+}
+
+function restoreAccountFlow() {
+  openRestoreModal();
+}
+
+function closeRestoreModal() {
+  if (els["restore-modal"]) {
+    els["restore-modal"].hidden = true;
+  }
+  resetRestoreModal();
+}
+
+async function sendRestoreCode() {
+  const channel = getPreferredOtpChannel();
+  const country = getRestoreCountryId();
+  const identifier = getCurrentRestoreIdentifier(channel);
+  const phoneNumber = normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", country);
+  if (!identifier) {
+    showRestoreError(getIdentifierValidationMessage(channel, country));
+    return;
+  }
+
+  if (!state.profile) {
+    state.profile = { plan: "free", country };
+  }
+
+  if (channel === "email") {
+    state.profile.email = identifier;
+  } else {
+    state.profile.phone_number = identifier;
+  }
+  clearRestoreError();
+  try {
+    await requestOtpChallenge(identifier, {
+      channel,
+      phoneNumber,
+      fallbackToLocal: false
+    });
+    if (els["restore-code-wrap"]) {
+      els["restore-code-wrap"].hidden = false;
+    }
+    if (els["restore-send-code"]) {
+      els["restore-send-code"].hidden = true;
+    }
+    if (els["restore-verify-code"]) {
+      els["restore-verify-code"].hidden = false;
+    }
+    syncRestoreModalCopy();
+    focusFirstInteractive(els["restore-modal"]);
+  } catch (error) {
+    showRestoreError(error.message || "Failed to request restore code.");
+  }
+}
+
+function buildFallbackRecoveredProfile(country, phoneNumber) {
+  return normalizeLocalProfile({
+    ...(state.profile || {}),
+    plan: normalizePlan(state.profile?.plan),
+    display_name: state.profile?.display_name || "",
+    phone_number: phoneNumber,
+    email: normalizeEmailAddress(state.profile?.email || ""),
+    country: normalizeCountryId(country || state.profile?.country),
+    preferred_labels: normalizePreferredLabels(state.profile?.preferred_labels, state.profile?.business_type_id),
+    last_action: state.profile?.last_action || "sale",
+    identity_anchor: getPreferredOtpChannel(),
+    identity_status: state.profile?.identity_status || "verified_server",
+    identity_verified_at: state.profile?.identity_verified_at || Date.now(),
+    email_verified: Boolean(state.profile?.email_verified),
+    phone_verified: Boolean(state.profile?.phone_verified),
+    passcodeReminder: clonePasscodeReminder(getPasscodeReminder(state.profile))
+  });
+}
+
+function formatDeviceIdentityShort(deviceIdentity) {
+  const value = String(deviceIdentity || "").trim();
+  return `Device •••${value.slice(-8) || "unknown"}`;
+}
+
+function getDeviceStatusCopy(device) {
+  if (device.is_current) return "This device";
+  if (device.revoked_at) return `Revoked ${new Date(device.revoked_at).toLocaleString()}`;
+  return `Active since ${new Date(device.created_at).toLocaleString()}`;
+}
+
+function getActiveNonCurrentDevices(devices) {
+  return devices.filter((device) => !device.is_current && !device.revoked_at);
+}
+
+function closeRevocationPrompt() {
+  if (els["revoke-old-devices-modal"]) {
+    els["revoke-old-devices-modal"].hidden = true;
+  }
+}
+
+async function getTrustedDevices() {
+  const response = await fetchAuthenticatedJson("/devices");
+  return Array.isArray(response.devices) ? response.devices : [];
+}
+
+function renderDeviceRows(container, devices, onRevoke, emptyMessage) {
+  if (!container) return;
+  if (!devices.length) {
+    container.innerHTML = `<div class="record-meta">${emptyMessage}</div>`;
+    return;
+  }
+
+  container.innerHTML = devices.map((device) => `
+    <div class="device-row">
+      <div class="device-meta">
+        <strong>${formatDeviceIdentityShort(device.device_identity)}</strong>
+        <span class="record-meta">${getDeviceStatusCopy(device)}</span>
+      </div>
+      ${(!device.is_current && !device.revoked_at)
+        ? `<button class="btn btn-secondary" type="button" data-device-revoke="${device.device_identity}">Revoke</button>`
+        : ""}
+    </div>
+  `).join("");
+
+  container.querySelectorAll("[data-device-revoke]").forEach((button) => {
+    button.addEventListener("click", () => {
+      void onRevoke(String(button.dataset.deviceRevoke || ""));
+    });
+  });
+}
+
+async function revokeDevice(deviceIdentity) {
+  if (!deviceIdentity) return;
+  await postJson(state.syncApiBaseUrl, "/identity/revoke", {
+    device_identity: deviceIdentity
+  }, state.authToken);
+}
+
+async function renderTrustedDevicesSettings() {
+  if (!els["settings-devices-v2"]) return;
+  if (!state.authToken) {
+    els["settings-devices-v2"].innerHTML = `<div class="record-meta">${getVerificationActionLabel()} on this device to manage trusted devices.</div>`;
+    return;
+  }
+
+  try {
+    const devices = await getTrustedDevices();
+    renderDeviceRows(
+      els["settings-devices-v2"],
+      devices,
+      async (deviceIdentity) => {
+        await revokeDevice(deviceIdentity);
+        await renderTrustedDevicesSettings();
+      },
+      "No trusted devices found yet."
+    );
+  } catch (error) {
+    els["settings-devices-v2"].innerHTML = `<div class="record-meta">${error.message || "Unable to load trusted devices."}</div>`;
+  }
+}
+
+async function maybePromptToRevokeOldDevices() {
+  if (!els["revoke-old-devices-modal"]) return;
+
+  try {
+    const devices = await getTrustedDevices();
+    const candidates = getActiveNonCurrentDevices(devices);
+    if (!candidates.length) {
+      closeRevocationPrompt();
+      return;
+    }
+
+    renderDeviceRows(
+      els["revoke-old-devices-list"],
+      candidates,
+      async (deviceIdentity) => {
+        await revokeDevice(deviceIdentity);
+        await maybePromptToRevokeOldDevices();
+      },
+      "No previous active devices found."
+    );
+    els["revoke-old-devices-modal"].hidden = false;
+    focusFirstInteractive(els["revoke-old-devices-modal"]);
+  } catch (error) {
+    console.warn("Unable to load devices for revocation prompt.", error);
+    closeRevocationPrompt();
+  }
+}
+
+async function finishRestoreFlow(country, phoneNumber) {
+  try {
+    await pullProfile(country);
+  } catch (error) {
+    if (error.statusCode) {
+      console.warn("Profile pull skipped.", error);
+    } else {
+      throw error;
+    }
+  }
+
+  if (!state.profile) {
+    state.profile = buildFallbackRecoveredProfile(country, phoneNumber);
+    await saveProfile(state.profile, { skipPush: true });
+  } else {
+    state.profile = buildFallbackRecoveredProfile(country, state.profile.phone_number || phoneNumber);
+    await saveProfile(state.profile, { skipPush: true });
+  }
+
+  const records = await pullRecordsFromServer();
+  await replaceLocalRecordsWithImported(records);
+  hydrateProfileUi();
+  closeRestoreModal();
+  await showCapture();
+  syncDevQaSnapshot("restore_completed");
+  await maybePromptToRevokeOldDevices();
+}
+
+async function verifyRestoreCode() {
+  const country = getRestoreCountryId();
+  const channel = getPreferredOtpChannel();
+  const phoneNumber = normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", country);
+  const identifier = getCurrentRestoreIdentifier(channel);
+  const code = (els["restore-code-input"]?.value || "").trim();
+
+  if (!identifier) {
+    showRestoreError(getIdentifierValidationMessage(channel, country));
+    return;
+  }
+
+  try {
+    clearRestoreError();
+    if (state.otpChallenge?.source !== "server") {
+      throw new Error("Account restore requires the verification server. Please try again when you are online.");
+    }
+    await verifyActiveOtpChallenge(code, { country, persistProfileRemotely: false });
+    await finishRestoreFlow(country, phoneNumber || state.profile?.phone_number || "");
+  } catch (error) {
+    showRestoreError(error.message || "Unable to restore this account right now.");
+  }
+}
+
+function renderFirstRecordGuide(records) {
+  if (!els["first-record-guide"]) return;
+  const examples = getCaptureExamples(state.profile?.country);
+  const voiceExample = examples[0] || "Sold 3 bags of rice for 75,000";
+  const secondVoiceExample = examples[1] || "Paid supplier 45,000";
+  const textExample = examples[2] || voiceExample;
+  els["first-record-guide"].innerHTML = `
+    <strong>📋 Record your first transaction</strong>
+    <div style="margin-top:8px;line-height:1.7">
+      <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--primary-mid)">
+        By voice
+      </strong><br>
+      Tap the mic, speak naturally — "${voiceExample}" or "${secondVoiceExample}".<br>
+      The app fills the action, label, and amount. Review, then confirm.
+    </div>
+    <div style="margin-top:10px;line-height:1.7">
+      <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--primary-mid)">
+        By text
+      </strong><br>
+      Type a short phrase in the text box — for example "${textExample}". Or tap a quick-pick label,
+      enter the amount, then tap Review before confirming.
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--primary);font-weight:600">
+      Every confirmed record is permanent and timestamped. This builds your financial history.
+    </div>
+  `;
+  els["first-record-guide"].hidden = records.length > 0;
+}
+
+function renderOnboardingProfileStep() {
+  if (!els["onboarding-name"]) return;
+  syncCountryAwareInputs();
+  els["onboarding-name"].value = state.profile?.display_name || "";
+  els["onboarding-phone"].value = formatPhoneForInput(state.profile?.phone_number || "", getSelectedCountryId());
+  els["onboarding-email"].value = state.profile?.email || "";
+  els["onboarding-state"].value = state.profile?.region || "";
+  els["onboarding-birth-year"].value = state.profile?.birth_year || "";
+  els["onboarding-gender"].value = state.profile?.gender || "";
+  clearOnboardingProfileError();
+  updateFinishOnboardingState();
+}
+
+function updateFinishOnboardingState() {
+  if (!els["finish-onboarding"]) return;
+  const hasBusinessType = Boolean(state.profile && state.profile.business_type_id);
+  const hasDisplayName = Boolean(els["onboarding-name"]?.value.trim());
+  els["finish-onboarding"].disabled = !(hasBusinessType && hasDisplayName);
+}
+
+function showOnboardingProfileError(message) {
+  if (!els["onboarding-profile-error"]) return;
+  els["onboarding-profile-error"].hidden = !message;
+  els["onboarding-profile-error"].textContent = message || "";
+}
+
+function clearOnboardingProfileError() {
+  showOnboardingProfileError("");
+}
+
+function speakConfirmationCopy(text) {
+  if (!("speechSynthesis" in window) || !text) return;
+  cancelConfirmationSpeech();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = state.profile?.country === "US" ? "en-US" : "en-NG";
+  utterance.rate = 0.95;
+  window.speechSynthesis.speak(utterance);
+}
+
+function cancelConfirmationSpeech() {
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+  }
+}
+
+function formatMoney(amountMinor, currency) {
+  const amount = amountMinor / 100;
+  if (currency === "USD") {
+    return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return `₦${amount.toLocaleString("en-NG", { maximumFractionDigits: 0 })}`;
+}
+
+function showError(message) {
+  els["capture-error"].hidden = false;
+  els["capture-error"].textContent = message;
+}
+
+function clearError() {
+  els["capture-error"].hidden = true;
+  els["capture-error"].textContent = "";
+}
+
+function getReversedEntryHashSet(records) {
+  return new Set(
+    records
+      .filter((record) => record.transaction_type === "reversal" && record.reversed_entry_hash)
+      .map((record) => record.reversed_entry_hash)
+  );
+}
+
+function getOperationalRecords(records) {
+  const reversedHashes = getReversedEntryHashSet(records);
+  return records.filter((record) => {
+    if (record.transaction_type === "reversal") return false;
+    return !reversedHashes.has(record.entry_hash);
+  });
+}
+
+function getDashboardMetrics(records, effectiveRecords) {
+  const cacheKey = `${records.length}:${state.profile?.country || ""}`;
+  if (state.dashboardMetricsCache?.key === cacheKey) {
+    return state.dashboardMetricsCache.value;
+  }
+
+  const now = new Date();
+  const todayKey = now.toDateString();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  const metrics = {
+    todaySales: 0,
+    monthlySales: 0,
+    monthlyExpenses: 0
+  };
+
+  effectiveRecords.forEach((record) => {
+    const amount = Number(record.amount_minor || 0);
+    const date = new Date(record.confirmed_at * 1000);
+    const isToday = date.toDateString() === todayKey;
+    const isThisMonth = date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+
+    if (record.transaction_type === "sale") {
+      if (isToday) metrics.todaySales += amount;
+      if (isThisMonth) metrics.monthlySales += amount;
+    }
+
+    if (record.transaction_type === "payment" || record.transaction_type === "purchase") {
+      if (isThisMonth) metrics.monthlyExpenses += amount;
+    }
+  });
+
+  state.dashboardMetricsCache = { key: cacheKey, value: metrics };
+  return metrics;
+}
+
+async function refreshStorageWarning() {
+  state.lowStorageWarning = await getLowStorageWarning();
+  if (els["storage-warning-v2"]) {
+    els["storage-warning-v2"].hidden = !state.lowStorageWarning;
+    els["storage-warning-v2"].textContent = state.lowStorageWarning;
+  }
+}
+
+async function getLowStorageWarning() {
+  if (!(navigator.storage && navigator.storage.estimate)) return "";
+  try {
+    const { quota = 0, usage = 0 } = await navigator.storage.estimate();
+    const available = Math.max(quota - usage, 0);
+    if (quota < 10 * 1024 * 1024 || available < 10 * 1024 * 1024) {
+      return "Low storage detected on this device. Open Export and download a backup of your confirmed records.";
+    }
+  } catch (error) {
+    return "";
+  }
+  return "";
+}
+
+function wireReverseButtons(records) {
+  document.querySelectorAll("[data-reverse-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const record = records.find((entry) => entry.id === Number(button.dataset.reverseId));
+      if (record) prepareReversalRecord(record);
+    });
+  });
+}
+
+function prepareReversalRecord(record) {
+  const signingBlockReason = getSigningBlockReason();
+  if (signingBlockReason) {
+    window.alert(signingBlockReason);
+    return;
+  }
+  state.candidateRecord = {
+    transaction_type: "reversal",
+    label: record.label,
+    normalized_label: record.normalized_label,
+    amount_minor: record.amount_minor,
+    currency: record.currency,
+    counterparty: record.counterparty || null,
+    source_account: record.source_account || null,
+    destination_account: record.destination_account || null,
+    reversed_entry_hash: record.entry_hash,
+    reversed_transaction_type: record.transaction_type,
+    input_mode: "reversal",
+    confirmation_state: "pending",
+    business_type_id: record.business_type_id,
+    sector_id: record.sector_id,
+    country: record.country
+  };
+  els["confirm-copy-v2"].textContent = confirmationCopy(state.candidateRecord);
+  els["confirm-meta-v2"].innerHTML = `
+    <div><strong>Type:</strong> reversal</div>
+    <div><strong>Original type:</strong> ${record.transaction_type}</div>
+    <div><strong>Amount:</strong> ${formatMoney(record.amount_minor, record.currency)}</div>
+    <div><strong>Reverses:</strong> ${record.entry_hash}</div>
+  `;
+  showScreen("screen-confirm");
+  speakConfirmationCopy(els["confirm-copy-v2"].textContent);
+}
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (event.oldVersion < 1) {
+        if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings", { keyPath: "key" });
+        if (!db.objectStoreNames.contains("records")) db.createObjectStore("records", { keyPath: "id" });
+        if (!db.objectStoreNames.contains("customLabels")) db.createObjectStore("customLabels", { keyPath: "id" });
+        if (!db.objectStoreNames.contains("usage")) db.createObjectStore("usage", { keyPath: "normalized_label" });
+      }
+      if (event.oldVersion < 2) {
+        if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings", { keyPath: "key" });
+      }
+      if (event.oldVersion < 3) {
+        if (!db.objectStoreNames.contains("syncQueue")) {
+          db.createObjectStore("syncQueue", { keyPath: "queue_id", autoIncrement: true });
+        }
+      }
+      if (event.oldVersion < 4) {
+        if (!db.objectStoreNames.contains("voiceCorrections")) {
+          db.createObjectStore("voiceCorrections", { keyPath: "raw" });
+        }
+      }
+      if (event.oldVersion < 5) {
+        if (!db.objectStoreNames.contains("anomaly_log")) {
+          db.createObjectStore("anomaly_log", { keyPath: "id", autoIncrement: true });
+        }
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function getProfile() {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readonly");
+    const request = tx.objectStore("settings").get("profile");
+    request.onsuccess = () => {
+      if (!request.result) {
+        resolve(null);
+        return;
+      }
+      resolve(normalizeLocalProfile(request.result, { trackReminderMigration: true }));
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function saveProfile(profile, { skipPush = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readwrite");
+    const nextProfile = normalizeLocalProfile(profile) || {};
+    const normalizedProfile = {
+      ...nextProfile,
+      key: "profile"
+    };
+    if (profile) {
+      Object.keys(profile).forEach((key) => {
+        delete profile[key];
+      });
+      Object.assign(profile, nextProfile);
+    }
+    tx.objectStore("settings").put(normalizedProfile);
+    tx.oncomplete = () => {
+      resolve();
+      syncDevQaSnapshot(skipPush ? "profile_saved_local_only" : "profile_saved");
+      if (!skipPush) {
+        void pushProfile();
+      }
+    };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function getSetting(key) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readonly");
+    const request = tx.objectStore("settings").get(key);
+    request.onsuccess = () => resolve(request.result ? request.result.value : null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function saveSetting(key, value) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readwrite");
+    tx.objectStore("settings").put({ key, value });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function getSyncQueueEntries(limit = 25) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("syncQueue", "readonly");
+    const request = tx.objectStore("syncQueue").getAll();
+    request.onsuccess = () => resolve(
+      request.result
+        .sort((a, b) => a.queue_id - b.queue_id)
+        .slice(0, limit)
+    );
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function getSyncQueueCount() {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("syncQueue", "readonly");
+    const request = tx.objectStore("syncQueue").count();
+    request.onsuccess = () => resolve(request.result || 0);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function refreshSyncQueueCount() {
+  state.syncQueueCount = await getSyncQueueCount();
+}
+
+function addSyncQueueEntry(item) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("syncQueue", "readwrite");
+    tx.objectStore("syncQueue").add(item);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function removeSyncQueueEntries(queueIds) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("syncQueue", "readwrite");
+    const store = tx.objectStore("syncQueue");
+    queueIds.forEach((queueId) => {
+      store.delete(queueId);
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function getRecords() {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("records", "readonly");
+    const request = tx.objectStore("records").getAll();
+    request.onsuccess = () => resolve(request.result.sort((a, b) => {
+      const timeDiff = getRecordConfirmedAtMs(a) - getRecordConfirmedAtMs(b);
+      if (timeDiff) return timeDiff;
+      return Number(a.id || 0) - Number(b.id || 0);
+    }));
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function appendLedgerRecord(record) {
+  const last = await getLastRecord();
+  const id = last ? last.id + 1 : 1;
+  const confirmedAt = Math.floor(Date.now() / 1000);
+  const prevHash = last ? last.entry_hash : "0".repeat(64);
+  const entryHash = await sha256(buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash));
+  const signature = await signEntryHash(entryHash);
+  const payload = {
+    ...record,
+    id,
+    confirmed_at: confirmedAt,
+    prev_entry_hash: prevHash,
+    entry_hash: entryHash,
+    signature,
+    public_key_fingerprint: state.publicKeyFingerprint || null
+  };
+
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("records", "readwrite");
+    tx.objectStore("records").add(payload);
+    tx.oncomplete = () => resolve(payload);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function getLastRecord() {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("records", "readonly");
+    const request = tx.objectStore("records").openCursor(null, "prev");
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) {
+        resolve(null);
+        return;
+      }
+      if (cursor.value?.importedFromServer) {
+        cursor.continue();
+        return;
+      }
+      resolve(cursor.value);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function loadDeviceTrustState() {
+  if (!state.db) return;
+  const [devicePrivateKey, devicePublicKey, deviceIdentity, publicKeyFingerprint] = await Promise.all([
+    getSetting("device_private_key"),
+    getSetting("device_public_key"),
+    getSetting("device_identity"),
+    getSetting("public_key_fingerprint")
+  ]);
+  state.devicePrivateKey = devicePrivateKey || null;
+  state.devicePublicKey = devicePublicKey || "";
+  state.deviceIdentity = deviceIdentity || "";
+  state.publicKeyFingerprint = publicKeyFingerprint || "";
+  syncGlobalDeviceIdentity();
+}
+
+async function loadSyncState() {
+  if (!state.db) return;
+  const [authToken, authTokenExpiresAt, syncApiBaseUrl, lastSyncAt, lastSyncReceipt] = await Promise.all([
+    getSetting("auth_token"),
+    getSetting("auth_token_expires_at"),
+    getSetting("sync_api_base_url"),
+    getSetting("last_sync_at"),
+    getSetting("last_sync_receipt")
+  ]);
+  state.authToken = authToken || "";
+  state.authTokenExpiresAt = authTokenExpiresAt || "";
+  state.syncApiBaseUrl = syncApiBaseUrl || getDefaultSyncApiBaseUrl();
+  state.lastSyncAt = lastSyncAt || "";
+  state.lastSyncReceipt = lastSyncReceipt || "";
+  if (!syncApiBaseUrl && state.syncApiBaseUrl) {
+    await saveSetting("sync_api_base_url", state.syncApiBaseUrl);
+  }
+  await refreshSyncQueueCount();
+  state.syncStatus = state.authToken
+    ? "Ready to sync queued entries."
+    : "Waiting for server OTP verification.";
+}
+
+async function createAndStoreDeviceKeyMaterial() {
+  if (!isWebCryptoAvailable()) {
+    throw new Error("This browser does not support WebCrypto signing.");
+  }
+  if (state.devicePrivateKey && state.devicePublicKey && state.deviceIdentity && state.publicKeyFingerprint) {
+    return;
+  }
+
+  const keyPair = await crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["sign", "verify"]
+  );
+  const exportedPublicKey = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+  const publicKeyString = canonicalizePublicJwk(exportedPublicKey);
+  const publicKeyHash = await sha256(publicKeyString);
+  const deviceIdentity = publicKeyHash.slice(0, 32);
+  const publicKeyFingerprint = publicKeyHash.slice(0, 16);
+
+  await Promise.all([
+    saveSetting("device_private_key", keyPair.privateKey),
+    saveSetting("device_public_key", publicKeyString),
+    saveSetting("device_identity", deviceIdentity),
+    saveSetting("public_key_fingerprint", publicKeyFingerprint)
+  ]);
+
+  state.devicePrivateKey = keyPair.privateKey;
+  state.devicePublicKey = publicKeyString;
+  state.deviceIdentity = deviceIdentity;
+  state.publicKeyFingerprint = publicKeyFingerprint;
+  syncGlobalDeviceIdentity();
+}
+
+async function ensureDeviceKeyMaterial() {
+  if (!hasVerifiedIdentityAnchor()) {
+    throw new Error(`Complete ${getVerificationChannelLabel().toLowerCase()} before setting up this device key.`);
+  }
+  await createAndStoreDeviceKeyMaterial();
+}
+
+async function getDevicePrivateKey() {
+  return getSigningBlockReason() ? null : state.devicePrivateKey;
+}
+
+async function signEntryHash(entryHash) {
+  const privateKey = await getDevicePrivateKey();
+  if (!privateKey) return null;
+  const data = new TextEncoder().encode(entryHash);
+  const signatureBuffer = await crypto.subtle.sign(
+    { name: "ECDSA", hash: { name: "SHA-256" } },
+    privateKey,
+    data
+  );
+  return btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
+}
+
+async function queueSyncRecord(record) {
+  await addSyncQueueEntry({
+    entry_id: record.id,
+    entry_hash: record.entry_hash,
+    device_identity: state.deviceIdentity || "",
+    status: "queued",
+    attempt_count: 0,
+    queued_at: Date.now(),
+    entry_payload: record
+  });
+  await refreshSyncQueueCount();
+  state.syncStatus = state.authToken
+    ? "Entry queued for server sync."
+    : "Entry signed locally and queued. Complete server OTP to sync.";
+}
+
+async function flushSyncQueue() {
+  if (state.syncInFlight || !state.db) return;
+  const queuedEntries = await getSyncQueueEntries(25);
+  if (!queuedEntries.length) {
+    state.syncStatus = state.authToken ? "All queued entries synced." : state.syncStatus;
+    await refreshSyncQueueCount();
+    return;
+  }
+  if (!state.authToken) {
+    state.syncStatus = "Queued entries are waiting for server OTP verification.";
+    await refreshSyncQueueCount();
+    return;
+  }
+  if (!state.syncApiBaseUrl) {
+    state.syncStatus = "Queued entries cannot sync until a sync server URL is configured.";
+    return;
+  }
+  if (!(state.deviceIdentity && state.devicePublicKey)) {
+    state.syncStatus = "Device identity is missing, so server sync is paused.";
+    return;
+  }
+
+  state.syncInFlight = true;
+  state.syncStatus = `Syncing ${queuedEntries.length} queued entr${queuedEntries.length === 1 ? "y" : "ies"}...`;
+
+  try {
+    const response = await syncQueuedEntries(state.syncApiBaseUrl, state.authToken, {
+      device_identity: state.deviceIdentity,
+      public_key: state.devicePublicKey,
+      entries: queuedEntries.map((item) => item.entry_payload)
+    });
+    await removeSyncQueueEntries(queuedEntries.map((item) => item.queue_id));
+    state.lastSyncAt = new Date().toISOString();
+    state.lastSyncReceipt = response.server_receipt || "";
+    await Promise.all([
+      saveSetting("last_sync_at", state.lastSyncAt),
+      saveSetting("last_sync_receipt", state.lastSyncReceipt)
+    ]);
+    await refreshSyncQueueCount();
+    state.syncStatus = response.synced_count
+      ? `Synced ${response.synced_count} entr${response.synced_count === 1 ? "y" : "ies"} to the server.`
+      : "Server already had the queued entries.";
+  } catch (error) {
+    if (error.statusCode === 401) {
+      state.syncStatus = `Sync auth expired. Re-open ${getVerificationChannelLabel().toLowerCase()}.`;
+    } else if (error.statusCode === 409) {
+      state.syncStatus = "Server reported a fork. Sync paused until remediation.";
+    } else {
+      state.syncStatus = error.message || "Sync failed. Entries remain queued.";
+    }
+  } finally {
+    state.syncInFlight = false;
+  }
+}
+
+function getUsageMap() {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("usage", "readonly");
+    const request = tx.objectStore("usage").getAll();
+    request.onsuccess = () => {
+      const map = new Map();
+      request.result.forEach((item) => map.set(item.normalized_label, item.count));
+      resolve(map);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function bumpLabelUsage(normalizedLabel) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("usage", "readwrite");
+    const store = tx.objectStore("usage");
+    const getRequest = store.get(normalizedLabel);
+    getRequest.onsuccess = () => {
+      const current = getRequest.result || { normalized_label: normalizedLabel, count: 0 };
+      store.put({ normalized_label: normalizedLabel, count: current.count + 1 });
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function createUserCustomLabel(value) {
+  const normalized = normalizeText(value).replace(/\s+/g, "_");
+  const learnedFrom = getCustomLabelLearnedFrom();
+  const item = {
+    id: `custom_${Date.now()}`,
+    normalized_label: normalized,
+    display_name: value,
+    synonyms: [value],
+    icon: "⭐",
+    image_url: null,
+    transaction_contexts: [customLabelContextForLearnedFrom(learnedFrom)],
+    countries: [state.profile.country],
+    business_types: [state.profile.business_type_id]
+  };
+
+  await new Promise((resolve, reject) => {
+    const tx = state.db.transaction("customLabels", "readwrite");
+    tx.objectStore("customLabels").put({
+      id: item.id,
+      user_id: "local-user",
+      display_name: item.display_name,
+      normalized_label: item.normalized_label,
+      source: "manual_entry",
+      learned_from: learnedFrom,
+      business_type_id: state.profile.business_type_id
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  LABEL_CATALOG.push(item);
+  return item;
+}
+
+function loadCustomLabelsIntoCatalog() {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("customLabels", "readonly");
+    const request = tx.objectStore("customLabels").getAll();
+    request.onsuccess = () => {
+      request.result.forEach((item) => {
+        const alreadyExists = LABEL_CATALOG.some((label) => label.id === item.id);
+        if (alreadyExists) return;
+        LABEL_CATALOG.push({
+          id: item.id,
+          normalized_label: item.normalized_label,
+          display_name: item.display_name,
+          synonyms: [item.display_name],
+          icon: "⭐",
+          image_url: null,
+          transaction_contexts: [customLabelContextForLearnedFrom(item.learned_from)],
+          countries: [state.profile?.country || "NG", "US"].filter((value, index, array) => array.indexOf(value) === index),
+          business_types: [item.business_type_id]
+        });
+      });
+      resolve();
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function sha256(input) {
+  const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function canonicalizePublicJwk(jwk) {
+  return JSON.stringify({
+    key_ops: jwk.key_ops || ["verify"],
+    ext: Boolean(jwk.ext),
+    kty: jwk.kty,
+    crv: jwk.crv,
+    x: jwk.x,
+    y: jwk.y
+  });
+}
+
+function hasVerifiedPhoneAnchor() {
+  return hasVerifiedIdentityAnchor();
+}
+
+function stopActiveRecognition() {
+  if (!state.activeRecognition) return;
+  try {
+    state.activeRecognition.stop();
+  } finally {
+    state.activeRecognition = null;
+    setRecordingState(false);
+  }
+}
+
+function isWebCryptoAvailable() {
+  return Boolean(window.crypto?.subtle && window.crypto?.getRandomValues);
+}
+
+function isSigningReady() {
+  return !getSigningBlockReason();
+}
+
+function getDeviceKeyStatusLabel() {
+  if (!isWebCryptoAvailable()) return "WebCrypto not available in this browser";
+  if (state.devicePrivateKey && state.publicKeyFingerprint) return "Ready on this device";
+  if (hasVerifiedIdentityAnchor()) return `${getVerificationChannelLabel()} complete, device key still missing`;
+  return "Not set up yet";
+}
+
+function getAuthSessionStatusLabel() {
+  if (state.authToken && state.authTokenExpiresAt) {
+    return `Active until ${new Date(state.authTokenExpiresAt).toLocaleString()}`;
+  }
+  if (state.authToken) return "Active";
+  return "No server session yet";
+}
+
+function getSigningBlockReason() {
+  if (!hasVerifiedIdentityAnchor()) {
+    return `Complete ${getVerificationChannelLabel().toLowerCase()} before confirming a new record.`;
+  }
+  if (!isWebCryptoAvailable()) {
+    return "This browser does not support device signing, so confirmation is disabled.";
+  }
+  if (!(state.devicePrivateKey && state.publicKeyFingerprint)) {
+    return "Finish device key setup before confirming a new record.";
+  }
+  return "";
+}
+
+function getOtpHelperText() {
+  if (!state.otpChallenge) {
+    return "";
+  }
+  const channel = normalizeOtpChannel(state.otpChallenge.channel || getPreferredOtpChannel());
+  const deliveryNoun = channel === "sms" ? "text message" : "email";
+  if (state.otpChallenge.source === "server" && state.otpChallenge.devCode) {
+    return `Verification code requested from the server. Development code: ${state.otpChallenge.devCode}. It expires in 10 minutes.`;
+  }
+  if (state.otpChallenge.source === "server") {
+    return `Verification code requested. Enter the code sent by ${deliveryNoun}.`;
+  }
+  return `Local development code for this device: ${state.otpChallenge.code}. It expires in 10 minutes.`;
+}
+
+function buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash) {
+  return [
+    id,
+    record.transaction_type,
+    record.normalized_label,
+    record.amount_minor,
+    record.currency,
+    record.counterparty,
+    record.business_type_id,
+    record.country,
+    record.source_account,
+    record.destination_account,
+    record.reversed_entry_hash,
+    record.reversed_transaction_type,
+    confirmedAt,
+    prevHash
+  ].map((value) => value == null ? "" : String(value)).join("|");
+}
+
+function getCustomLabelLearnedFrom() {
+  if (state.currentAction === "transfer") return state.transferSubtype;
+  return state.currentAction;
+}
+
+function customLabelContextForLearnedFrom(learnedFrom) {
+  if (learnedFrom === "transfer_in") return "receipt";
+  if (learnedFrom === "transfer_out") return "payment";
+  return learnedFrom;
+}
+
+async function requestServerOtpCode() {
+  await requestLocalOtpCode();
+}
+
+async function verifyServerOtpCode() {
+  await verifyLocalOtpCode();
+}
