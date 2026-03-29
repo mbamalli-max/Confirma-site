@@ -2,7 +2,7 @@
 **Patent:** USPTO Provisional 63/987,858
 **Stack:** Vanilla JS PWA + Fastify/Node.js + Railway PostgreSQL
 **Strategy:** PWA-first, server-anchored. Android/iOS deferred until MFI pilots require hardware attestation.
-**Last updated:** 2026-03-29 (Phase 1.6D auth overhaul + passcode upgrade + restore hardening complete)
+**Last updated:** 2026-03-29 (Phase 1.6D complete + auth/identity stabilization pass)
 
 ---
 
@@ -90,11 +90,12 @@ These functions form the integrity core. No module outside them may call `append
 
 **OTP channels:** `POST /auth/otp/request` accepts `channel: "email" | "sms"`. Email via Resend (default). SMS via Termii (only if `TERMII_API_KEY` set). Verification split: `email_verified` / `phone_verified` tracked separately.
 
-**Identity model:**
+**Identity model (enforced in code, not just described):**
 - Phone = backend identity anchor (required for activation, recovery, device revocation)
-- Email = access/recovery channel (OTP delivery until SMS is live)
-- `phone_anchor_required` enforced on first-time activation
+- Email = temporary access/recovery channel (OTP delivery until SMS is live)
+- `phone_anchor_required` enforced: first-time email activation without a phone anchor fails with explicit error — no half-activated states
 - No silent partial identities
+- Future email-first identity (if ever needed) requires an explicit migration — current model does not accidentally support it
 
 **Environment variables (Railway):**
 - `DATABASE_URL` (private: `postgres.railway.internal`) — ✅ switched to internal endpoint
@@ -226,11 +227,20 @@ All critical, high, and medium fixes done. See `docs/plans/v3-foundation-plan.md
 
 **Startup config validation:**
 - Server now refuses to boot if `JWT_SECRET`, `SERVER_RECEIPT_SECRET`, `RESEND_API_KEY`, or sender email are missing
+- SMS config (`TERMII_API_KEY`) does NOT block startup when SMS is intentionally disabled
 - Prevents silent misconfiguration in production
 
 **Duplicate verification bug fix:**
 - `POST /auth/otp/request` and restore flow now check if channel already verified before issuing a new challenge
 - No repeated OTP prompts for users who are already verified
+
+**Stabilization pass (post-feature hardening):**
+- `phone_anchor_required` path is enforced in code — first-time email activation without a phone anchor fails explicitly, no half-activated states created
+- Restore flow is server-authoritative: `saveProfile()` supports a `skipPush` local-only save; restore, profile-pull, and verification-completion all use it — prevents local partial data overwriting good server data
+- Passcode hints scrubbed from server profile responses and sync payloads; existing server-side hint values cleared; hints are now local-only
+- Verification UI truthful: app shows distinct states (not verified / email verified / phone verified / both verified) — "phone verified" state only shows when SMS was actually completed or is supported
+- `authPhoneCountry` regression-proofed: survives onboarding, restore modal, screen switches, and reloads — no silent fallback to US unless user explicitly changes it
+- Dev QA helpers added: lightweight local state snapshots for manual testing of OTP request/verify, phone-anchor path, restore hydration, passcode reset/change, and country-prefix persistence — no secrets logged
 
 ---
 
