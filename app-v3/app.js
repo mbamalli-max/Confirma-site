@@ -364,6 +364,8 @@ const state = {
   lastVoiceTranscript: "",
   lastVoiceCaptureContext: "",
   lastVoiceLearnedCorrection: "",
+  pinConfirmResolver: null,
+  pinConfirmWrongMessage: "",
   pendingAdAction: null,
   interstitialDismiss: null,
   preferredLabelEditorOpen: false,
@@ -456,7 +458,8 @@ function cacheElements() {
     "destination-account-input", "transfer-details", "capture-error", "confirm-copy-v2", "confirm-meta-v2",
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
     "speech-results", "browse-results", "speech-status", "custom-label-input", "onboarding-back",
-    "change-confirm-modal", "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
+    "change-confirm-modal", "pin-confirm-modal", "pin-confirm-title", "pin-confirm-copy", "pin-confirm-input", "pin-confirm-error", "pin-confirm-submit", "pin-confirm-cancel", "pin-confirm-close",
+    "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
     "voice-example-v2", "voice-announce", "banner-history", "banner-dashboard", "banner-export",
     "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
@@ -487,6 +490,12 @@ function wireEvents() {
   document.getElementById("confirm-change-profile").addEventListener("click", confirmChangeProfile);
   document.getElementById("cancel-change-profile").addEventListener("click", closeChangeProfileConfirm);
   document.getElementById("change-confirm-close").addEventListener("click", closeChangeProfileConfirm);
+  document.getElementById("pin-confirm-submit").addEventListener("click", () => {
+    void submitPinConfirmation();
+  });
+  document.getElementById("pin-confirm-cancel").addEventListener("click", () => resolvePinConfirmation(""));
+  document.getElementById("pin-confirm-close").addEventListener("click", () => resolvePinConfirmation(""));
+  document.getElementById("pin-confirm-input").addEventListener("input", clearPinConfirmationError);
   els["onboarding-back"].addEventListener("click", goToPreviousOnboardingStep);
   document.getElementById("advanced-toggle").addEventListener("click", () => {
     els["advanced-panel"].hidden = !els["advanced-panel"].hidden;
@@ -1049,7 +1058,7 @@ async function renderSettings() {
     els["pin-lock-toggle"].classList.add("on");
     els["pin-setup-area"].hidden = false;
     els["pin-remove-btn"].hidden = false;
-    els["pin-setup-label"].textContent = "PIN is set — enter new PIN to change";
+    els["pin-setup-label"].textContent = "PIN is set — current PIN required to change";
   } else {
     els["pin-lock-toggle"].classList.remove("on");
     els["pin-setup-area"].hidden = true;
@@ -1971,23 +1980,81 @@ async function handlePinKey(digit) {
   }, 2000);
 }
 
+function isPinLockConfigured() {
+  return Boolean(state.profile?.pinEnabled && state.profile?.pinHash);
+}
+
+function showSecurityStatusMessage(message) {
+  if (!els["settings-security-status"]) return;
+  els["settings-security-status"].textContent = message || "";
+  if (!message) return;
+  setTimeout(() => {
+    if (els["settings-security-status"]) els["settings-security-status"].textContent = "";
+  }, 2000);
+}
+
+async function applyPinLock(newPin) {
+  state.profile.pinEnabled = true;
+  state.profile.pinSalt = createPinSalt();
+  state.profile.pinHash = await hashPin(newPin, state.profile.pinSalt);
+  await saveProfile(state.profile);
+
+  els["pin-input-new"].value = "";
+  els["pin-input-confirm"].value = "";
+  els["pin-setup-error"].textContent = "";
+  els["pin-lock-toggle"].classList.add("on");
+  els["pin-remove-btn"].hidden = false;
+  els["pin-setup-area"].hidden = false;
+  els["pin-setup-label"].textContent = "PIN is set — current PIN required to change";
+  showSecurityStatusMessage("PIN lock enabled");
+}
+
+async function disablePinLockWithConfirmation() {
+  const confirmedPin = await requestCurrentPinConfirmation({
+    title: "Remove PIN lock?",
+    copy: "Enter your current PIN to turn off app lock on this device.",
+    confirmText: "Remove PIN lock",
+    wrongPinMessage: "Incorrect PIN. Security lock not removed."
+  });
+
+  if (!confirmedPin) {
+    els["pin-lock-toggle"].classList.add("on");
+    return false;
+  }
+
+  state.profile.pinEnabled = false;
+  state.profile.pinHash = null;
+  state.profile.pinSalt = null;
+  await saveProfile(state.profile);
+  els["pin-lock-toggle"].classList.remove("on");
+  els["pin-setup-area"].hidden = true;
+  els["pin-remove-btn"].hidden = true;
+  els["pin-input-new"].value = "";
+  els["pin-input-confirm"].value = "";
+  els["pin-setup-error"].textContent = "";
+  showSecurityStatusMessage("PIN removed");
+  return true;
+}
+
 async function togglePinLockPreference() {
   if (!state.profile) return;
-  const enabled = els["pin-lock-toggle"].classList.toggle("on");
+  if (isPinLockConfigured()) {
+    els["pin-lock-toggle"].classList.add("on");
+    await disablePinLockWithConfirmation();
+    return;
+  }
 
+  const enabled = els["pin-lock-toggle"].classList.toggle("on");
   if (enabled) {
     els["pin-setup-area"].hidden = false;
     els["pin-remove-btn"].hidden = !state.profile.pinEnabled;
-    els["pin-setup-label"].textContent = state.profile.pinEnabled ? "PIN is set — enter new PIN to change" : "Set a 4-digit PIN";
+    els["pin-setup-label"].textContent = state.profile.pinEnabled ? "PIN is set — current PIN required to change" : "Set a 4-digit PIN";
     return;
   }
 
   els["pin-setup-area"].hidden = true;
   els["pin-remove-btn"].hidden = true;
-  state.profile.pinEnabled = false;
-  state.profile.pinHash = null;
-  state.profile.pinSalt = null;
-  await saveProfile(state.profile);
+  els["pin-setup-error"].textContent = "";
 }
 
 async function savePinLock() {
@@ -2005,41 +2072,25 @@ async function savePinLock() {
     return;
   }
 
-  state.profile.pinEnabled = true;
-  state.profile.pinSalt = createPinSalt();
-  state.profile.pinHash = await hashPin(newPin, state.profile.pinSalt);
-  await saveProfile(state.profile);
+  if (isPinLockConfigured()) {
+    const confirmedPin = await requestCurrentPinConfirmation({
+      title: "Confirm current PIN",
+      copy: "Enter your current PIN before setting a new one.",
+      confirmText: "Confirm PIN",
+      wrongPinMessage: "Incorrect PIN. PIN not changed."
+    });
 
-  els["pin-input-new"].value = "";
-  els["pin-input-confirm"].value = "";
-  els["pin-setup-error"].textContent = "";
-  els["pin-remove-btn"].hidden = false;
-  els["pin-setup-area"].hidden = false;
-  els["pin-setup-label"].textContent = "PIN is set — enter new PIN to change";
-  els["settings-security-status"].textContent = "PIN lock enabled";
-  setTimeout(() => {
-    if (els["settings-security-status"]) els["settings-security-status"].textContent = "";
-  }, 2000);
+    if (!confirmedPin) {
+      return;
+    }
+  }
+
+  await applyPinLock(newPin);
 }
 
 async function removePinLock() {
   if (!state.profile) return;
-  if (!window.confirm("Remove PIN lock? The app will open without a PIN.")) return;
-
-  state.profile.pinEnabled = false;
-  state.profile.pinHash = null;
-  state.profile.pinSalt = null;
-  await saveProfile(state.profile);
-  els["pin-lock-toggle"].classList.remove("on");
-  els["pin-setup-area"].hidden = true;
-  els["pin-remove-btn"].hidden = true;
-  els["pin-input-new"].value = "";
-  els["pin-input-confirm"].value = "";
-  els["pin-setup-error"].textContent = "";
-  els["settings-security-status"].textContent = "PIN removed";
-  setTimeout(() => {
-    if (els["settings-security-status"]) els["settings-security-status"].textContent = "";
-  }, 2000);
+  await disablePinLockWithConfirmation();
 }
 
 function renderExportScreen() {
@@ -3637,6 +3688,84 @@ function openChangeProfileConfirm() {
 
 function closeChangeProfileConfirm() {
   els["change-confirm-modal"].hidden = true;
+}
+
+function clearPinConfirmationError() {
+  if (els["pin-confirm-error"]) {
+    els["pin-confirm-error"].textContent = "";
+  }
+}
+
+function resolvePinConfirmation(value) {
+  const resolver = state.pinConfirmResolver;
+  state.pinConfirmResolver = null;
+  state.pinConfirmWrongMessage = "";
+  if (els["pin-confirm-input"]) {
+    els["pin-confirm-input"].value = "";
+  }
+  clearPinConfirmationError();
+  if (els["pin-confirm-modal"]) {
+    els["pin-confirm-modal"].hidden = true;
+  }
+  if (typeof resolver === "function") {
+    resolver(value);
+  }
+}
+
+function requestCurrentPinConfirmation({
+  title = "Confirm current PIN",
+  copy = "Enter your current PIN to continue.",
+  confirmText = "Confirm",
+  wrongPinMessage = "Incorrect PIN."
+} = {}) {
+  return new Promise((resolve) => {
+    state.pinConfirmResolver = resolve;
+    state.pinConfirmWrongMessage = wrongPinMessage;
+    if (els["pin-confirm-title"]) {
+      els["pin-confirm-title"].textContent = title;
+    }
+    if (els["pin-confirm-copy"]) {
+      els["pin-confirm-copy"].textContent = copy;
+    }
+    if (els["pin-confirm-submit"]) {
+      els["pin-confirm-submit"].textContent = confirmText;
+    }
+    if (els["pin-confirm-input"]) {
+      els["pin-confirm-input"].value = "";
+    }
+    clearPinConfirmationError();
+    if (els["pin-confirm-modal"]) {
+      els["pin-confirm-modal"].hidden = false;
+      focusFirstInteractive(els["pin-confirm-modal"]);
+    }
+  });
+}
+
+async function submitPinConfirmation() {
+  if (!state.profile) {
+    resolvePinConfirmation("");
+    return;
+  }
+
+  const pin = els["pin-confirm-input"]?.value.trim() || "";
+  if (!/^\d{4}$/.test(pin)) {
+    if (els["pin-confirm-error"]) {
+      els["pin-confirm-error"].textContent = "Enter your current 4-digit PIN.";
+    }
+    return;
+  }
+
+  if (await pinMatchesProfile(pin)) {
+    if (!state.profile.pinSalt) {
+      await upgradeLegacyPinHash(pin);
+    }
+    resolvePinConfirmation(pin);
+    return;
+  }
+
+  if (els["pin-confirm-error"]) {
+    els["pin-confirm-error"].textContent = state.pinConfirmWrongMessage || "Incorrect PIN.";
+  }
 }
 
 function confirmChangeProfile() {

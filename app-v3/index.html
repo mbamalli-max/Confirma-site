@@ -700,6 +700,27 @@
     </div>
   </div>
 
+  <div class="modal-shell" id="pin-confirm-modal" hidden>
+    <div class="modal-backdrop" id="pin-confirm-close"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="pin-confirm-title">
+      <div class="action-header">
+        <div>
+          <h2 id="pin-confirm-title">Confirm current PIN</h2>
+          <p class="subtle" id="pin-confirm-copy">Enter your current PIN to continue.</p>
+        </div>
+      </div>
+      <label class="field">
+        Current PIN
+        <input id="pin-confirm-input" type="password" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="Current PIN">
+      </label>
+      <p id="pin-confirm-error" class="error" role="alert" aria-live="polite" aria-atomic="true"></p>
+      <div class="button-stack">
+        <button class="btn btn-primary" id="pin-confirm-submit" type="button">Confirm</button>
+        <button class="btn btn-secondary" id="pin-confirm-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-shell" id="selector-modal" hidden>
     <div class="modal-backdrop" id="selector-close-backdrop"></div>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="selector-title">
