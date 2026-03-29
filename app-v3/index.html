@@ -14,6 +14,100 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon.svg">
   <link rel="stylesheet" href="styles.css">
+  <style>
+    .interstitial-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+      gap: 1.5rem;
+    }
+
+    .interstitial-label {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .interstitial-ad-slot {
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .interstitial-footer {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .interstitial-timer {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .house-ad {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      background: var(--card);
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      box-shadow: var(--shadow-xs);
+    }
+
+    .house-ad-brand {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+    }
+
+    .house-ad-headline {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .house-ad-body {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .house-ad-cta {
+      align-self: flex-start;
+      margin-top: 0.25rem;
+    }
+
+    .ad-record {
+      position: relative;
+    }
+
+    .ad-record::after {
+      content: "Sponsored";
+      position: absolute;
+      top: 0.5rem;
+      right: 0.75rem;
+      font-size: 0.6rem;
+      color: var(--muted);
+      background: var(--surface);
+      padding: 1px 5px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    .ad-banner-slot {
+      padding: 0.75rem 1rem;
+    }
+
+    .rewarded-export-wrap {
+      display: grid;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+  </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
   <title>Confirma</title>
 </head>
@@ -51,6 +145,17 @@
   </div>
 
   <div class="app-shell">
+    <section class="screen" id="screen-interstitial">
+      <div class="interstitial-wrap">
+        <div class="interstitial-label">Advertisement</div>
+        <div class="interstitial-ad-slot" id="interstitial-slot"></div>
+        <div class="interstitial-footer">
+          <span class="interstitial-timer" id="interstitial-countdown">Skip in 5s</span>
+          <button class="btn btn-secondary" id="interstitial-skip" type="button" disabled>Skip →</button>
+        </div>
+      </div>
+    </section>
+
     <section class="screen active" id="screen-onboarding">
       <div class="hero">
         <div class="hero-mark" aria-hidden="true">
@@ -318,6 +423,7 @@
         </div>
         <button class="pill-button" id="back-home" type="button">Back</button>
       </header>
+      <div class="ad-banner-slot" id="banner-history" hidden></div>
       <div class="panel">
         <div class="history-list" id="history-records-v2"></div>
       </div>
@@ -331,6 +437,7 @@
         </div>
         <button class="pill-button privacy-button" id="privacy-toggle-btn" type="button" aria-label="Toggle amount visibility">👁️</button>
       </header>
+      <div class="ad-banner-slot" id="banner-dashboard" hidden></div>
       <div class="metric-grid">
         <div class="metric-card">
           <span>Today’s Sales</span>
@@ -487,10 +594,15 @@
           <span>Download confirmed records</span>
         </div>
       </header>
+      <div class="ad-banner-slot" id="banner-export" hidden></div>
       <div class="panel">
         <h2>Free export</h2>
         <p class="subtle">Download confirmed transactions with a simple integrity trail for review.</p>
         <div class="settings-list" id="export-trust-status-v3"></div>
+        <div class="rewarded-export-wrap" id="rewarded-export-wrap" hidden>
+          <p class="record-meta">You’ve used all free exports for this month.</p>
+          <button class="btn btn-secondary" id="rewarded-export-button" type="button">Watch a short ad to unlock 1 more export</button>
+        </div>
         <button class="btn btn-secondary" id="export-open-trust-v3" type="button">Open phone verification</button>
         <button class="btn btn-primary" id="export-button-v2" type="button">Generate export</button>
         <div class="verified-report-section" id="verified-report-section" hidden>
@@ -599,6 +711,20 @@
           <input id="custom-label-input" type="text" placeholder="Enter your label">
         </label>
         <button class="btn btn-secondary" id="save-custom-label" type="button">Use this custom label</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-shell" id="rewarded-ad-modal" hidden>
+    <div class="modal-backdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rewarded-ad-title">
+      <div class="interstitial-wrap" style="min-height:auto;padding:0">
+        <div class="interstitial-label" id="rewarded-ad-title">Advertisement</div>
+        <div class="interstitial-ad-slot" id="rewarded-ad-slot"></div>
+        <div class="interstitial-footer">
+          <span class="interstitial-timer" id="rewarded-ad-countdown">Unlock in 15s</span>
+          <button class="btn btn-secondary" id="rewarded-ad-complete" type="button" disabled>Unlock export</button>
+        </div>
       </div>
     </div>
   </div>

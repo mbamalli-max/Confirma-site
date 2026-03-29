@@ -10,6 +10,71 @@ const DB_NAME = "confirma-v3-db";
 const DB_VERSION = 4;
 const FEATURE_TRANSFER_PRIMARY = false;
 const PAYSTACK_PUBLIC_KEY = "pk_test_placeholder";
+const MONTHLY_FREE_EXPORT_LIMIT = 3;
+
+const HOUSE_ADS = {
+  interstitial: [
+    {
+      headline: "Know your credit score before they do",
+      body: "30 days of Confirma records is worth more than a bank statement.",
+      cta: "Keep recording →",
+      brand: "Confirma Pro",
+      action: () => {
+        renderExportScreen();
+        showScreen("screen-export");
+      }
+    },
+    {
+      headline: "Share your verified report with any lender",
+      body: "Your daily records become tamper-proof proof of income.",
+      cta: "Generate report →",
+      brand: "Confirma",
+      action: () => {
+        renderExportScreen();
+        showScreen("screen-export");
+      }
+    },
+    {
+      headline: "Upgrade to Pro — no ads, ever",
+      body: "Unlimited exports, no interruptions, priority sync.",
+      cta: "See plans →",
+      brand: "Confirma Pro",
+      action: () => {
+        renderExportScreen();
+        showScreen("screen-export");
+      }
+    }
+  ],
+  infeed: [
+    {
+      headline: "Tip: categorise transfers separately",
+      body: "Transfers between your own accounts aren't income or expenses.",
+      cta: "Learn more",
+      brand: "Confirma Tips"
+    },
+    {
+      headline: "Ready to share with a lender?",
+      body: "Generate a Verified Report from your export screen.",
+      cta: "Go to Export →",
+      brand: "Confirma",
+      action: () => {
+        renderExportScreen();
+        showScreen("screen-export");
+      }
+    }
+  ],
+  banner: [
+    {
+      headline: "Upgrade to Pro — no ads",
+      cta: "See plans",
+      brand: "Confirma Pro",
+      action: () => {
+        renderExportScreen();
+        showScreen("screen-export");
+      }
+    }
+  ]
+};
 
 const SECTORS = [
   { id: "trade_retail", name: "Trade & Retail", icon: "🛍️" },
@@ -284,6 +349,7 @@ const state = {
   browseResults: [],
   speechResults: [],
   amountsHidden: false,
+  isRecording: false,
   pinEntry: "",
   pinAttempts: 0,
   reminderDismissed: false,
@@ -298,6 +364,8 @@ const state = {
   lastVoiceTranscript: "",
   lastVoiceCaptureContext: "",
   lastVoiceLearnedCorrection: "",
+  pendingAdAction: null,
+  interstitialDismiss: null,
   preferredLabelEditorOpen: false,
   phoneVerified: false,
   devicePrivateKey: null,
@@ -345,6 +413,7 @@ async function init() {
   renderActionRows();
 
   if (state.profile) {
+    state.profile.plan = normalizePlan(state.profile.plan);
     try {
       state.profile.preferred_labels = normalizePreferredLabels(state.profile.preferred_labels, state.profile.business_type_id);
     } catch (error) {
@@ -358,10 +427,17 @@ async function init() {
       return;
     }
     hydrateProfileUi();
-    if (state.profile.pinEnabled && state.profile.pinHash) {
+    const pinLockEnabled = Boolean(state.profile.pinEnabled && state.profile.pinHash);
+    await showInterstitial();
+    await showCapture();
+    if (pinLockEnabled) {
       showPinLock();
     }
-    await showCapture();
+    if (typeof state.pendingAdAction === "function") {
+      const action = state.pendingAdAction;
+      state.pendingAdAction = null;
+      action();
+    }
     void flushSyncQueue();
   } else {
     showScreen("screen-onboarding");
@@ -370,6 +446,7 @@ async function init() {
 
 function cacheElements() {
   [
+    "interstitial-slot", "interstitial-countdown", "interstitial-skip",
     "country-grid", "sector-grid", "business-grid", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
     "onboarding-next", "onboarding-name", "onboarding-phone", "onboarding-email", "onboarding-state",
     "onboarding-birth-year", "onboarding-gender", "onboarding-profile-error",
@@ -379,13 +456,14 @@ function cacheElements() {
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
     "speech-results", "browse-results", "speech-status", "custom-label-input", "onboarding-back",
     "change-confirm-modal", "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
-    "voice-example-v2", "voice-announce",
+    "voice-example-v2", "voice-announce", "banner-history", "banner-dashboard", "banner-export",
     "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-preferred-edit-v2", "settings-preferred-editor", "settings-preferred-grid", "settings-preferred-done-v2",
     "settings-voice-corrections-v2",
     "settings-capture-v2", "settings-summary-v2", "settings-trust-v3", "settings-change-profile-v2",
     "settings-open-trust-v3", "export-button-v2", "export-status-v2", "export-trust-status-v3", "export-open-trust-v3",
+    "rewarded-export-wrap", "rewarded-export-button", "rewarded-ad-modal", "rewarded-ad-slot", "rewarded-ad-countdown", "rewarded-ad-complete",
     "verified-report-section", "verified-report-region-note", "payment-tiers", "payment-status",
     "daily-reminder-banner", "dismiss-reminder-btn", "privacy-toggle-btn", "reminder-toggle", "pin-lock-toggle",
     "pin-setup-area", "pin-input-new", "pin-input-confirm", "pin-save-btn", "pin-remove-btn", "pin-setup-error",
@@ -427,6 +505,9 @@ function wireEvents() {
   document.getElementById("settings-preferred-edit-v2").addEventListener("click", () => togglePreferredLabelEditor());
   document.getElementById("settings-preferred-done-v2").addEventListener("click", () => togglePreferredLabelEditor(false));
   document.getElementById("export-button-v2").addEventListener("click", generateExport);
+  document.getElementById("rewarded-export-button").addEventListener("click", () => {
+    void showRewardedExportAd();
+  });
   document.getElementById("export-open-trust-v3").addEventListener("click", () => openTrustSetup("screen-export"));
   document.getElementById("dismiss-reminder-btn").addEventListener("click", dismissDailyReminder);
   document.getElementById("privacy-toggle-btn").addEventListener("click", togglePrivacyMode);
@@ -515,6 +596,7 @@ function renderCountryGrid() {
     els["country-grid"].appendChild(buildVisualCard(country.icon, country.name, "Country", () => {
       state.profile = {
         ...(state.profile || {}),
+        plan: normalizePlan(state.profile?.plan),
         country: country.id,
         sector_id: null,
         business_type_id: null,
@@ -668,6 +750,7 @@ async function finishOnboarding() {
 
   state.profile = {
     ...(state.profile || {}),
+    plan: normalizePlan(state.profile?.plan),
     preferred_labels: state.profile?.preferred_labels || [],
     display_name: displayName,
     phone_number: normalizedPhoneNumber,
@@ -845,10 +928,7 @@ async function renderDashboard() {
   els["dash-monthly-expenses-v2"].textContent = formatMoney(metrics.monthlyExpenses, currency);
   els["dash-cash-flow-v2"].textContent = formatMoney(metrics.monthlySales - metrics.monthlyExpenses, currency);
 
-  const recent = [...records].reverse().slice(0, 5);
-  els["dashboard-records-v2"].innerHTML = recent.length
-    ? recent.map(renderRecordCard).join("")
-    : `<div class="record-card"><strong>No confirmed records yet.</strong><div class="record-meta">Your recent confirmed transactions will appear here.</div></div>`;
+  renderDashboardRecords(records);
 
   await renderChart(records, "weekly");
 
@@ -892,6 +972,18 @@ async function renderDashboard() {
   } else if (banner) {
     banner.hidden = true;
   }
+
+  refreshBannerAd("screen-dashboard");
+}
+
+function renderDashboardRecords(records) {
+  const recent = [...records].reverse().slice(0, 5);
+  renderRecordListWithAds(
+    "dashboard-records-v2",
+    recent,
+    `<div class="record-card"><strong>No confirmed records yet.</strong><div class="record-meta">Your recent confirmed transactions will appear here.</div></div>`,
+    (record) => createElementFromHtml(renderRecordCard(record))
+  );
 }
 
 async function renderSettings() {
@@ -980,6 +1072,314 @@ async function renderSettings() {
 
 function renderSettingsRow(label, value) {
   return `<div class="settings-row"><span>${label}</span><strong>${value}</strong></div>`;
+}
+
+function normalizePlan(plan) {
+  return plan === "basic" || plan === "pro" ? plan : "free";
+}
+
+function getCurrentPlan() {
+  return normalizePlan(state.profile?.plan);
+}
+
+function setRecordingState(isRecording) {
+  state.isRecording = Boolean(isRecording);
+  refreshBannerAd(document.querySelector(".screen.active")?.id || "");
+}
+
+function getCurrentMonthKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getMonthlyStorageKey(baseKey) {
+  return `${baseKey}:${getCurrentMonthKey()}`;
+}
+
+function getMonthlyLocalNumber(baseKey) {
+  const value = parseInt(localStorage.getItem(getMonthlyStorageKey(baseKey)) || "0", 10);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function incrementMonthlyLocalNumber(baseKey, amount = 1) {
+  const nextValue = getMonthlyLocalNumber(baseKey) + amount;
+  localStorage.setItem(getMonthlyStorageKey(baseKey), String(nextValue));
+  return nextValue;
+}
+
+function getMonthlyFreeExportCount() {
+  return getMonthlyLocalNumber("freeExportsThisMonth");
+}
+
+function getRewardedExportCount() {
+  return getMonthlyLocalNumber("rewardedExportsThisMonth");
+}
+
+function hasFreeExportQuota() {
+  if (getCurrentPlan() === "pro") return true;
+  return getMonthlyFreeExportCount() < (MONTHLY_FREE_EXPORT_LIMIT + getRewardedExportCount());
+}
+
+function shouldOfferRewardedExport() {
+  return getCurrentPlan() !== "pro" && !state.isRecording && !hasFreeExportQuota();
+}
+
+function refreshRewardedExportState() {
+  if (!els["export-button-v2"]) return;
+  const exhausted = !hasFreeExportQuota();
+  els["export-button-v2"].disabled = exhausted;
+  els["export-button-v2"].textContent = exhausted ? "Free export limit reached" : "Generate export";
+  if (els["rewarded-export-wrap"]) {
+    els["rewarded-export-wrap"].hidden = !shouldOfferRewardedExport();
+  }
+}
+
+function unlockRewardedExport() {
+  incrementMonthlyLocalNumber("rewardedExportsThisMonth");
+  refreshRewardedExportState();
+}
+
+function shouldShowInterstitial() {
+  if (state.isRecording || getCurrentPlan() === "pro") return false;
+  const lastSeen = parseInt(localStorage.getItem("lastInterstitialAt") || "0", 10);
+  const hoursSince = (Date.now() - lastSeen) / 3600000;
+  if (getCurrentPlan() === "basic") return hoursSince > 12;
+  return hoursSince > 4;
+}
+
+function getHouseAdContent(type) {
+  const ads = HOUSE_ADS[type] || [];
+  if (!ads.length) return null;
+  return ads[Math.floor(Math.random() * ads.length)];
+}
+
+function runHouseAdAction(ad, type, slotId) {
+  if (typeof ad?.action !== "function") return;
+  if (type === "interstitial" && slotId === "interstitial-slot") {
+    state.pendingAdAction = ad.action;
+    if (typeof state.interstitialDismiss === "function") {
+      state.interstitialDismiss();
+    }
+    return;
+  }
+  ad.action();
+}
+
+function buildHouseAdElement(ad, type, slotId = "") {
+  const wrapper = document.createElement("div");
+  wrapper.className = type === "infeed" ? "record-card ad-record house-ad" : "house-ad";
+
+  const brand = document.createElement("div");
+  brand.className = "house-ad-brand";
+  brand.textContent = ad.brand || "Confirma";
+
+  const headline = document.createElement("div");
+  headline.className = "house-ad-headline";
+  headline.textContent = ad.headline || "";
+
+  wrapper.append(brand, headline);
+
+  if (ad.body) {
+    const body = document.createElement("div");
+    body.className = "house-ad-body";
+    body.textContent = ad.body;
+    wrapper.appendChild(body);
+  }
+
+  if (ad.cta) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-secondary house-ad-cta";
+    button.textContent = ad.cta;
+    if (typeof ad.action === "function") {
+      button.addEventListener("click", () => {
+        runHouseAdAction(ad, type, slotId);
+      });
+    }
+    wrapper.appendChild(button);
+  }
+
+  return wrapper;
+}
+
+function renderHouseAd(slotId, type) {
+  const slot = els[slotId] || document.getElementById(slotId);
+  if (!slot) return null;
+  slot.innerHTML = "";
+  const ad = getHouseAdContent(type);
+  if (!ad) {
+    slot.hidden = true;
+    return null;
+  }
+  const adElement = buildHouseAdElement(ad, type, slotId);
+  slot.appendChild(adElement);
+  slot.hidden = false;
+  return adElement;
+}
+
+function renderInFeedAd() {
+  const ad = getHouseAdContent("infeed");
+  return ad ? buildHouseAdElement(ad, "infeed") : null;
+}
+
+function createElementFromHtml(html) {
+  const template = document.createElement("template");
+  template.innerHTML = String(html || "").trim();
+  return template.content.firstElementChild;
+}
+
+function getInFeedAdFrequency() {
+  if (state.isRecording || getCurrentPlan() === "pro") return 0;
+  return getCurrentPlan() === "basic" ? 10 : 5;
+}
+
+function renderRecordListWithAds(containerId, records, emptyHtml, renderer) {
+  const container = els[containerId] || document.getElementById(containerId);
+  if (!container) return;
+
+  container.innerHTML = "";
+  if (!records.length) {
+    container.innerHTML = emptyHtml;
+    return;
+  }
+
+  const adFrequency = getInFeedAdFrequency();
+  const fragment = document.createDocumentFragment();
+
+  records.forEach((record, index) => {
+    const node = renderer(record, index);
+    if (node) fragment.appendChild(node);
+
+    if (adFrequency && (index + 1) % adFrequency === 0 && index < records.length - 1) {
+      const adNode = renderInFeedAd();
+      if (adNode) fragment.appendChild(adNode);
+    }
+  });
+
+  container.appendChild(fragment);
+}
+
+function refreshBannerAd(screenId) {
+  ["banner-history", "banner-dashboard", "banner-export"].forEach((slotId) => {
+    const slot = els[slotId];
+    if (!slot) return;
+    slot.innerHTML = "";
+    slot.hidden = true;
+  });
+
+  if (state.isRecording || getCurrentPlan() === "pro") return;
+
+  const slotId = {
+    "screen-history": "banner-history",
+    "screen-dashboard": "banner-dashboard",
+    "screen-export": "banner-export"
+  }[screenId];
+
+  if (!slotId) return;
+  if (screenId === "screen-dashboard" && getCurrentPlan() === "basic") return;
+  renderHouseAd(slotId, "banner");
+}
+
+function showInterstitial() {
+  return new Promise((resolve) => {
+    if (!shouldShowInterstitial()) {
+      resolve();
+      return;
+    }
+
+    localStorage.setItem("lastInterstitialAt", Date.now().toString());
+    showScreen("screen-interstitial");
+    renderHouseAd("interstitial-slot", "interstitial");
+
+    let seconds = 5;
+    const countdown = document.getElementById("interstitial-countdown");
+    const skipBtn = document.getElementById("interstitial-skip");
+    if (!(countdown && skipBtn)) {
+      resolve();
+      return;
+    }
+
+    countdown.textContent = `Skip in ${seconds}s`;
+    skipBtn.disabled = true;
+    skipBtn.textContent = "Skip →";
+
+    let tick = null;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearInterval(tick);
+      state.interstitialDismiss = null;
+      resolve();
+    };
+
+    state.interstitialDismiss = finish;
+
+    tick = setInterval(() => {
+      seconds -= 1;
+      if (seconds <= 0) {
+        clearInterval(tick);
+        countdown.textContent = "";
+        skipBtn.disabled = false;
+        skipBtn.textContent = "Skip →";
+      } else {
+        countdown.textContent = `Skip in ${seconds}s`;
+      }
+    }, 1000);
+
+    skipBtn.onclick = finish;
+  });
+}
+
+function showRewardedExportAd() {
+  return new Promise((resolve) => {
+    if (!shouldOfferRewardedExport()) {
+      resolve(false);
+      return;
+    }
+
+    const modal = els["rewarded-ad-modal"];
+    const countdown = els["rewarded-ad-countdown"];
+    const unlockButton = els["rewarded-ad-complete"];
+    if (!(modal && countdown && unlockButton)) {
+      resolve(false);
+      return;
+    }
+
+    modal.hidden = false;
+    renderHouseAd("rewarded-ad-slot", "interstitial");
+
+    let seconds = 15;
+    countdown.textContent = `Unlock in ${seconds}s`;
+    unlockButton.disabled = true;
+    unlockButton.textContent = "Unlock export";
+
+    let tick = null;
+    const finish = (didUnlock) => {
+      clearInterval(tick);
+      modal.hidden = true;
+      if (didUnlock) {
+        unlockRewardedExport();
+        if (els["export-status-v2"]) {
+          els["export-status-v2"].textContent = "1 extra export unlocked.";
+        }
+      }
+      resolve(didUnlock);
+    };
+
+    tick = setInterval(() => {
+      seconds -= 1;
+      if (seconds <= 0) {
+        clearInterval(tick);
+        countdown.textContent = "";
+        unlockButton.disabled = false;
+      } else {
+        countdown.textContent = `Unlock in ${seconds}s`;
+      }
+    }, 1000);
+
+    unlockButton.onclick = () => finish(true);
+  });
 }
 
 function renderRecordingSetupSummary() {
@@ -1408,10 +1808,18 @@ function renderExportScreen() {
       ${renderSettingsRow("Recovery contact", state.profile?.email || state.profile?.phone_number || "Not set")}
     `;
   }
+  refreshRewardedExportState();
+  refreshBannerAd("screen-export");
   refreshStorageWarning();
 }
 
 async function generateExport() {
+  if (!hasFreeExportQuota()) {
+    refreshRewardedExportState();
+    els["export-status-v2"].textContent = "Free export limit reached this month. Watch a short ad to unlock one more export.";
+    return;
+  }
+
   const records = await getRecords();
   if (!records.length) {
     els["export-status-v2"].textContent = "No confirmed records yet.";
@@ -1498,6 +1906,10 @@ async function generateExport() {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+  if (getCurrentPlan() !== "pro") {
+    incrementMonthlyLocalNumber("freeExportsThisMonth");
+  }
+  refreshRewardedExportState();
   els["export-status-v2"].textContent = "Export downloaded.";
 }
 
@@ -1838,6 +2250,7 @@ function startVoiceRecordShortcut() {
   clearPendingVoiceTranscript();
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) {
+    setRecordingState(false);
     setVoiceRecordError("Voice input is not available in this browser. Please use text input.");
     return;
   }
@@ -1845,6 +2258,7 @@ function startVoiceRecordShortcut() {
   stopActiveRecognition();
   const recognition = new SpeechRec();
   state.activeRecognition = recognition;
+  setRecordingState(true);
   recognition.lang = state.profile.country === "US" ? "en-US" : "en-NG";
   recognition.continuous = false;
   recognition.interimResults = false;
@@ -1866,6 +2280,7 @@ function startVoiceRecordShortcut() {
       if (state.activeRecognition === recognition) {
         state.activeRecognition = null;
       }
+      setRecordingState(false);
     }
   };
 
@@ -1879,12 +2294,14 @@ function startVoiceRecordShortcut() {
     if (state.activeRecognition === recognition) {
       state.activeRecognition = null;
     }
+    setRecordingState(false);
   };
 
   recognition.onend = () => {
     if (state.activeRecognition === recognition) {
       state.activeRecognition = null;
     }
+    setRecordingState(false);
   };
 
   recognition.start();
@@ -2086,6 +2503,7 @@ async function startSpeechMatch() {
   clearPendingVoiceTranscript();
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) {
+    setRecordingState(false);
     els["speech-status"].textContent = "Speech recognition is not available in this browser.";
     return;
   }
@@ -2094,6 +2512,7 @@ async function startSpeechMatch() {
   stopActiveRecognition();
   const recognition = new SpeechRec();
   state.activeRecognition = recognition;
+  setRecordingState(true);
   recognition.lang = state.profile.country === "US" ? "en-US" : "en-NG";
   recognition.continuous = false;
   recognition.interimResults = false;
@@ -2112,6 +2531,7 @@ async function startSpeechMatch() {
       if (state.activeRecognition === recognition) {
         state.activeRecognition = null;
       }
+      setRecordingState(false);
     }
   };
   recognition.onerror = (event) => {
@@ -2124,11 +2544,13 @@ async function startSpeechMatch() {
     if (state.activeRecognition === recognition) {
       state.activeRecognition = null;
     }
+    setRecordingState(false);
   };
   recognition.onend = () => {
     if (state.activeRecognition === recognition) {
       state.activeRecognition = null;
     }
+    setRecordingState(false);
   };
   recognition.start();
 }
@@ -2256,22 +2678,33 @@ async function renderRecentRecords() {
   const records = await getRecords();
   renderFirstRecordGuide(records);
   const recent = [...records].reverse().slice(0, 5);
-  els["recent-records-v2"].innerHTML = recent.length
-    ? recent.map(renderRecordCard).join("")
-    : `<div class="record-card"><strong>No confirmed records yet.</strong><div class="record-meta">Tap a label, enter an amount, then review before confirming. Your first confirmed record starts your history.</div></div>`;
+  renderRecordListWithAds(
+    "recent-records-v2",
+    recent,
+    `<div class="record-card"><strong>No confirmed records yet.</strong><div class="record-meta">Tap a label, enter an amount, then review before confirming. Your first confirmed record starts your history.</div></div>`,
+    (record) => createElementFromHtml(renderRecordCard(record))
+  );
 }
 
 async function renderHistory() {
   const records = await getRecords();
-  const reversedHashes = getReversedEntryHashSet(records);
-  els["history-records-v2"].innerHTML = records.length
-    ? [...records].reverse().map((record) => {
-      return renderRecordCard(record, {
-        allowReverse: record.transaction_type !== "reversal" && !reversedHashes.has(record.entry_hash)
-      });
-    }).join("")
-    : `<div class="record-card"><strong>No history yet.</strong><div class="record-meta">Nothing has been appended yet.</div></div>`;
+  renderHistoryList(records);
   wireReverseButtons(records);
+  refreshBannerAd("screen-history");
+}
+
+function renderHistoryList(records) {
+  const reversedHashes = getReversedEntryHashSet(records);
+  renderRecordListWithAds(
+    "history-records-v2",
+    [...records].reverse(),
+    `<div class="record-card"><strong>No history yet.</strong><div class="record-meta">Nothing has been appended yet.</div></div>`,
+    (record) => {
+      return createElementFromHtml(renderRecordCard(record, {
+        allowReverse: record.transaction_type !== "reversal" && !reversedHashes.has(record.entry_hash)
+      }));
+    }
+  );
 }
 
 function renderRecordCard(record, options = {}) {
@@ -2903,6 +3336,7 @@ function showScreen(id) {
     resetPrivacyMode();
   }
   updateBottomNav(id);
+  refreshBannerAd(id);
   if (id === "screen-onboarding") {
     focusFirstInteractive(document.querySelector(`.step[data-step="${state.onboardingStep}"]`));
   } else if (id === "screen-confirm") {
@@ -3555,6 +3989,7 @@ function getProfile() {
       }
       resolve({
         ...request.result,
+        plan: normalizePlan(request.result.plan),
         preferred_labels: normalizePreferredLabels(request.result.preferred_labels, request.result.business_type_id)
       });
     };
@@ -3567,10 +4002,12 @@ function saveProfile(profile) {
     const tx = state.db.transaction("settings", "readwrite");
     const normalizedProfile = {
       ...profile,
+      plan: normalizePlan(profile?.plan),
       preferred_labels: normalizePreferredLabels(profile?.preferred_labels, profile?.business_type_id),
       key: "profile"
     };
     if (profile) {
+      profile.plan = normalizedProfile.plan;
       profile.preferred_labels = normalizedProfile.preferred_labels;
     }
     tx.objectStore("settings").put(normalizedProfile);
@@ -3962,6 +4399,7 @@ function stopActiveRecognition() {
     state.activeRecognition.stop();
   } finally {
     state.activeRecognition = null;
+    setRecordingState(false);
   }
 }
 
