@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <base href="/app/">
   <meta name="theme-color" content="#1A3C34">
+  <meta name="color-scheme" content="light">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Confirma">
@@ -30,7 +31,7 @@
         <div class="pin-dot"></div>
       </div>
 
-      <div id="pin-error" class="pin-error"></div>
+      <div id="pin-error" class="pin-error" role="alert" aria-live="polite" aria-atomic="true"></div>
 
       <div class="pin-pad">
         <button class="pin-key" data-digit="1" type="button">1</button>
@@ -44,7 +45,7 @@
         <button class="pin-key" data-digit="9" type="button">9</button>
         <div></div>
         <button class="pin-key" data-digit="0" type="button">0</button>
-        <button class="pin-key" data-digit="back" type="button">⌫</button>
+        <button class="pin-key" data-digit="back" type="button" aria-label="Delete last digit">⌫</button>
       </div>
     </div>
   </div>
@@ -140,7 +141,7 @@
             </label>
           </div>
 
-          <p class="error" id="onboarding-profile-error" hidden></p>
+          <p class="error" id="onboarding-profile-error" role="alert" aria-live="polite" aria-atomic="true" hidden></p>
 
           <button class="btn btn-primary" id="finish-onboarding" type="button" disabled>
             Use this profile
@@ -169,13 +170,13 @@
           Phone number
           <div class="phone-input-shell">
             <span class="phone-prefix" id="otp-country-prefix" aria-hidden="true">+234</span>
-            <input id="otp-phone-input" type="tel" placeholder="08099840666" autocomplete="tel" inputmode="tel">
+            <input id="otp-phone-input" type="tel" placeholder="08099840666" autocomplete="tel" inputmode="tel" aria-describedby="otp-helper-text">
           </div>
         </label>
         <div class="button-stack">
           <button class="btn btn-secondary" id="otp-request-code" type="button">Generate local code</button>
         </div>
-        <p class="record-meta" id="otp-helper-text"></p>
+        <p class="record-meta" id="otp-helper-text" aria-live="polite" aria-atomic="true"></p>
       </div>
 
       <div class="panel">
@@ -186,7 +187,7 @@
         <div class="button-stack">
           <button class="btn btn-primary" id="otp-verify-code" type="button">Verify phone on this device</button>
         </div>
-        <p class="error" id="otp-error-text" hidden></p>
+        <p class="error" id="otp-error-text" role="alert" aria-live="polite" aria-atomic="true" hidden></p>
       </div>
     </section>
 
@@ -203,7 +204,8 @@
         <button id="mic-button-v2" class="mic-button" type="button" aria-label="Tap to speak">🎤</button>
         <p id="voice-label-v2">Tap to speak your transaction</p>
         <p class="subtle" id="voice-example-v2">Try saying: "Sold 3 bags of rice for 75,000"</p>
-        <p class="error" id="voice-error-v2" hidden></p>
+        <p class="error" id="voice-error-v2" role="alert" aria-live="polite" aria-atomic="true" hidden></p>
+        <div id="voice-announce" aria-live="polite" aria-atomic="true" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;"></div>
       </div>
 
       <div class="panel quick-record-panel">
@@ -247,8 +249,9 @@
         <h2>Transaction details</h2>
         <label class="field">
           Amount
-          <input id="amount-input-v2" type="number" min="0" step="0.01" placeholder="Amount">
+          <input id="amount-input-v2" type="number" min="0" step="0.01" placeholder="Amount" aria-describedby="amount-helper-v2">
         </label>
+        <p class="record-meta" id="amount-helper-v2">Enter amount in your local currency.</p>
         <label class="field">
           Counterparty (optional)
           <input id="counterparty-input-v2" type="text" placeholder="Customer, supplier, or payer">
@@ -270,7 +273,7 @@
           <div>3. Review before confirming to start your history.</div>
         </div>
         <button class="btn btn-primary" id="prepare-confirmation" type="button">Review before confirming</button>
-        <p class="error" id="capture-error" hidden></p>
+        <p class="error" id="capture-error" role="alert" aria-live="polite" aria-atomic="true" hidden></p>
       </div>
 
       <div class="panel">
@@ -285,7 +288,7 @@
             <div>No transactions recorded today</div>
             <div>Record at least one to keep your streak alive</div>
           </div>
-          <button id="dismiss-reminder-btn" class="daily-reminder-dismiss" type="button">✕</button>
+          <button id="dismiss-reminder-btn" class="daily-reminder-dismiss" type="button" aria-label="Dismiss reminder">✕</button>
         </div>
       </div>
     </section>
@@ -433,6 +436,11 @@
         </div>
       </div>
       <div class="panel">
+        <h2>Voice Corrections</h2>
+        <p class="subtle">Confirma learns manual fixes you make after voice capture on this device.</p>
+        <div class="settings-list" id="settings-voice-corrections-v2"></div>
+      </div>
+      <div class="panel">
         <h2>Security</h2>
         <div class="settings-toggle-list">
           <div class="settings-toggle-row">
@@ -455,8 +463,8 @@
             <button id="pin-save-btn" class="btn btn-primary" type="button">Save PIN</button>
             <button id="pin-remove-btn" class="btn btn-secondary" type="button" hidden>Remove PIN lock</button>
           </div>
-          <div id="pin-setup-error" class="error"></div>
-          <div id="settings-security-status" class="record-meta"></div>
+          <div id="pin-setup-error" class="error" role="alert" aria-live="polite" aria-atomic="true"></div>
+          <div id="settings-security-status" class="record-meta" aria-live="polite" aria-atomic="true"></div>
         </div>
       </div>
       <div class="panel">
@@ -500,9 +508,9 @@
               ₦2,500 — Full history
             </button>
           </div>
-          <p class="record-meta" id="payment-status"></p>
+          <p class="record-meta" id="payment-status" aria-live="polite" aria-atomic="true"></p>
         </div>
-        <p class="record-meta" id="export-status-v2"></p>
+        <p class="record-meta" id="export-status-v2" aria-live="polite" aria-atomic="true"></p>
         <p class="record-meta storage-warning" id="storage-warning-v2" hidden></p>
       </div>
     </section>
@@ -576,7 +584,7 @@
       <div class="modal-mode" data-mode-panel="speak">
         <p class="subtle">Speak a label and Confirma will rank the best matches before you confirm.</p>
         <button class="btn btn-primary" id="speak-label-button" type="button">Speak label</button>
-        <p class="subtle" id="speech-status"></p>
+        <p class="subtle" id="speech-status" aria-live="polite" aria-atomic="true"></p>
         <div class="ranked-list" id="speech-results"></div>
       </div>
 

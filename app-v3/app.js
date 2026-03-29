@@ -7,7 +7,7 @@ import {
 } from "./syncWorker.js";
 
 const DB_NAME = "confirma-v3-db";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const FEATURE_TRANSFER_PRIMARY = false;
 const PAYSTACK_PUBLIC_KEY = "pk_test_placeholder";
 
@@ -295,6 +295,9 @@ const state = {
   activeRecognition: null,
   captureExampleIndex: 0,
   captureExampleInterval: null,
+  lastVoiceTranscript: "",
+  lastVoiceCaptureContext: "",
+  lastVoiceLearnedCorrection: "",
   preferredLabelEditorOpen: false,
   phoneVerified: false,
   devicePrivateKey: null,
@@ -371,15 +374,16 @@ function cacheElements() {
     "onboarding-next", "onboarding-name", "onboarding-phone", "onboarding-email", "onboarding-state",
     "onboarding-birth-year", "onboarding-gender", "onboarding-profile-error",
     "business-helper", "profile-summary", "primary-actions", "advanced-panel", "transfer-actions",
-    "quick-label-grid", "selected-label-chip", "amount-input-v2", "counterparty-input-v2", "source-account-input",
+    "quick-label-grid", "selected-label-chip", "amount-input-v2", "amount-helper-v2", "counterparty-input-v2", "source-account-input",
     "destination-account-input", "transfer-details", "capture-error", "confirm-copy-v2", "confirm-meta-v2",
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
     "speech-results", "browse-results", "speech-status", "custom-label-input", "onboarding-back",
     "change-confirm-modal", "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
-    "voice-example-v2",
+    "voice-example-v2", "voice-announce",
     "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-preferred-edit-v2", "settings-preferred-editor", "settings-preferred-grid", "settings-preferred-done-v2",
+    "settings-voice-corrections-v2",
     "settings-capture-v2", "settings-summary-v2", "settings-trust-v3", "settings-change-profile-v2",
     "settings-open-trust-v3", "export-button-v2", "export-status-v2", "export-trust-status-v3", "export-open-trust-v3",
     "verified-report-section", "verified-report-region-note", "payment-tiers", "payment-status",
@@ -432,6 +436,9 @@ function wireEvents() {
   document.getElementById("pin-remove-btn").addEventListener("click", removePinLock);
   document.getElementById("mic-button-v2").addEventListener("click", startVoiceRecordShortcut);
   document.getElementById("quick-text-submit").addEventListener("click", handleQuickTextRecord);
+  document.getElementById("amount-input-v2").addEventListener("change", () => {
+    void maybeLearnVoiceCorrection();
+  });
   document.getElementById("onboarding-name").addEventListener("input", updateFinishOnboardingState);
   document.getElementById("onboarding-phone").addEventListener("input", clearOnboardingProfileError);
   document.getElementById("onboarding-email").addEventListener("input", clearOnboardingProfileError);
@@ -592,14 +599,27 @@ function renderCommonLabelGrid(containerId = "common-label-grid") {
   });
 }
 
+function focusFirstInteractive(container) {
+  if (!container) return;
+  const target = container.querySelector(
+    "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+  );
+  if (!target) return;
+  window.requestAnimationFrame(() => {
+    target.focus();
+  });
+}
+
 function updateOnboardingStep(step) {
   state.onboardingStep = step;
   document.querySelectorAll(".step").forEach((node) => node.classList.remove("active"));
-  document.querySelector(`.step[data-step="${state.onboardingStep}"]`).classList.add("active");
+  const activeStep = document.querySelector(`.step[data-step="${state.onboardingStep}"]`);
+  activeStep?.classList.add("active");
   els["onboarding-step-copy"].textContent = `Step ${state.onboardingStep} of 5`;
   els["onboarding-back"].hidden = state.onboardingStep === 1;
   els["finish-onboarding"].hidden = state.onboardingStep !== 5;
   updateFinishOnboardingState();
+  focusFirstInteractive(activeStep);
 }
 
 function goToPreviousOnboardingStep() {
@@ -941,6 +961,7 @@ async function renderSettings() {
   }
 
   renderPreferredLabelsSummary();
+  await renderVoiceCorrectionsSettings();
   syncPreferredLabelEditor();
 
   els["settings-summary-v2"].innerHTML = `
@@ -978,6 +999,148 @@ function renderPreferredLabelsSummary() {
   els["settings-preferred-v2"].innerHTML = preferred.length
     ? preferred.map((label) => `<div class="settings-chip">${getIconForLabel(label)} ${label}</div>`).join("")
     : `<div class="record-meta">No common transactions selected yet.</div>`;
+}
+
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getVoiceCorrectionsStore(mode = "readonly") {
+  if (!(state.db && state.db.objectStoreNames.contains("voiceCorrections"))) return null;
+  return state.db.transaction("voiceCorrections", mode).objectStore("voiceCorrections");
+}
+
+async function getVoiceCorrections() {
+  const store = getVoiceCorrectionsStore("readonly");
+  if (!store) return [];
+
+  return new Promise((resolve, reject) => {
+    const request = store.getAll();
+    request.onsuccess = () => {
+      const entries = Array.isArray(request.result) ? request.result : [];
+      resolve(entries.sort((a, b) => {
+        const countDiff = Number(b.count || 0) - Number(a.count || 0);
+        if (countDiff) return countDiff;
+        return Number(b.updated_at || 0) - Number(a.updated_at || 0);
+      }));
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function applyVoiceCorrectionEntry(transcript, raw, corrected) {
+  if (!raw || !corrected) return transcript;
+  const matcher = new RegExp(`(^|[^\\w])(${escapeRegExp(raw)})(?=$|[^\\w])`, "gi");
+  return String(transcript || "").replace(matcher, (match, prefix) => `${prefix}${corrected}`);
+}
+
+async function applyVoiceCorrections(transcript) {
+  const input = String(transcript || "").trim();
+  if (!input) return "";
+
+  try {
+    const corrections = await getVoiceCorrections();
+    return corrections
+      .sort((a, b) => String(b.raw || "").length - String(a.raw || "").length)
+      .reduce((nextTranscript, entry) => {
+        return applyVoiceCorrectionEntry(nextTranscript, entry.raw, entry.corrected);
+      }, input);
+  } catch (error) {
+    console.warn("Unable to apply voice corrections.", error);
+    return input;
+  }
+}
+
+async function saveVoiceCorrection(raw, corrected) {
+  const normalizedRaw = String(raw || "").trim().toLowerCase();
+  const normalizedCorrected = String(corrected || "").trim().toLowerCase();
+  if (!normalizedRaw || !normalizedCorrected || normalizedRaw === normalizedCorrected) return;
+
+  const store = getVoiceCorrectionsStore("readwrite");
+  if (!store) return;
+
+  return new Promise((resolve, reject) => {
+    const existingRequest = store.get(normalizedRaw);
+    existingRequest.onsuccess = () => {
+      const existing = existingRequest.result;
+      store.put({
+        raw: normalizedRaw,
+        corrected: normalizedCorrected,
+        count: Number(existing?.count || 0) + 1,
+        updated_at: Date.now()
+      });
+    };
+    existingRequest.onerror = () => reject(existingRequest.error);
+
+    store.transaction.oncomplete = () => resolve();
+    store.transaction.onerror = () => reject(store.transaction.error);
+  });
+}
+
+async function deleteVoiceCorrection(raw) {
+  const key = String(raw || "").trim().toLowerCase();
+  if (!key) return;
+
+  const store = getVoiceCorrectionsStore("readwrite");
+  if (!store) return;
+
+  return new Promise((resolve, reject) => {
+    store.delete(key);
+    store.transaction.oncomplete = () => resolve();
+    store.transaction.onerror = () => reject(store.transaction.error);
+  });
+}
+
+async function renderVoiceCorrectionsSettings() {
+  if (!els["settings-voice-corrections-v2"]) return;
+
+  const corrections = await getVoiceCorrections();
+  els["settings-voice-corrections-v2"].innerHTML = "";
+
+  if (!corrections.length) {
+    els["settings-voice-corrections-v2"].innerHTML = `<div class="record-meta">No saved corrections yet. Confirma will learn from manual voice fixes on this device.</div>`;
+    return;
+  }
+
+  corrections.forEach((entry) => {
+    const row = document.createElement("div");
+    row.className = "settings-row";
+
+    const left = document.createElement("div");
+    left.style.minWidth = "0";
+
+    const raw = document.createElement("span");
+    raw.textContent = entry.raw;
+    raw.style.display = "block";
+
+    const corrected = document.createElement("strong");
+    corrected.textContent = entry.corrected;
+    corrected.style.display = "block";
+    corrected.style.textAlign = "left";
+    corrected.style.marginTop = "4px";
+    left.append(raw, corrected);
+
+    const right = document.createElement("div");
+    right.style.display = "grid";
+    right.style.justifyItems = "end";
+    right.style.gap = "8px";
+
+    const count = document.createElement("span");
+    count.className = "record-meta";
+    count.textContent = `${entry.count} time${entry.count === 1 ? "" : "s"}`;
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "pill-button";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", () => {
+      void deleteVoiceCorrection(entry.raw).then(() => renderVoiceCorrectionsSettings());
+    });
+
+    right.append(count, remove);
+    row.append(left, right);
+    els["settings-voice-corrections-v2"].appendChild(row);
+  });
 }
 
 function syncPreferredLabelEditor() {
@@ -1501,6 +1664,7 @@ function contextCopy(item) {
 function selectLabel(item) {
   state.selectedLabel = item;
   els["selected-label-chip"].textContent = `${item.icon || "🏷️"} ${item.display_name} selected`;
+  void maybeLearnVoiceCorrection();
   renderQuickLabels();
   closeSelector();
 }
@@ -1513,6 +1677,100 @@ function clearSelectedLabel() {
 function setVoiceRecordError(message) {
   els["voice-error-v2"].hidden = !message;
   els["voice-error-v2"].textContent = message || "";
+}
+
+function clearPendingVoiceTranscript() {
+  state.lastVoiceTranscript = "";
+  state.lastVoiceCaptureContext = "";
+  state.lastVoiceLearnedCorrection = "";
+}
+
+function rememberVoiceTranscript(transcript, context) {
+  state.lastVoiceTranscript = String(transcript || "").trim();
+  state.lastVoiceCaptureContext = context || "";
+  state.lastVoiceLearnedCorrection = "";
+}
+
+function getSpeechRecognitionErrorMessage(errorType) {
+  if (errorType === "not-allowed") {
+    return "Microphone access was denied. Please allow microphone access in your browser settings.";
+  }
+  if (errorType === "no-speech") {
+    return "No speech detected. Please try again.";
+  }
+  if (errorType === "audio-capture") {
+    return "No microphone found on this device.";
+  }
+  if (errorType === "network") {
+    return "Speech service unavailable. Please use text input.";
+  }
+  return "Microphone error. Please try again or use text input.";
+}
+
+function formatVoiceCorrectionAmount(value) {
+  const normalized = String(value || "").trim().replace(/,/g, "");
+  if (!normalized) return "";
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  if (state.profile?.country === "US") {
+    return amount.toLocaleString("en-US", {
+      minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+      maximumFractionDigits: 2
+    });
+  }
+  return Math.round(amount).toLocaleString("en-NG", { maximumFractionDigits: 0 });
+}
+
+function buildVoiceCorrectionCandidate() {
+  if (!state.lastVoiceTranscript || state.lastVoiceCaptureContext !== "capture") return "";
+  const label = state.selectedLabel?.display_name?.trim();
+  const amount = formatVoiceCorrectionAmount(els["amount-input-v2"]?.value);
+  if (!label || !amount) return "";
+
+  const actionContext = getCurrentActionContext();
+  if (actionContext === "sale") return `sold ${label} for ${amount}`;
+  if (actionContext === "purchase") return `bought ${label} for ${amount}`;
+  if (actionContext === "payment") return `paid ${label} ${amount}`;
+  if (actionContext === "receipt") return `received ${label} ${amount}`;
+  return "";
+}
+
+async function maybeLearnVoiceCorrection() {
+  const rawTranscript = String(state.lastVoiceTranscript || "").trim();
+  if (!rawTranscript || state.lastVoiceCaptureContext !== "capture") return;
+
+  const corrected = buildVoiceCorrectionCandidate();
+  const normalizedCorrected = String(corrected || "").trim().toLowerCase();
+  if (!normalizedCorrected) return;
+  if (normalizedCorrected === rawTranscript.toLowerCase()) return;
+  if (normalizedCorrected === state.lastVoiceLearnedCorrection) return;
+
+  await saveVoiceCorrection(rawTranscript, corrected);
+  state.lastVoiceLearnedCorrection = normalizedCorrected;
+
+  if (document.querySelector(".screen.active")?.id === "screen-settings") {
+    await renderVoiceCorrectionsSettings();
+  }
+}
+
+function announceVoiceCapture(parsed, labelDisplayName) {
+  if (!els["voice-announce"]) return;
+  const actionCopy = {
+    sale: "sold",
+    purchase: "bought",
+    payment: "paid",
+    receipt: "received"
+  }[parsed.action] || "captured";
+  const currency = state.profile?.country === "US" ? "USD" : "NGN";
+  const label = String(labelDisplayName || parsed.labelQuery || "transaction").toLowerCase();
+  const amount = formatMoney(parsed.amountMinor || 0, currency);
+  const message = `Captured: ${actionCopy} ${label}, ${amount}`;
+  els["voice-announce"].textContent = "";
+  window.setTimeout(() => {
+    if (els["voice-announce"]) {
+      els["voice-announce"].textContent = message;
+    }
+  }, 0);
 }
 
 function handleQuickTextRecord() {
@@ -1577,6 +1835,7 @@ function parseNaturalTransaction(input) {
 
 function startVoiceRecordShortcut() {
   setVoiceRecordError("");
+  clearPendingVoiceTranscript();
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) {
     setVoiceRecordError("Voice input is not available in this browser. Please use text input.");
@@ -1591,13 +1850,15 @@ function startVoiceRecordShortcut() {
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
-  recognition.onresult = (event) => {
+  recognition.onresult = async (event) => {
     const transcript = event.results[0][0].transcript;
-    const parsed = parseNaturalTransaction(transcript);
+    const corrected = await applyVoiceCorrections(transcript);
+    rememberVoiceTranscript(transcript, "capture");
+    const parsed = parseNaturalTransaction(corrected);
     if (!parsed || !parsed.amountMinor) {
       setVoiceRecordError(`Could not understand that. Try: ${getCurrentCaptureExample()}.`);
     } else {
-      applyParsedTransactionToCapture(parsed);
+      applyParsedTransactionToCapture(parsed, { announce: true });
     }
     try {
       recognition.stop();
@@ -1608,8 +1869,8 @@ function startVoiceRecordShortcut() {
     }
   };
 
-  recognition.onerror = () => {
-    setVoiceRecordError("Microphone error. Please try again or use text input.");
+  recognition.onerror = (event) => {
+    setVoiceRecordError(getSpeechRecognitionErrorMessage(event?.error));
     try {
       recognition.stop();
     } catch (error) {
@@ -1672,7 +1933,7 @@ function findBestLabelForAction(labelQuery, actionContext) {
   return ranked[0]?.score ? ranked[0].item : catalog[0] || null;
 }
 
-function applyParsedTransactionToCapture(parsed) {
+function applyParsedTransactionToCapture(parsed, options = {}) {
   setVoiceRecordError("");
   state.currentAction = parsed.action;
   state.profile.last_action = parsed.action;
@@ -1692,6 +1953,9 @@ function applyParsedTransactionToCapture(parsed) {
   renderQuickLabels();
   clearError();
   showScreen("screen-capture");
+  if (options.announce) {
+    announceVoiceCapture(parsed, label?.display_name || parsed.labelQuery);
+  }
 }
 
 function getCommonTransactionOptions(businessTypeId) {
@@ -1757,6 +2021,7 @@ async function openSelector() {
   els["selector-modal"].hidden = false;
   setSelectorMode("search");
   await handleSearch();
+  focusFirstInteractive(els["selector-modal"]);
 }
 
 function queueHandleSearch() {
@@ -1818,6 +2083,7 @@ function wireRankedButtons(containerId, results) {
 }
 
 async function startSpeechMatch() {
+  clearPendingVoiceTranscript();
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) {
     els["speech-status"].textContent = "Speech recognition is not available in this browser.";
@@ -1832,11 +2098,13 @@ async function startSpeechMatch() {
   recognition.continuous = false;
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
-  recognition.onresult = (event) => {
-    const utterance = event.results[0][0].transcript;
-    rankLabels(utterance, { limit: 5, includeScore: true }).then((results) => {
+  recognition.onresult = async (event) => {
+    const transcript = event.results[0][0].transcript;
+    const corrected = await applyVoiceCorrections(transcript);
+    rememberVoiceTranscript(transcript, "selector");
+    rankLabels(corrected, { limit: 5, includeScore: true }).then((results) => {
       state.speechResults = results;
-      renderSpeechResults(utterance, results);
+      renderSpeechResults(corrected, results);
     });
     try {
       recognition.stop();
@@ -1846,8 +2114,8 @@ async function startSpeechMatch() {
       }
     }
   };
-  recognition.onerror = () => {
-    els["speech-status"].textContent = "Speech capture failed. Try again or use search.";
+  recognition.onerror = (event) => {
+    els["speech-status"].textContent = getSpeechRecognitionErrorMessage(event?.error);
     try {
       recognition.stop();
     } catch (error) {
@@ -1976,6 +2244,7 @@ async function confirmAppend() {
 
 function resetCaptureForm() {
   state.candidateRecord = null;
+  clearPendingVoiceTranscript();
   clearSelectedLabel();
   els["amount-input-v2"].value = "";
   els["counterparty-input-v2"].value = "";
@@ -2616,7 +2885,8 @@ LABEL_CATALOG = [...buildCatalogFromQuickPicks(), ...EXTRA_SEARCH_LABELS];
 function showScreen(id) {
   const previousScreen = document.querySelector(".screen.active")?.id || null;
   document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
-  document.getElementById(id).classList.add("active");
+  const nextScreen = document.getElementById(id);
+  nextScreen.classList.add("active");
   if (id === "screen-capture") {
     startCaptureExampleRotation();
   } else if (previousScreen === "screen-capture" || state.captureExampleInterval) {
@@ -2633,6 +2903,11 @@ function showScreen(id) {
     resetPrivacyMode();
   }
   updateBottomNav(id);
+  if (id === "screen-onboarding") {
+    focusFirstInteractive(document.querySelector(`.step[data-step="${state.onboardingStep}"]`));
+  } else if (id === "screen-confirm") {
+    focusFirstInteractive(nextScreen);
+  }
 }
 
 function openTrustSetup(returnScreen = "screen-capture") {
@@ -2662,6 +2937,7 @@ function updateBottomNav(activeScreenId) {
 
 function openChangeProfileConfirm() {
   els["change-confirm-modal"].hidden = false;
+  focusFirstInteractive(els["change-confirm-modal"]);
 }
 
 function closeChangeProfileConfirm() {
@@ -2846,7 +3122,13 @@ function parseMinor(value) {
 
 function updateAmountInputStep() {
   if (!els["amount-input-v2"]) return;
-  els["amount-input-v2"].step = state.profile?.country === "US" ? "0.01" : "1";
+  const isUS = state.profile?.country === "US";
+  els["amount-input-v2"].step = isUS ? "0.01" : "1";
+  if (els["amount-helper-v2"]) {
+    els["amount-helper-v2"].textContent = isUS
+      ? "Enter amount in USD. Decimals are allowed."
+      : "Enter amount in Naira. Whole amounts work best.";
+  }
 }
 
 function renderOtpScreen() {
@@ -3249,6 +3531,11 @@ function openDb() {
       if (event.oldVersion < 3) {
         if (!db.objectStoreNames.contains("syncQueue")) {
           db.createObjectStore("syncQueue", { keyPath: "queue_id", autoIncrement: true });
+        }
+      }
+      if (event.oldVersion < 4) {
+        if (!db.objectStoreNames.contains("voiceCorrections")) {
+          db.createObjectStore("voiceCorrections", { keyPath: "raw" });
         }
       }
     };
@@ -3673,7 +3960,7 @@ function stopActiveRecognition() {
   if (!state.activeRecognition) return;
   try {
     state.activeRecognition.stop();
-  } catch (error) {
+  } finally {
     state.activeRecognition = null;
   }
 }
