@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { authenticateRequest, buildReceiptSignature } from "../auth-utils.js";
 import { query } from "../db.js";
 
-const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL || "https://confirma-site.vercel.app";
+const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL || "https://konfirmata.com";
 
 export async function registerAttestRoutes(app) {
   app.post("/attest", async (request, reply) => {

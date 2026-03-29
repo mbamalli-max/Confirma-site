@@ -27,7 +27,7 @@ async function main() {
 
   app.get("/health", async () => ({
     ok: true,
-    service: "confirma-sync",
+    service: "konfirmata-sync",
     ts: new Date().toISOString()
   }));
 

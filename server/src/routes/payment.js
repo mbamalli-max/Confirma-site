@@ -6,8 +6,8 @@ import { Resend } from "resend";
 import { authenticateRequest, buildReceiptSignature } from "../auth-utils.js";
 import { query } from "../db.js";
 
-const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL || "https://confirma-site.vercel.app";
-const PATENT_NOTICE = "Protected under USPTO Provisional Application 63/987,858. Confirma Temporal Attestation System (TAS). Unauthorized reproduction of this attestation mechanism is prohibited.";
+const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL || "https://konfirmata.com";
+const PATENT_NOTICE = "Protected under USPTO Provisional Application 63/987,858. Konfirmata Temporal Attestation System (TAS). Unauthorized reproduction of this attestation mechanism is prohibited.";
 
 function parseWindowDays(value, fallback = 30) {
   const parsed = Number(value);
@@ -280,7 +280,7 @@ async function buildVerifiedReportPdf({
   const entries = attestation.entries;
   const reportCurrency = entries[0]?.payload?.currency || "NGN";
 
-  doc.fontSize(24).fillColor("#1B2F1F").text("Confirma Verified Report", 50, 60);
+  doc.fontSize(24).fillColor("#1B2F1F").text("Konfirmata Verified Report", 50, 60);
   doc.fontSize(13).fillColor("#6B7C6B").text("Server-Attested Business Activity Ledger", 50, 96);
 
   let infoY = 150;
@@ -397,14 +397,14 @@ async function sendVerifiedReportEmail({ email, filename, pdfBuffer, vtId, verif
 
   const resend = new Resend(process.env.RESEND_API_KEY);
   await resend.emails.send({
-    from: "Confirma <reports@confirma.app>",
+    from: "Konfirmata <reports@konfirmata.com>",
     to: email,
-    subject: "Your Confirma Verified Report",
+    subject: "Your Konfirmata Verified Report",
     html: `
       <p>Your Verified Report is attached.</p>
       <p>Verification ID: ${vtId}</p>
       <p>Verify online: <a href="${verifyUrl}">${verifyUrl}</a></p>
-      <p>— Confirma</p>
+      <p>— Konfirmata</p>
     `,
     attachments: [
       {

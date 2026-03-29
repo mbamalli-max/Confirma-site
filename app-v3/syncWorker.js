@@ -43,7 +43,7 @@ export function getDefaultSyncApiBaseUrl() {
   if (host === "127.0.0.1" || host === "localhost") {
     return "http://127.0.0.1:8787";
   }
-  return "https://confirma-site-production.up.railway.app";
+  return "https://api.konfirmata.com";
 }
 
 export async function requestOtpCode(baseUrl, identifier, extra = {}) {

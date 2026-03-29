@@ -1,5 +1,5 @@
 /* ============================================================
-   Confirma — Site JavaScript
+   Konfirmata — Site JavaScript
    App URL binding + Scroll animations (IntersectionObserver)
    ============================================================ */
 

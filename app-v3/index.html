@@ -8,8 +8,9 @@
   <meta name="color-scheme" content="light">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Confirma">
-  <meta name="description" content="Confirma — voice-first transaction capture. Build verified financial history.">
+  <meta name="apple-mobile-web-app-title" content="Konfirmata">
+  <meta name="application-name" content="Konfirmata">
+  <meta name="description" content="Konfirmata — voice-first transaction capture. Build verified financial history.">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon.svg">
@@ -217,13 +218,13 @@
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-  <title>Confirma</title>
+  <title>Konfirmata</title>
 </head>
 <body>
   <div id="pin-lock-screen" hidden>
     <div class="pin-lock-card">
       <div class="pin-lock-mark">📒</div>
-      <div class="pin-lock-title">Confirma</div>
+      <div class="pin-lock-title">Konfirmata</div>
       <div class="pin-lock-copy">Enter your passcode to continue</div>
       <p id="pin-lock-hint" class="pin-lock-hint" hidden></p>
 
@@ -268,7 +269,7 @@
           </svg>
         </div>
         <div>
-          <h1>Confirma</h1>
+          <h1>Konfirmata</h1>
           <p>Voice-first transaction capture. Build verified financial history.</p>
         </div>
       </div>
@@ -298,7 +299,7 @@
 
         <div class="step" data-step="4">
           <h2>Pick your common transactions</h2>
-          <p class="subtle">Choose the labels you use most often. Confirma will surface them more often while recording.</p>
+          <p class="subtle">Choose the labels you use most often. Konfirmata will surface them more often while recording.</p>
           <div class="visual-grid label-grid" id="common-label-grid"></div>
           <button class="btn btn-secondary" id="onboarding-next" type="button">Continue</button>
         </div>
@@ -365,7 +366,7 @@
 
       <div class="panel">
         <h2 id="otp-screen-title">Verify your email on this device</h2>
-        <p class="subtle" id="otp-screen-copy">Confirma sends a code to your email address. If delivery is unavailable, this device can still use a local development code.</p>
+        <p class="subtle" id="otp-screen-copy">Konfirmata sends a code to your email address. If delivery is unavailable, this device can still use a local development code.</p>
         <div class="settings-list" id="otp-status-card"></div>
       </div>
 
@@ -404,7 +405,7 @@
     <section class="screen" id="screen-capture">
       <header class="topbar">
         <div>
-          <strong>Confirma</strong>
+          <strong>Konfirmata</strong>
           <span id="profile-summary"></span>
         </div>
         <button class="pill-button" id="change-profile" type="button">Change</button>
@@ -424,7 +425,7 @@
 
       <div class="panel quick-record-panel">
         <h2>Or type the transaction</h2>
-        <p class="subtle">Confirma can fill the action, label, and amount from short text.</p>
+        <p class="subtle">Konfirmata can fill the action, label, and amount from short text.</p>
         <input id="quick-text-input-v2" class="text-field-like" type="text" placeholder="Sold 3 bags of rice for 75,000">
         <button class="btn btn-secondary" id="quick-text-submit" type="button">Use text to fill record</button>
       </div>
@@ -653,12 +654,12 @@
       </div>
       <div class="panel">
         <h2>Voice Corrections</h2>
-        <p class="subtle">Confirma learns manual fixes you make after voice capture on this device.</p>
+        <p class="subtle">Konfirmata learns manual fixes you make after voice capture on this device.</p>
         <div class="settings-list" id="settings-voice-corrections-v2"></div>
       </div>
       <div class="panel" id="anomaly-panel">
         <h2>Security alerts <span class="anomaly-badge" id="anomaly-badge" hidden></span></h2>
-        <p class="subtle">Confirma monitors for unusual patterns and warns you automatically.
+        <p class="subtle">Konfirmata monitors for unusual patterns and warns you automatically.
         Records are never blocked.</p>
         <div class="settings-list" id="anomaly-list"></div>
         <button class="btn btn-secondary" id="mark-anomalies-reviewed" type="button" hidden>Mark all reviewed</button>
@@ -669,7 +670,7 @@
           <div class="settings-toggle-row">
             <div>
               <div class="settings-toggle-title">App passcode lock</div>
-              <div class="settings-toggle-copy">Require a passcode to open Confirma on this device</div>
+              <div class="settings-toggle-copy">Require a passcode to open Konfirmata on this device</div>
             </div>
             <button id="pin-lock-toggle" class="settings-toggle" type="button" aria-label="Toggle passcode lock">
               <span></span>
@@ -956,7 +957,7 @@
       </div>
 
       <div class="modal-mode" data-mode-panel="speak">
-        <p class="subtle">Speak a label and Confirma will rank the best matches before you confirm.</p>
+        <p class="subtle">Speak a label and Konfirmata will rank the best matches before you confirm.</p>
         <button class="btn btn-primary" id="speak-label-button" type="button">Speak label</button>
         <p class="subtle" id="speech-status" aria-live="polite" aria-atomic="true"></p>
         <div class="ranked-list" id="speech-results"></div>
@@ -967,7 +968,7 @@
       </div>
 
       <div class="modal-mode" data-mode-panel="other">
-        <p class="subtle">If you cannot find a match, confirm a custom label and Confirma will learn it for future ranking.</p>
+        <p class="subtle">If you cannot find a match, confirm a custom label and Konfirmata will learn it for future ranking.</p>
         <label class="field">
           Custom label
           <input id="custom-label-input" type="text" placeholder="Enter your label">

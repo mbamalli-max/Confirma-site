@@ -18,9 +18,9 @@ const HOUSE_ADS = {
   interstitial: [
     {
       headline: "Know your credit score before they do",
-      body: "30 days of Confirma records is worth more than a bank statement.",
+      body: "30 days of Konfirmata records is worth more than a bank statement.",
       cta: "Keep recording →",
-      brand: "Confirma Pro",
+      brand: "Konfirmata Pro",
       action: () => {
         renderExportScreen();
         showScreen("screen-export");
@@ -30,7 +30,7 @@ const HOUSE_ADS = {
       headline: "Share your verified report with any lender",
       body: "Your daily records become tamper-proof proof of income.",
       cta: "Generate report →",
-      brand: "Confirma",
+      brand: "Konfirmata",
       action: () => {
         renderExportScreen();
         showScreen("screen-export");
@@ -40,7 +40,7 @@ const HOUSE_ADS = {
       headline: "Upgrade to Pro — no ads, ever",
       body: "Unlimited exports, no interruptions, priority sync.",
       cta: "See plans →",
-      brand: "Confirma Pro",
+      brand: "Konfirmata Pro",
       action: () => {
         renderExportScreen();
         showScreen("screen-export");
@@ -52,13 +52,13 @@ const HOUSE_ADS = {
       headline: "Tip: categorise transfers separately",
       body: "Transfers between your own accounts aren't income or expenses.",
       cta: "Learn more",
-      brand: "Confirma Tips"
+      brand: "Konfirmata Tips"
     },
     {
       headline: "Ready to share with a lender?",
       body: "Generate a Verified Report from your export screen.",
       cta: "Go to Export →",
-      brand: "Confirma",
+      brand: "Konfirmata",
       action: () => {
         renderExportScreen();
         showScreen("screen-export");
@@ -69,7 +69,7 @@ const HOUSE_ADS = {
     {
       headline: "Upgrade to Pro — no ads",
       cta: "See plans",
-      brand: "Confirma Pro",
+      brand: "Konfirmata Pro",
       action: () => {
         renderExportScreen();
         showScreen("screen-export");
@@ -1558,7 +1558,7 @@ function buildHouseAdElement(ad, type, slotId = "") {
 
   const brand = document.createElement("div");
   brand.className = "house-ad-brand";
-  brand.textContent = ad.brand || "Confirma";
+  brand.textContent = ad.brand || "Konfirmata";
 
   const headline = document.createElement("div");
   headline.className = "house-ad-headline";
@@ -1885,7 +1885,7 @@ async function renderVoiceCorrectionsSettings() {
   els["settings-voice-corrections-v2"].innerHTML = "";
 
   if (!corrections.length) {
-    els["settings-voice-corrections-v2"].innerHTML = `<div class="record-meta">No saved corrections yet. Confirma will learn from manual voice fixes on this device.</div>`;
+    els["settings-voice-corrections-v2"].innerHTML = `<div class="record-meta">No saved corrections yet. Konfirmata will learn from manual voice fixes on this device.</div>`;
     return;
   }
 
@@ -2645,7 +2645,7 @@ async function generateExport() {
     : `Legacy unsigned history only. Complete ${getVerificationChannelLabel().toLowerCase()} to start device signing.`;
 
   const output = [
-    "CONFIRMA V3 EXPORT",
+    "KONFIRMATA V3 EXPORT",
     `Generated: ${new Date().toLocaleString()}`,
     `Profile: ${countryName(state.profile.country)} / ${BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id)?.name || "Unknown"}`,
     state.profile.display_name ? `Name: ${state.profile.display_name}` : null,
@@ -2674,7 +2674,7 @@ async function generateExport() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `confirma-export-${Date.now()}.txt`;
+  link.download = `konfirmata-export-${Date.now()}.txt`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -2731,7 +2731,7 @@ function initPaystackPayment(tier, amountKobo, windowDays) {
 
   popup.newTransaction({
     key: PAYSTACK_PUBLIC_KEY,
-    email: state.profile.email || (state.profile.phone_number + "@confirma.app"),
+    email: state.profile.email || (state.profile.phone_number + "@konfirmata.com"),
     amount: amountKobo,
     currency: "NGN",
     ref: reference,
@@ -3373,8 +3373,8 @@ function prepareConfirmation() {
   }
   if (amount > maxAmount) {
     return showError(currency === "USD"
-      ? "Amount looks too large. Confirma accepts up to $100,000 per entry."
-      : "Amount looks too large. Confirma accepts up to ₦10,000,000 per entry.");
+      ? "Amount looks too large. Konfirmata accepts up to $100,000 per entry."
+      : "Amount looks too large. Konfirmata accepts up to ₦10,000,000 per entry.");
   }
 
   const transactionType = state.currentAction === "transfer" ? "transfer" : state.currentAction;
@@ -4405,7 +4405,7 @@ async function clearLocalData() {
     const request = indexedDB.deleteDatabase(DB_NAME);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error || new Error("Failed to clear local database."));
-    request.onblocked = () => reject(new Error("Close other open Confirma tabs before wiping this device."));
+    request.onblocked = () => reject(new Error("Close other open Konfirmata tabs before wiping this device."));
   });
 
   localStorage.clear();
@@ -4825,12 +4825,12 @@ function renderOtpScreen() {
   }
   if (els["otp-screen-copy"]) {
     els["otp-screen-copy"].textContent = channel === "sms"
-      ? "Confirma will send a code to your phone number when SMS delivery is available."
+      ? "Konfirmata will send a code to your phone number when SMS delivery is available."
       : (missingPhoneAnchor
         ? `${getPhoneAnchorRequirementMessage(channel)} Existing phone-anchored accounts with a saved email can still restore by email on a new device.`
         : (isLocalDevelopmentOtpFallbackAllowed()
-          ? "Confirma sends a code to your email address. If delivery is unavailable in local development, this device can still use a local development code."
-          : "Confirma sends a code to your email address to verify this device."));
+          ? "Konfirmata sends a code to your email address. If delivery is unavailable in local development, this device can still use a local development code."
+          : "Konfirmata sends a code to your email address to verify this device."));
   }
   if (els["otp-email-input"]) {
     els["otp-email-input"].value = state.profile?.email || "";

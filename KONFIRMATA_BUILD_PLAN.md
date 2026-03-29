@@ -1,4 +1,4 @@
-# Confirma — Master Build Plan
+# Konfirmata — Master Build Plan
 **Patent:** USPTO Provisional 63/987,858
 **Stack:** Vanilla JS PWA + Fastify/Node.js + Railway PostgreSQL
 **Strategy:** PWA-first, server-anchored. Android/iOS deferred until MFI pilots require hardware attestation.
@@ -10,12 +10,12 @@
 
 | Service | URL | Host |
 |---------|-----|------|
-| Marketing website | https://confirma-site.vercel.app | Vercel |
-| PWA (installable) | https://confirma-site.vercel.app/app | Vercel |
-| Verification portal | https://confirma-site.vercel.app/verify/:vt_id | Vercel |
-| Sync server + API | https://confirma-site-production.up.railway.app | Railway |
+| Marketing website | https://konfirmata.com | Vercel |
+| PWA (installable) | https://konfirmata.com/app | Vercel |
+| Verification portal | https://konfirmata.com/verify/:vt_id | Vercel |
+| Sync server + API | https://api.konfirmata.com | Railway |
 | PostgreSQL | centerbeam.proxy.rlwy.net:43983 | Railway |
-| GitHub repo | github.com/mbamalli-max/Confirma-site | GitHub |
+| GitHub repo | github.com/mbamalli-max/Konfirmata-site | GitHub |
 
 ---
 
@@ -280,7 +280,7 @@ See `docs/GO_LIVE_CHECKLIST.md` for full QA steps. Summary:
 - [ ] **End-to-end device recovery test** — New device → restore from phone → pull records → see revocation prompt
 - [ ] **CSP headers** — Add strict Content-Security-Policy via `vercel.json` (5 min task, high security impact)
 - [ ] **Subresource Integrity (SRI)** — Add `integrity="sha384-..."` to Chart.js and QRCode.js CDN tags (5 min task)
-- [ ] **Remove sync server URL from Settings UI** — Replace `https://confirma-site-production.up.railway.app` with "Connected / Last synced X min ago"
+- [ ] **Remove sync server URL from Settings UI** — Replace `https://api.konfirmata.com` with "Connected / Last synced X min ago"
 - [ ] **Short device ID only** — Settings shows first 8 chars of fingerprint as "Device ID"; hide full device_identity
 - [ ] **Voice recording end-to-end test** — Nigerian English + US English; confirm correction dictionary triggers on manual edits
 - [ ] **Accessibility audit for US users** — Screen reader end-to-end test, VoiceOver (iOS) + TalkBack (Android)
@@ -310,7 +310,7 @@ See `docs/GO_LIVE_CHECKLIST.md` for full QA steps. Summary:
 ### 🔲 Phase S1 — Quick Wins (< 1 day each)
 - [ ] **CSP headers** — Add strict Content-Security-Policy via `vercel.json`. Prevents XSS from exfiltrating keys or records. Highest ROI security change available.
 - [ ] **Subresource Integrity (SRI)** — Add `integrity="sha384-..."` to Chart.js and QRCode.js CDN tags. A compromised CDN response undoes all other security measures.
-- [ ] **Remove server URL from Settings** — Replace `https://confirma-site-production.up.railway.app` display with "Connected / Last synced X min ago". No user needs the raw URL.
+- [ ] **Remove server URL from Settings** — Replace `https://api.konfirmata.com` display with "Connected / Last synced X min ago". No user needs the raw URL.
 - [ ] **Short public key fingerprint only** — Show first 8 chars (`eda069ca`) as "Device ID" in Settings. Hide full 32-char device identity — internal value, no UX purpose.
 
 ### ✅ Phase S2 — Core Security Features (COMPLETE)

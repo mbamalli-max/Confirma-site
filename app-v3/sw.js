@@ -16,7 +16,7 @@ self.addEventListener("install", (event) => {
       try {
         await cache.add(file);
       } catch (error) {
-        console.warn("[Confirma SW] Failed to cache", file, error);
+        console.warn("[Konfirmata SW] Failed to cache", file, error);
       }
     }));
     await self.skipWaiting();

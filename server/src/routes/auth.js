@@ -111,8 +111,8 @@ async function sendOtpByEmail(email, code) {
   await resend.emails.send({
     from: config.resendFromEmail,
     to: email,
-    subject: "Your Confirma verification code",
-    text: `Your Confirma code is ${code}. It expires in ${config.otpTtlMinutes} minutes.`
+    subject: "Your Konfirmata verification code",
+    text: `Your Konfirmata code is ${code}. It expires in ${config.otpTtlMinutes} minutes.`
   });
 }
 

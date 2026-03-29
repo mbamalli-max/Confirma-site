@@ -1,7 +1,7 @@
 {
-  "name": "Confirma",
-  "short_name": "Confirma",
-  "description": "Voice-first transaction capture — build verified financial history.",
+  "name": "Konfirmata",
+  "short_name": "Konfirmata",
+  "description": "Konfirmata — voice-first transaction capture that builds verified financial history.",
   "start_url": "/app",
   "display": "standalone",
   "background_color": "#F7F3EE",
