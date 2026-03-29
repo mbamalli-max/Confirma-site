@@ -107,6 +107,28 @@
       gap: 0.5rem;
       margin-bottom: 1rem;
     }
+
+    .anomaly-banner {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 8px;
+      padding: 0.6rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 0.5rem 1rem;
+      font-size: 0.85rem;
+      gap: 0.75rem;
+    }
+
+    .anomaly-badge {
+      background: #e74c3c;
+      color: white;
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 0.7rem;
+      margin-left: 0.5rem;
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
   <title>Confirma</title>
@@ -304,6 +326,10 @@
         </div>
         <button class="pill-button" id="change-profile" type="button">Change</button>
       </header>
+      <div id="anomaly-banner" class="anomaly-banner" hidden role="alert" aria-live="polite">
+        <span id="anomaly-banner-text">Unusual activity detected</span>
+        <button class="pill-button" id="anomaly-banner-cta" type="button">Review</button>
+      </div>
 
       <div class="voice-card">
         <button id="mic-button-v2" class="mic-button" type="button" aria-label="Tap to speak">🎤</button>
@@ -546,6 +572,13 @@
         <h2>Voice Corrections</h2>
         <p class="subtle">Confirma learns manual fixes you make after voice capture on this device.</p>
         <div class="settings-list" id="settings-voice-corrections-v2"></div>
+      </div>
+      <div class="panel" id="anomaly-panel">
+        <h2>Security alerts <span class="anomaly-badge" id="anomaly-badge" hidden></span></h2>
+        <p class="subtle">Confirma monitors for unusual patterns and warns you automatically.
+        Records are never blocked.</p>
+        <div class="settings-list" id="anomaly-list"></div>
+        <button class="btn btn-secondary" id="mark-anomalies-reviewed" type="button" hidden>Mark all reviewed</button>
       </div>
       <div class="panel">
         <h2>Security</h2>

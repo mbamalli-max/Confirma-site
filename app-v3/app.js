@@ -7,7 +7,7 @@ import {
 } from "./syncWorker.js";
 
 const DB_NAME = "confirma-v3-db";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const FEATURE_TRANSFER_PRIMARY = false;
 const PAYSTACK_PUBLIC_KEY = "pk_test_placeholder";
 const MONTHLY_FREE_EXPORT_LIMIT = 3;
@@ -411,6 +411,7 @@ async function init() {
   registerPwa();
   renderOnboarding();
   renderActionRows();
+  await notifyAnomaly();
 
   if (state.profile) {
     state.profile.plan = normalizePlan(state.profile.plan);
@@ -450,7 +451,7 @@ function cacheElements() {
     "country-grid", "sector-grid", "business-grid", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
     "onboarding-next", "onboarding-name", "onboarding-phone", "onboarding-email", "onboarding-state",
     "onboarding-birth-year", "onboarding-gender", "onboarding-profile-error",
-    "business-helper", "profile-summary", "primary-actions", "advanced-panel", "transfer-actions",
+    "business-helper", "profile-summary", "anomaly-banner", "anomaly-banner-text", "anomaly-banner-cta", "primary-actions", "advanced-panel", "transfer-actions",
     "quick-label-grid", "selected-label-chip", "amount-input-v2", "amount-helper-v2", "counterparty-input-v2", "source-account-input",
     "destination-account-input", "transfer-details", "capture-error", "confirm-copy-v2", "confirm-meta-v2",
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
@@ -460,7 +461,7 @@ function cacheElements() {
     "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-preferred-edit-v2", "settings-preferred-editor", "settings-preferred-grid", "settings-preferred-done-v2",
-    "settings-voice-corrections-v2",
+    "settings-voice-corrections-v2", "anomaly-panel", "anomaly-badge", "anomaly-list", "mark-anomalies-reviewed",
     "settings-capture-v2", "settings-summary-v2", "settings-trust-v3", "settings-change-profile-v2",
     "settings-open-trust-v3", "export-button-v2", "export-status-v2", "export-trust-status-v3", "export-open-trust-v3",
     "rewarded-export-wrap", "rewarded-export-button", "rewarded-ad-modal", "rewarded-ad-slot", "rewarded-ad-countdown", "rewarded-ad-complete",
@@ -480,6 +481,9 @@ function wireEvents() {
   document.getElementById("finish-onboarding").addEventListener("click", finishOnboarding);
   document.getElementById("onboarding-next").addEventListener("click", () => updateOnboardingStep(5));
   document.getElementById("change-profile").addEventListener("click", openChangeProfileConfirm);
+  document.getElementById("anomaly-banner-cta").addEventListener("click", () => {
+    void openAnomalyReview();
+  });
   document.getElementById("confirm-change-profile").addEventListener("click", confirmChangeProfile);
   document.getElementById("cancel-change-profile").addEventListener("click", closeChangeProfileConfirm);
   document.getElementById("change-confirm-close").addEventListener("click", closeChangeProfileConfirm);
@@ -504,6 +508,9 @@ function wireEvents() {
   document.getElementById("settings-open-trust-v3").addEventListener("click", () => openTrustSetup("screen-settings"));
   document.getElementById("settings-preferred-edit-v2").addEventListener("click", () => togglePreferredLabelEditor());
   document.getElementById("settings-preferred-done-v2").addEventListener("click", () => togglePreferredLabelEditor(false));
+  document.getElementById("mark-anomalies-reviewed").addEventListener("click", () => {
+    void markAllAnomaliesReviewed();
+  });
   document.getElementById("export-button-v2").addEventListener("click", generateExport);
   document.getElementById("rewarded-export-button").addEventListener("click", () => {
     void showRewardedExportAd();
@@ -1054,6 +1061,7 @@ async function renderSettings() {
 
   renderPreferredLabelsSummary();
   await renderVoiceCorrectionsSettings();
+  await renderAnomalyPanel();
   syncPreferredLabelEditor();
 
   els["settings-summary-v2"].innerHTML = `
@@ -1072,6 +1080,258 @@ async function renderSettings() {
 
 function renderSettingsRow(label, value) {
   return `<div class="settings-row"><span>${label}</span><strong>${value}</strong></div>`;
+}
+
+function getRecordConfirmedAtMs(record) {
+  const confirmedAt = Number(record?.confirmed_at || 0);
+  if (!Number.isFinite(confirmedAt) || confirmedAt <= 0) return 0;
+  return confirmedAt > 1e12 ? confirmedAt : confirmedAt * 1000;
+}
+
+function getAnomalyStore(mode = "readonly") {
+  if (!(state.db && state.db.objectStoreNames.contains("anomaly_log"))) return null;
+  return state.db.transaction("anomaly_log", mode).objectStore("anomaly_log");
+}
+
+async function getAnomalyEntries() {
+  const store = getAnomalyStore("readonly");
+  if (!store) return [];
+
+  return new Promise((resolve, reject) => {
+    const request = store.getAll();
+    request.onsuccess = () => {
+      const entries = Array.isArray(request.result) ? request.result : [];
+      resolve(entries.sort((a, b) => {
+        const timeDiff = Number(b.detected_at || 0) - Number(a.detected_at || 0);
+        if (timeDiff) return timeDiff;
+        return Number(b.id || 0) - Number(a.id || 0);
+      }));
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getUnreviewedAnomalyCount() {
+  const entries = await getAnomalyEntries();
+  return entries.filter((entry) => !entry.reviewed).length;
+}
+
+async function computeUserP95HourlyCount() {
+  const records = await getRecords();
+  const cutoffMs = Date.now() - (30 * 24 * 3600000);
+  const recentRecords = records.filter((record) => getRecordConfirmedAtMs(record) >= cutoffMs);
+  if (recentRecords.length < 10) return 0;
+
+  const buckets = new Map();
+  recentRecords.forEach((record) => {
+    const hourBucket = Math.floor(getRecordConfirmedAtMs(record) / 3600000);
+    buckets.set(hourBucket, (buckets.get(hourBucket) || 0) + 1);
+  });
+
+  const counts = [...buckets.values()].sort((a, b) => a - b);
+  const percentileIndex = Math.min(counts.length - 1, Math.max(0, Math.ceil(counts.length * 0.95) - 1));
+  return counts[percentileIndex] || 0;
+}
+
+async function getAnomalyThreshold() {
+  const p95 = await computeUserP95HourlyCount();
+  return Math.max(20, p95 * 3);
+}
+
+async function logAnomaly(type, detail, entry_id) {
+  const store = getAnomalyStore("readwrite");
+  if (!store) return;
+
+  await new Promise((resolve, reject) => {
+    store.add({
+      type,
+      detail,
+      entry_id: entry_id == null ? null : String(entry_id),
+      detected_at: Date.now(),
+      reviewed: false
+    });
+    store.transaction.oncomplete = () => resolve();
+    store.transaction.onerror = () => reject(store.transaction.error);
+  });
+
+  await notifyAnomaly();
+}
+
+async function checkForAnomalies(newEntry) {
+  try {
+    const threshold = await getAnomalyThreshold();
+    const recentRecords = await getRecords();
+    const oneHourAgoMs = Date.now() - 3600000;
+    const fiveMinAgoMs = Date.now() - 300000;
+    const thisHourCount = recentRecords.filter((record) => getRecordConfirmedAtMs(record) >= oneHourAgoMs).length;
+
+    if (thisHourCount > threshold) {
+      await logAnomaly(
+        "volume_spike",
+        `${thisHourCount} records in the last hour (threshold: ${threshold})`,
+        newEntry.id
+      );
+    }
+
+    const sameAmountRecent = recentRecords.filter((record) => {
+      return getRecordConfirmedAtMs(record) >= fiveMinAgoMs
+        && record.amount_minor === newEntry.amount_minor;
+    });
+
+    if (sameAmountRecent.length >= 5) {
+      await logAnomaly(
+        "repeated_amount",
+        `Amount ${newEntry.amount_minor} recorded ${sameAmountRecent.length} times in 5 min`,
+        newEntry.id
+      );
+    }
+
+    const newEntryMs = getRecordConfirmedAtMs(newEntry);
+    if (newEntryMs > Date.now() + 120000) {
+      await logAnomaly(
+        "future_timestamp",
+        `Entry timestamp is ${Math.round((newEntryMs - Date.now()) / 1000)}s in the future`,
+        newEntry.id
+      );
+    }
+
+    const duplicateChain = recentRecords.filter((record) => {
+      return record.prev_entry_hash
+        && record.prev_entry_hash === newEntry.prev_entry_hash
+        && record.id !== newEntry.id;
+    });
+
+    if (duplicateChain.length > 0) {
+      await logAnomaly(
+        "hash_fork",
+        `prev_entry_hash ${newEntry.prev_entry_hash?.slice(0, 12)} used by multiple entries`,
+        newEntry.id
+      );
+    }
+  } catch (error) {
+    console.warn("Anomaly detection skipped.", error);
+  }
+}
+
+async function notifyAnomaly() {
+  const count = await getUnreviewedAnomalyCount();
+
+  if (els["anomaly-banner"] && els["anomaly-banner-text"]) {
+    if (count <= 0) {
+      els["anomaly-banner"].hidden = true;
+    } else {
+      els["anomaly-banner"].hidden = false;
+      if (count === 1) {
+        els["anomaly-banner-text"].textContent = "Unusual activity detected — tap to review";
+      } else if (count >= 3) {
+        els["anomaly-banner-text"].textContent = `${count} unreviewed anomalies — please check your recent records`;
+      } else {
+        els["anomaly-banner-text"].textContent = `${count} unreviewed anomalies — tap to review`;
+      }
+    }
+  }
+
+  if (els["anomaly-badge"]) {
+    els["anomaly-badge"].hidden = count <= 0;
+    els["anomaly-badge"].textContent = count > 0 ? String(count) : "";
+  }
+
+  if (document.querySelector(".screen.active")?.id === "screen-settings") {
+    await renderAnomalyPanel();
+  }
+}
+
+function getAnomalyDisplayMeta(type) {
+  const meta = {
+    volume_spike: { icon: "📈", label: "Volume spike" },
+    repeated_amount: { icon: "🔁", label: "Repeated amount" },
+    future_timestamp: { icon: "⏰", label: "Future timestamp" },
+    hash_fork: { icon: "⚠️", label: "Hash chain fork" }
+  }[type];
+
+  return meta || { icon: "⚠️", label: "Security alert" };
+}
+
+async function renderAnomalyPanel() {
+  if (!(els["anomaly-list"] && els["mark-anomalies-reviewed"])) return;
+
+  const entries = await getAnomalyEntries();
+  const unreviewedCount = entries.filter((entry) => !entry.reviewed).length;
+
+  if (els["anomaly-badge"]) {
+    els["anomaly-badge"].hidden = unreviewedCount <= 0;
+    els["anomaly-badge"].textContent = unreviewedCount > 0 ? String(unreviewedCount) : "";
+  }
+
+  els["anomaly-list"].innerHTML = "";
+
+  if (!entries.length) {
+    els["anomaly-list"].innerHTML = `<div class="record-meta">No security alerts recorded yet.</div>`;
+    els["mark-anomalies-reviewed"].hidden = true;
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const row = document.createElement("div");
+    row.className = "settings-row";
+    row.style.alignItems = "flex-start";
+    row.style.gap = "12px";
+    row.style.borderLeft = entry.reviewed ? "3px solid transparent" : "3px solid #ffc107";
+    row.style.paddingLeft = "10px";
+
+    const left = document.createElement("div");
+    left.style.minWidth = "0";
+
+    const title = document.createElement("strong");
+    const meta = getAnomalyDisplayMeta(entry.type);
+    title.textContent = `${meta.icon} ${meta.label}`;
+
+    const detail = document.createElement("div");
+    detail.className = "record-meta";
+    detail.textContent = entry.detail;
+
+    left.append(title, detail);
+
+    const time = document.createElement("span");
+    time.className = "record-meta";
+    time.textContent = new Date(entry.detected_at).toLocaleString();
+
+    row.append(left, time);
+    els["anomaly-list"].appendChild(row);
+  });
+
+  els["mark-anomalies-reviewed"].hidden = unreviewedCount <= 0;
+}
+
+async function markAllAnomaliesReviewed() {
+  const store = getAnomalyStore("readwrite");
+  if (!store) return;
+
+  await new Promise((resolve, reject) => {
+    const request = store.getAll();
+    request.onsuccess = () => {
+      const entries = Array.isArray(request.result) ? request.result : [];
+      entries.forEach((entry) => {
+        if (!entry.reviewed) {
+          store.put({ ...entry, reviewed: true });
+        }
+      });
+    };
+    request.onerror = () => reject(request.error);
+    store.transaction.oncomplete = () => resolve();
+    store.transaction.onerror = () => reject(store.transaction.error);
+  });
+
+  await renderAnomalyPanel();
+  await notifyAnomaly();
+}
+
+async function openAnomalyReview() {
+  await renderSettings();
+  showScreen("screen-settings");
+  window.requestAnimationFrame(() => {
+    els["anomaly-panel"]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
 
 function normalizePlan(plan) {
@@ -2647,6 +2907,7 @@ async function confirmAppend() {
       confirmation_state: "confirmed"
     };
     const appendedRecord = await appendLedgerRecord(record);
+    void checkForAnomalies(appendedRecord);
     await bumpLabelUsage(record.normalized_label);
     await queueSyncRecord(appendedRecord);
     resetCaptureForm();
@@ -3970,6 +4231,11 @@ function openDb() {
       if (event.oldVersion < 4) {
         if (!db.objectStoreNames.contains("voiceCorrections")) {
           db.createObjectStore("voiceCorrections", { keyPath: "raw" });
+        }
+      }
+      if (event.oldVersion < 5) {
+        if (!db.objectStoreNames.contains("anomaly_log")) {
+          db.createObjectStore("anomaly_log", { keyPath: "id", autoIncrement: true });
         }
       }
     };
