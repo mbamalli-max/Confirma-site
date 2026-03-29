@@ -224,33 +224,21 @@
     <div class="pin-lock-card">
       <div class="pin-lock-mark">📒</div>
       <div class="pin-lock-title">Confirma</div>
-      <div class="pin-lock-copy">Enter your PIN to continue</div>
+      <div class="pin-lock-copy">Enter your passcode to continue</div>
+      <p id="pin-lock-hint" class="pin-lock-hint" hidden></p>
 
-      <div id="pin-dots" class="pin-dots">
-        <div class="pin-dot"></div>
-        <div class="pin-dot"></div>
-        <div class="pin-dot"></div>
-        <div class="pin-dot"></div>
-      </div>
+      <label class="field pin-lock-field">
+        Passcode
+        <input id="pin-entry-input" class="pin-lock-input" type="password" placeholder="Enter passcode" autocomplete="current-password">
+      </label>
 
       <div id="pin-error" class="pin-error" role="alert" aria-live="polite" aria-atomic="true"></div>
 
-      <div class="pin-pad">
-        <button class="pin-key" data-digit="1" type="button">1</button>
-        <button class="pin-key" data-digit="2" type="button">2</button>
-        <button class="pin-key" data-digit="3" type="button">3</button>
-        <button class="pin-key" data-digit="4" type="button">4</button>
-        <button class="pin-key" data-digit="5" type="button">5</button>
-        <button class="pin-key" data-digit="6" type="button">6</button>
-        <button class="pin-key" data-digit="7" type="button">7</button>
-        <button class="pin-key" data-digit="8" type="button">8</button>
-        <button class="pin-key" data-digit="9" type="button">9</button>
-        <div></div>
-        <button class="pin-key" data-digit="0" type="button">0</button>
-        <button class="pin-key" data-digit="back" type="button" aria-label="Delete last digit">⌫</button>
+      <div class="button-stack pin-lock-actions">
+        <button id="pin-unlock-btn" class="btn btn-primary" type="button">Unlock</button>
       </div>
 
-      <button id="pin-forgot-link" class="pin-forgot-link" type="button">Forgot PIN?</button>
+      <button id="pin-forgot-link" class="pin-forgot-link" type="button">Forgot passcode?</button>
     </div>
   </div>
 
@@ -294,7 +282,7 @@
         <div class="step active" data-step="1">
           <h2>Choose your country</h2>
           <div class="visual-grid" id="country-grid"></div>
-          <button class="restore-link" id="restore-account-link" type="button">Already have an account? Restore from phone →</button>
+          <button class="restore-link" id="restore-account-link" type="button">Already have an account? Restore your account →</button>
         </div>
 
         <div class="step" data-step="2">
@@ -369,20 +357,26 @@
     <section class="screen" id="screen-otp">
       <header class="topbar">
         <div>
-          <strong>Phone verification</strong>
-          <span>Prepare this device for trusted exports and recovery</span>
+          <strong id="otp-screen-header-title">Email verification</strong>
+          <span id="otp-screen-header-copy">Prepare this device for trusted exports and recovery</span>
         </div>
         <button class="pill-button" id="otp-back" type="button">Back</button>
       </header>
 
       <div class="panel">
-        <h2>Verify your phone on this device</h2>
-        <p class="subtle">This is the Week A identity setup flow. For now, the code is generated locally on this device so we can wire the trust journey before SMS delivery goes live.</p>
+        <h2 id="otp-screen-title">Verify your email on this device</h2>
+        <p class="subtle" id="otp-screen-copy">Confirma sends a code to your email address. If delivery is unavailable, this device can still use a local development code.</p>
         <div class="settings-list" id="otp-status-card"></div>
       </div>
 
       <div class="panel">
-        <label class="field">
+        <div id="otp-email-field">
+          <label class="field">
+            Email address
+            <input id="otp-email-input" type="email" placeholder="you@example.com" autocomplete="email" inputmode="email" aria-describedby="otp-helper-text">
+          </label>
+        </div>
+        <label class="field" id="otp-phone-field" hidden>
           Phone number
           <div class="phone-input-shell">
             <span class="phone-prefix" id="otp-country-prefix" aria-hidden="true">+234</span>
@@ -390,7 +384,7 @@
           </div>
         </label>
         <div class="button-stack">
-          <button class="btn btn-secondary" id="otp-request-code" type="button">Generate local code</button>
+          <button class="btn btn-secondary" id="otp-request-code" type="button">Send verification code</button>
         </div>
         <p class="record-meta" id="otp-helper-text" aria-live="polite" aria-atomic="true"></p>
       </div>
@@ -401,7 +395,7 @@
           <input id="otp-code-input" type="text" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
         </label>
         <div class="button-stack">
-          <button class="btn btn-primary" id="otp-verify-code" type="button">Verify phone on this device</button>
+          <button class="btn btn-primary" id="otp-verify-code" type="button">Verify this device</button>
         </div>
         <p class="error" id="otp-error-text" role="alert" aria-live="polite" aria-atomic="true" hidden></p>
       </div>
@@ -674,23 +668,41 @@
         <div class="settings-toggle-list">
           <div class="settings-toggle-row">
             <div>
-              <div class="settings-toggle-title">App PIN lock</div>
-              <div class="settings-toggle-copy">Require a 4-digit PIN to open Confirma</div>
+              <div class="settings-toggle-title">App passcode lock</div>
+              <div class="settings-toggle-copy">Require a passcode to open Confirma on this device</div>
             </div>
-            <button id="pin-lock-toggle" class="settings-toggle" type="button" aria-label="Toggle PIN lock">
+            <button id="pin-lock-toggle" class="settings-toggle" type="button" aria-label="Toggle passcode lock">
               <span></span>
             </button>
           </div>
         </div>
         <div id="pin-setup-area" class="pin-setup-area" hidden>
-          <div class="settings-toggle-title" id="pin-setup-label">Set a 4-digit PIN</div>
+          <div class="settings-toggle-title" id="pin-setup-label">Create a passcode</div>
           <div class="pin-field-stack">
-            <input type="password" id="pin-input-new" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="New PIN (4 digits)">
-            <input type="password" id="pin-input-confirm" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="Confirm PIN">
+            <input type="password" id="pin-input-new" placeholder="New passcode" autocomplete="new-password">
+            <input type="password" id="pin-input-confirm" placeholder="Confirm passcode" autocomplete="new-password">
+          </div>
+          <p class="record-meta" id="pin-passcode-guidance">Use letters and numbers (e.g. mK7river), a passphrase (e.g. sunflower market bridge), or any word you'll remember.</p>
+          <div class="settings-list" id="pin-reminder-summary"></div>
+          <div class="button-stack">
+            <button id="pin-reminder-edit" class="btn btn-secondary" type="button">Edit reminder</button>
+            <button id="pin-reminder-clear" class="btn btn-secondary" type="button" hidden>Clear reminder</button>
+          </div>
+          <div id="pin-reminder-editor" hidden>
+            <div class="pin-field-stack">
+              <input type="text" id="pin-reminder-question" placeholder="Security question" autocomplete="off">
+              <input type="text" id="pin-reminder-answer" placeholder="Answer" autocomplete="off">
+            </div>
+            <p class="record-meta" id="pin-hint-copy">Add a hint only you would understand. Do not include your actual passcode.</p>
+            <div class="button-stack">
+              <button id="pin-reminder-save" class="btn btn-secondary" type="button">Save reminder</button>
+              <button id="pin-reminder-cancel" class="btn btn-secondary" type="button">Done</button>
+            </div>
           </div>
           <div class="button-stack">
-            <button id="pin-save-btn" class="btn btn-primary" type="button">Save PIN</button>
-            <button id="pin-remove-btn" class="btn btn-secondary" type="button" hidden>Remove PIN lock</button>
+            <button id="pin-save-btn" class="btn btn-primary" type="button">Save passcode</button>
+            <button id="pin-remove-btn" class="btn btn-secondary" type="button" hidden>Remove passcode lock</button>
+            <button id="pin-reset-btn" class="btn btn-secondary" type="button" hidden>Reset with verification code</button>
           </div>
           <div id="pin-setup-error" class="error" role="alert" aria-live="polite" aria-atomic="true"></div>
           <div id="settings-security-status" class="record-meta" aria-live="polite" aria-atomic="true"></div>
@@ -698,7 +710,7 @@
       </div>
       <div class="panel">
         <h2>Trusted devices</h2>
-        <p class="subtle">Review the phones that can still access this account.</p>
+        <p class="subtle">Review the devices that can still access this account.</p>
         <div class="settings-list" id="settings-devices-v2"></div>
       </div>
       <div class="panel">
@@ -707,9 +719,10 @@
       </div>
       <div class="panel">
         <div class="button-stack">
-          <button class="btn btn-primary" id="settings-open-trust-v3" type="button">Set up phone verification</button>
+          <button class="btn btn-primary" id="settings-open-trust-v3" type="button">Verify by email</button>
           <button class="btn btn-secondary" id="settings-change-profile-v2" type="button">Change business profile</button>
           <button class="btn btn-secondary" id="settings-open-export-v2" type="button" data-target-screen="screen-export">Open export</button>
+          <button class="btn btn-secondary" id="settings-logout-v2" type="button">Log out</button>
         </div>
       </div>
     </section>
@@ -730,7 +743,7 @@
           <p class="record-meta">You’ve used all free exports for this month.</p>
           <button class="btn btn-secondary" id="rewarded-export-button" type="button">Watch a short ad to unlock 1 more export</button>
         </div>
-        <button class="btn btn-secondary" id="export-open-trust-v3" type="button">Open phone verification</button>
+        <button class="btn btn-secondary" id="export-open-trust-v3" type="button">Open email verification</button>
         <button class="btn btn-primary" id="export-button-v2" type="button">Generate export</button>
         <div class="verified-report-section" id="verified-report-section" hidden>
           <h3>Verified Report (PDF)</h3>
@@ -799,13 +812,13 @@
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="pin-confirm-title">
       <div class="action-header">
         <div>
-          <h2 id="pin-confirm-title">Confirm current PIN</h2>
-          <p class="subtle" id="pin-confirm-copy">Enter your current PIN to continue.</p>
+          <h2 id="pin-confirm-title">Confirm current passcode</h2>
+          <p class="subtle" id="pin-confirm-copy">Enter your current passcode to continue.</p>
         </div>
       </div>
       <label class="field">
-        Current PIN
-        <input id="pin-confirm-input" type="password" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="Current PIN">
+        Current passcode
+        <input id="pin-confirm-input" type="password" placeholder="Current passcode" autocomplete="current-password">
       </label>
       <p id="pin-confirm-error" class="error" role="alert" aria-live="polite" aria-atomic="true"></p>
       <div class="button-stack">
@@ -820,10 +833,11 @@
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="pin-forgot-title">
       <div class="action-header">
         <div>
-          <h2 id="pin-forgot-title">Reset your PIN</h2>
-          <p class="subtle">We'll send a code to your verified phone number to reset your PIN.</p>
+          <h2 id="pin-forgot-title">Reset your passcode</h2>
+          <p class="subtle" id="pin-forgot-copy">We'll send a code to your verified email address to reset your passcode.</p>
         </div>
       </div>
+      <p class="record-meta" id="pin-forgot-hint" hidden></p>
       <p class="record-meta" id="pin-forgot-helper">Request a reset code to continue.</p>
       <div id="pin-forgot-code-wrap" hidden>
         <label class="field">
@@ -846,11 +860,11 @@
       <div class="action-header">
         <div>
           <h2 id="pin-wipe-title">Reset this device</h2>
-          <p class="subtle">This device cannot verify a PIN reset by phone yet.</p>
+          <p class="subtle">This device cannot verify a passcode reset yet.</p>
         </div>
       </div>
       <div class="pin-wipe-warning">
-        Your phone number is not verified on this device. The only way to remove the PIN is to wipe all local data
+        This device does not have a verified recovery channel. The only way to remove the passcode is to wipe all local data
         and start fresh. Records not yet synced will be permanently lost.
       </div>
       <div class="button-stack">
@@ -866,10 +880,16 @@
       <div class="action-header">
         <div>
           <h2 id="restore-title">Restore your account</h2>
-          <p class="subtle">Use your verified phone number to pull down your profile and records on this device.</p>
+          <p class="subtle" id="restore-copy">Use your verified email to pull down your profile and records on this device.</p>
         </div>
       </div>
-      <label class="field">
+      <div id="restore-email-field">
+        <label class="field">
+          Email address
+          <input id="restore-email-input" type="email" placeholder="you@example.com" autocomplete="email" inputmode="email" aria-describedby="restore-helper-text">
+        </label>
+      </div>
+      <label class="field" id="restore-phone-field" hidden>
         Phone number
         <div class="phone-input-shell">
           <span class="phone-prefix" id="restore-country-prefix" aria-hidden="true">+234</span>

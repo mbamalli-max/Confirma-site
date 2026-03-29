@@ -1,5 +1,7 @@
-import { authenticateRequest, normalizePhoneNumber } from "../auth-utils.js";
+import { authenticateRequest, isValidEmail, normalizeEmail, normalizePhoneNumber } from "../auth-utils.js";
 import { query } from "../db.js";
+
+let schemaReady = false;
 
 function normalizeCountry(value) {
   const country = String(value || "").trim().toUpperCase();
@@ -19,6 +21,10 @@ async function ensureAccountRecoverySchema() {
   await query(`UPDATE users SET id = gen_random_uuid() WHERE id IS NULL`);
   await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_id_unique ON users(id)`);
   await query(`ALTER TABLE users ALTER COLUMN id SET NOT NULL`);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE`);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT FALSE`);
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users ((LOWER(email))) WHERE email IS NOT NULL`);
   await query(`ALTER TABLE device_identities ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
   await query(`ALTER TABLE device_identities ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ`);
   await query(
@@ -31,10 +37,23 @@ async function ensureAccountRecoverySchema() {
         business_type_id TEXT,
         sector_id TEXT,
         preferred_labels JSONB DEFAULT '[]'::jsonb,
+        passcode_hint TEXT,
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `
   );
+  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS passcode_hint TEXT`);
+  await query(`UPDATE profiles SET passcode_hint = NULL WHERE passcode_hint IS NOT NULL`);
+}
+
+async function ensureAccountRecoverySchemaIfNeeded(request) {
+  if (schemaReady) return;
+  try {
+    await ensureAccountRecoverySchema();
+    schemaReady = true;
+  } catch (error) {
+    request.log.error(`Schema init failed, continuing: ${error.message}`);
+  }
 }
 
 async function getUserRow(phoneNumber) {
@@ -63,15 +82,17 @@ function buildProfileResponse(row, fallbackPhoneNumber) {
       business_type_id: row.business_type_id || "",
       sector_id: row.sector_id || "",
       preferred_labels: normalizePreferredLabels(row.preferred_labels),
-      phone: row.phone_number || fallbackPhoneNumber || ""
+      phone: row.phone_number || fallbackPhoneNumber || "",
+      email: row.email || "",
+      email_verified: Boolean(row.email_verified),
+      phone_verified: Boolean(row.phone_verified)
     }
   };
 }
 
 export async function registerAccountRoutes(app) {
-  await ensureAccountRecoverySchema();
-
   app.get("/records", async (request, reply) => {
+    await ensureAccountRecoverySchemaIfNeeded(request);
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
@@ -133,6 +154,7 @@ export async function registerAccountRoutes(app) {
   });
 
   app.get("/profile", async (request, reply) => {
+    await ensureAccountRecoverySchemaIfNeeded(request);
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
@@ -150,7 +172,10 @@ export async function registerAccountRoutes(app) {
           p.business_type_id,
           p.sector_id,
           p.preferred_labels,
-          u.phone_number
+          u.phone_number,
+          u.email,
+          u.email_verified,
+          u.phone_verified
         FROM profiles p
         INNER JOIN users u
           ON u.id = p.user_id
@@ -164,6 +189,7 @@ export async function registerAccountRoutes(app) {
   });
 
   app.post("/profile", async (request, reply) => {
+    await ensureAccountRecoverySchemaIfNeeded(request);
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
@@ -173,6 +199,22 @@ export async function registerAccountRoutes(app) {
     }
 
     const body = request.body || {};
+    const email = isValidEmail(body.email) ? normalizeEmail(body.email) : null;
+    if (String(body.email || "").trim() && !email) {
+      return reply.code(400).send({ error: "Enter a valid email address." });
+    }
+
+    if (email) {
+      await query(
+        `
+          UPDATE users
+          SET email = $2
+          WHERE phone_number = $1
+        `,
+        [user.phone_number, email]
+      );
+    }
+
     await query(
       `
         INSERT INTO profiles (
@@ -211,6 +253,7 @@ export async function registerAccountRoutes(app) {
   });
 
   app.get("/devices", async (request, reply) => {
+    await ensureAccountRecoverySchemaIfNeeded(request);
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 

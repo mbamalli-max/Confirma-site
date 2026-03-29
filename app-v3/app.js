@@ -11,6 +11,8 @@ const DB_VERSION = 5;
 const FEATURE_TRANSFER_PRIMARY = false;
 const PAYSTACK_PUBLIC_KEY = "pk_test_placeholder";
 const MONTHLY_FREE_EXPORT_LIMIT = 3;
+const PASSCODE_KDF_VERSION = "pbkdf2-sha256-v1";
+const PASSCODE_PBKDF2_ITERATIONS = 210000;
 
 const HOUSE_ADS = {
   interstitial: [
@@ -370,7 +372,11 @@ const state = {
   pendingAdAction: null,
   interstitialDismiss: null,
   preferredLabelEditorOpen: false,
+  passcodeReminderEditorOpen: false,
+  emailVerified: false,
   phoneVerified: false,
+  smsSupported: false,
+  authPhoneCountry: "NG",
   devicePrivateKey: null,
   devicePublicKey: "",
   deviceIdentity: "",
@@ -406,12 +412,27 @@ async function init() {
   state.db = await openDb();
   await loadCustomLabelsIntoCatalog();
   try {
+    const savedAuthPhoneCountry = await getSetting("auth_phone_country");
+    state.authPhoneCountry = getRecognizedCountryId(savedAuthPhoneCountry) || "NG";
+  } catch (error) {
+    state.authPhoneCountry = "NG";
+  }
+  try {
     state.profile = await getProfile();
   } catch (error) {
     console.warn("Unable to load saved profile. Continuing with onboarding.", error);
     state.profile = null;
   }
-  syncPhoneVerificationState();
+  if (state.profile?._needsReminderMigration) {
+    delete state.profile._needsReminderMigration;
+    try {
+      await saveProfile(state.profile, { skipPush: true });
+    } catch (error) {
+      console.warn("Unable to persist migrated local passcode reminder.", error);
+    }
+  }
+  initializeAuthPhoneCountry();
+  syncVerificationState();
   await loadDeviceTrustState();
   await loadSyncState();
   wireEvents();
@@ -454,6 +475,7 @@ async function init() {
   } else {
     showScreen("screen-onboarding");
   }
+  syncDevQaSnapshot("init");
 }
 
 function cacheElements() {
@@ -468,10 +490,11 @@ function cacheElements() {
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
     "speech-results", "browse-results", "speech-status", "custom-label-input", "onboarding-back",
     "change-confirm-modal", "pin-confirm-modal", "pin-confirm-title", "pin-confirm-copy", "pin-confirm-input", "pin-confirm-error", "pin-confirm-submit", "pin-confirm-cancel", "pin-confirm-close",
-    "pin-forgot-link", "pin-forgot-modal", "pin-forgot-close", "pin-forgot-helper", "pin-forgot-code-wrap",
+    "pin-lock-hint", "pin-entry-input", "pin-unlock-btn",
+    "pin-forgot-link", "pin-forgot-modal", "pin-forgot-close", "pin-forgot-copy", "pin-forgot-hint", "pin-forgot-helper", "pin-forgot-code-wrap",
     "pin-forgot-code", "pin-forgot-send", "pin-forgot-confirm", "pin-forgot-cancel", "pin-forgot-error",
     "pin-wipe-modal", "pin-wipe-close", "pin-wipe-confirm", "pin-wipe-cancel",
-    "restore-modal", "restore-close", "restore-country-prefix", "restore-phone-input", "restore-helper-text",
+    "restore-modal", "restore-close", "restore-copy", "restore-email-field", "restore-email-input", "restore-phone-field", "restore-country-prefix", "restore-phone-input", "restore-helper-text",
     "restore-code-wrap", "restore-code-input", "restore-error-text", "restore-send-code", "restore-verify-code", "restore-cancel",
     "revoke-old-devices-modal", "revoke-old-devices-list", "revoke-old-devices-skip",
     "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
@@ -485,10 +508,14 @@ function cacheElements() {
     "rewarded-export-wrap", "rewarded-export-button", "rewarded-ad-modal", "rewarded-ad-slot", "rewarded-ad-countdown", "rewarded-ad-complete",
     "verified-report-section", "verified-report-region-note", "payment-tiers", "payment-status",
     "daily-reminder-banner", "dismiss-reminder-btn", "privacy-toggle-btn", "reminder-toggle", "pin-lock-toggle",
-    "pin-setup-area", "pin-input-new", "pin-input-confirm", "pin-save-btn", "pin-remove-btn", "pin-setup-error",
+    "pin-setup-area", "pin-input-new", "pin-input-confirm", "pin-passcode-guidance", "pin-reminder-summary", "pin-reminder-edit", "pin-reminder-clear",
+    "pin-reminder-editor", "pin-reminder-question", "pin-reminder-answer", "pin-reminder-save", "pin-reminder-cancel",
+    "pin-reset-btn", "pin-save-btn", "pin-remove-btn", "pin-setup-error",
     "settings-security-status", "pin-setup-label", "pin-lock-screen", "pin-error", "first-record-guide",
     "storage-warning-v2", "loan-readiness-banner", "banner-tier-icon", "banner-headline", "banner-subtext", "banner-cta",
-    "otp-back", "otp-status-card", "otp-country-prefix", "otp-phone-input", "otp-request-code",
+    "settings-logout-v2",
+    "otp-back", "otp-screen-header-title", "otp-screen-header-copy", "otp-screen-title", "otp-screen-copy", "otp-status-card",
+    "otp-email-field", "otp-email-input", "otp-phone-field", "otp-country-prefix", "otp-phone-input", "otp-request-code",
     "otp-helper-text", "otp-code-input", "otp-verify-code", "otp-error-text"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
@@ -514,6 +541,15 @@ function wireEvents() {
   document.getElementById("pin-confirm-cancel").addEventListener("click", () => resolvePinConfirmation(""));
   document.getElementById("pin-confirm-close").addEventListener("click", () => resolvePinConfirmation(""));
   document.getElementById("pin-confirm-input").addEventListener("input", clearPinConfirmationError);
+  document.getElementById("pin-unlock-btn").addEventListener("click", () => {
+    void unlockWithPasscode();
+  });
+  document.getElementById("pin-entry-input").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void unlockWithPasscode();
+    }
+  });
   document.getElementById("pin-forgot-link").addEventListener("click", () => {
     void openForgotPinFlow();
   });
@@ -539,6 +575,7 @@ function wireEvents() {
   });
   document.getElementById("restore-cancel").addEventListener("click", closeRestoreModal);
   document.getElementById("restore-close").addEventListener("click", closeRestoreModal);
+  document.getElementById("restore-email-input").addEventListener("input", clearRestoreError);
   document.getElementById("restore-phone-input").addEventListener("input", clearRestoreError);
   document.getElementById("restore-code-input").addEventListener("input", clearRestoreError);
   document.getElementById("revoke-old-devices-skip").addEventListener("click", closeRevocationPrompt);
@@ -577,19 +614,39 @@ function wireEvents() {
   document.getElementById("pin-lock-toggle").addEventListener("click", togglePinLockPreference);
   document.getElementById("pin-save-btn").addEventListener("click", savePinLock);
   document.getElementById("pin-remove-btn").addEventListener("click", removePinLock);
+  document.getElementById("pin-reminder-edit").addEventListener("click", openPasscodeReminderEditor);
+  document.getElementById("pin-reminder-clear").addEventListener("click", () => {
+    void clearPasscodeReminder();
+  });
+  document.getElementById("pin-reminder-save").addEventListener("click", () => {
+    void savePasscodeReminderOnly();
+  });
+  document.getElementById("pin-reminder-cancel").addEventListener("click", closePasscodeReminderEditor);
+  document.getElementById("pin-reminder-question").addEventListener("input", clearPasscodeSetupError);
+  document.getElementById("pin-reminder-answer").addEventListener("input", clearPasscodeSetupError);
+  document.getElementById("pin-reset-btn").addEventListener("click", () => {
+    void openForgotPinFlow();
+  });
   document.getElementById("mic-button-v2").addEventListener("click", startVoiceRecordShortcut);
   document.getElementById("quick-text-submit").addEventListener("click", handleQuickTextRecord);
   document.getElementById("amount-input-v2").addEventListener("change", () => {
     void maybeLearnVoiceCorrection();
   });
   document.getElementById("onboarding-name").addEventListener("input", updateFinishOnboardingState);
+  document.getElementById("onboarding-phone").addEventListener("change", () => {
+    void persistAuthPhoneCountry(getSelectedCountryId());
+  });
   document.getElementById("onboarding-phone").addEventListener("input", clearOnboardingProfileError);
   document.getElementById("onboarding-email").addEventListener("input", clearOnboardingProfileError);
   document.getElementById("otp-back").addEventListener("click", () => showScreen(state.otpReturnScreen || "screen-capture"));
   document.getElementById("otp-request-code").addEventListener("click", requestServerOtpCode);
   document.getElementById("otp-verify-code").addEventListener("click", verifyLocalOtpCode);
+  document.getElementById("otp-email-input").addEventListener("input", clearOtpError);
   document.getElementById("otp-phone-input").addEventListener("input", clearOtpError);
   document.getElementById("otp-code-input").addEventListener("input", clearOtpError);
+  document.getElementById("settings-logout-v2").addEventListener("click", () => {
+    void logoutFromServerSession();
+  });
   document.querySelectorAll(".pin-key").forEach((button) => {
     button.addEventListener("click", () => handlePinKey(button.dataset.digit));
   });
@@ -671,6 +728,7 @@ function renderCountryGrid() {
         birth_year: state.profile?.birth_year || "",
         gender: state.profile?.gender || ""
       };
+      void persistAuthPhoneCountry(country.id);
       renderSectorGrid();
       renderBusinessGrid();
       renderOnboardingProfileStep();
@@ -790,7 +848,7 @@ async function finishOnboarding() {
   const displayName = document.getElementById("onboarding-name")?.value.trim() || "";
   const rawPhoneNumber = document.getElementById("onboarding-phone")?.value.trim() || "";
   const normalizedPhoneNumber = rawPhoneNumber ? normalizePhoneNumber(rawPhoneNumber, country) : "";
-  const email = document.getElementById("onboarding-email")?.value.trim() || "";
+  const email = normalizeEmailAddress(document.getElementById("onboarding-email")?.value.trim() || "");
   const region = document.getElementById("onboarding-state")?.value.trim() || "";
   const birthYear = document.getElementById("onboarding-birth-year")?.value.trim() || "";
   const gender = document.getElementById("onboarding-gender")?.value || "";
@@ -805,7 +863,7 @@ async function finishOnboarding() {
     return;
   }
 
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (email && !isValidEmailAddress(email)) {
     showOnboardingProfileError("Enter a valid email address");
     return;
   }
@@ -823,6 +881,9 @@ async function finishOnboarding() {
   };
 
   await saveProfile(state.profile);
+  if (normalizedPhoneNumber) {
+    await persistAuthPhoneCountry(country);
+  }
   hydrateProfileUi();
   await showCapture();
 }
@@ -1078,6 +1139,10 @@ async function renderSettings() {
   `;
 
   els["settings-trust-v3"].innerHTML = `
+    ${renderSettingsRow("Verification summary", getVerificationSummaryLabel())}
+    ${renderSettingsRow("Verification channels", getVerificationChannelAvailabilityLabel())}
+    ${renderSettingsRow("Email verification", getVerificationStatusLabel("email"))}
+    ${(state.smsSupported || state.profile.phone_verified) ? renderSettingsRow("Phone verification", getVerificationStatusLabel("sms")) : ""}
     ${renderSettingsRow("Phone anchor", getPhoneAnchorStatusLabel())}
     ${state.profile.identity_verified_at ? renderSettingsRow("Verified on", new Date(state.profile.identity_verified_at).toLocaleString()) : ""}
     ${renderSettingsRow("Device key", getDeviceKeyStatusLabel())}
@@ -1089,7 +1154,7 @@ async function renderSettings() {
     ${renderSettingsRow("Sync status", state.syncStatus || "Idle")}
     ${state.lastSyncAt ? renderSettingsRow("Last sync", new Date(state.lastSyncAt).toLocaleString()) : ""}
     ${renderSettingsRow("Recovery contact", state.profile.email || state.profile.phone_number || "Not set")}
-    ${renderSettingsRow("Week B status", isSigningReady() ? "This device can sign locally and queue entries for server sync." : "Finish phone verification and device key setup before confirming new entries.")}
+    ${renderSettingsRow("Week B status", isSigningReady() ? "This device can sign locally and queue entries for server sync." : `Finish ${getVerificationChannelLabel().toLowerCase()} and device key setup before confirming new entries.`)}
   `;
 
   renderRecordingSetupSummary();
@@ -1104,15 +1169,20 @@ async function renderSettings() {
     els["pin-lock-toggle"].classList.add("on");
     els["pin-setup-area"].hidden = false;
     els["pin-remove-btn"].hidden = false;
-    els["pin-setup-label"].textContent = "PIN is set — current PIN required to change";
+    if (els["pin-reset-btn"]) els["pin-reset-btn"].hidden = false;
+    els["pin-setup-label"].textContent = "Passcode is set — current passcode required to change";
+    if (els["pin-save-btn"]) els["pin-save-btn"].textContent = "Update passcode";
   } else {
     els["pin-lock-toggle"].classList.remove("on");
     els["pin-setup-area"].hidden = true;
     els["pin-remove-btn"].hidden = true;
-    els["pin-setup-label"].textContent = "Set a 4-digit PIN";
+    if (els["pin-reset-btn"]) els["pin-reset-btn"].hidden = true;
+    els["pin-setup-label"].textContent = "Create a passcode";
+    if (els["pin-save-btn"]) els["pin-save-btn"].textContent = "Save passcode";
     els["settings-security-status"].textContent = "";
     els["pin-setup-error"].textContent = "";
   }
+  syncPasscodeReminderEditor();
 
   renderPreferredLabelsSummary();
   await renderVoiceCorrectionsSettings();
@@ -1946,6 +2016,10 @@ function resetPrivacyMode() {
 function showPinLock() {
   state.pinEntry = "";
   updatePinDots();
+  if (els["pin-entry-input"]) {
+    els["pin-entry-input"].value = "";
+  }
+  syncPasscodeReminderDisplays();
   els["pin-error"].textContent = "";
   els["pin-lock-screen"].hidden = false;
   focusFirstInteractive(els["pin-lock-screen"]);
@@ -1980,8 +2054,238 @@ function createPinSalt() {
   return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function hexToBytes(hex) {
+  const value = String(hex || "");
+  const bytes = new Uint8Array(Math.floor(value.length / 2));
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(value.slice(index * 2, (index * 2) + 2), 16);
+  }
+  return bytes;
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes || []).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function hashPasscodeWithPbkdf2(passcode, salt, iterations = PASSCODE_PBKDF2_ITERATIONS) {
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(String(passcode || "")),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      salt: hexToBytes(salt),
+      iterations
+    },
+    keyMaterial,
+    256
+  );
+  return bytesToHex(new Uint8Array(derivedBits));
+}
+
+function getPasscodeValidationMessage(passcode) {
+  const value = String(passcode || "");
+  if (value.length < 8) return "Passcode must be at least 8 characters";
+  if (!/[A-Za-z]/.test(value)) return "Passcode must include at least one letter";
+  if (!/\d/.test(value)) return "Passcode must include at least one number";
+  return "";
+}
+
+function normalizePasscodeReminder(reminder, legacyHint = "") {
+  if (reminder && typeof reminder === "object" && !Array.isArray(reminder)) {
+    const question = String(reminder.question || "").trim();
+    const answer = String(reminder.answer || "").trim();
+    if (question && answer) {
+      return {
+        reminder: { question, answer },
+        migrated: false
+      };
+    }
+  }
+
+  const hint = String(legacyHint || "").trim();
+  if (hint) {
+    return {
+      reminder: {
+        question: "Your hint:",
+        answer: hint
+      },
+      migrated: true
+    };
+  }
+
+  return {
+    reminder: null,
+    migrated: false
+  };
+}
+
+function clonePasscodeReminder(reminder) {
+  if (!(reminder && reminder.question && reminder.answer)) return null;
+  return {
+    question: String(reminder.question || "").trim(),
+    answer: String(reminder.answer || "").trim()
+  };
+}
+
+function getPasscodeReminder(profile = state.profile) {
+  const { reminder } = normalizePasscodeReminder(profile?.passcodeReminder, profile?.passcode_hint);
+  return clonePasscodeReminder(reminder);
+}
+
+function normalizeLocalProfile(profile, { trackReminderMigration = false } = {}) {
+  if (!profile) return null;
+  const { reminder, migrated } = normalizePasscodeReminder(profile.passcodeReminder, profile.passcode_hint);
+  const normalizedProfile = {
+    ...profile,
+    plan: normalizePlan(profile.plan),
+    preferred_labels: normalizePreferredLabels(profile.preferred_labels, profile.business_type_id)
+  };
+  if (reminder) {
+    normalizedProfile.passcodeReminder = clonePasscodeReminder(reminder);
+  } else {
+    delete normalizedProfile.passcodeReminder;
+  }
+  delete normalizedProfile.passcode_hint;
+  delete normalizedProfile._needsReminderMigration;
+  if (trackReminderMigration && migrated) {
+    normalizedProfile._needsReminderMigration = true;
+  }
+  return normalizedProfile;
+}
+
+function getPasscodeReminderFromInputs() {
+  const question = String(els["pin-reminder-question"]?.value || "").trim();
+  const answer = String(els["pin-reminder-answer"]?.value || "").trim();
+  if (!question && !answer) return null;
+  return { question, answer };
+}
+
+function setPasscodeReminderInputs(reminder = getPasscodeReminder()) {
+  if (els["pin-reminder-question"]) {
+    els["pin-reminder-question"].value = reminder?.question || "";
+  }
+  if (els["pin-reminder-answer"]) {
+    els["pin-reminder-answer"].value = reminder?.answer || "";
+  }
+}
+
+function maskPasscodeReminderAnswer(answer) {
+  if (!String(answer || "").trim()) return "Not set";
+  return "••••";
+}
+
+function getPasscodeReminderValidationMessage(passcode, question, answer) {
+  const normalizedPasscode = String(passcode || "").trim().toLowerCase();
+  const normalizedQuestion = String(question || "").trim().toLowerCase();
+  const normalizedAnswer = String(answer || "").trim().toLowerCase();
+
+  if (!normalizedQuestion && !normalizedAnswer) return "";
+  if (!normalizedQuestion || !normalizedAnswer) {
+    return "Add both a security question and an answer, or leave both blank";
+  }
+  if (!normalizedPasscode) return "";
+  if (normalizedAnswer === normalizedPasscode) {
+    return "Reminder answer must not be your actual passcode";
+  }
+  if (
+    normalizedAnswer.includes(normalizedPasscode)
+    || normalizedPasscode.includes(normalizedAnswer)
+  ) {
+    return "Reminder answer must not reveal your passcode";
+  }
+  if (normalizedQuestion.includes(normalizedPasscode)) {
+    return "Security question must not include your passcode";
+  }
+  return "";
+}
+
+function getPasscodeReminderDisplay(attempts = state.pinAttempts) {
+  const reminder = getPasscodeReminder();
+  if (!reminder || attempts < 3) return "";
+  if (attempts >= 5) {
+    return `Hint: ${reminder.question} → ${reminder.answer}`;
+  }
+  return `Hint: ${reminder.question}`;
+}
+
+function syncPasscodeReminderDisplays() {
+  const reminderText = getPasscodeReminderDisplay();
+  if (els["pin-lock-hint"]) {
+    els["pin-lock-hint"].hidden = !reminderText;
+    els["pin-lock-hint"].textContent = reminderText;
+  }
+  if (els["pin-forgot-hint"]) {
+    els["pin-forgot-hint"].hidden = !reminderText;
+    els["pin-forgot-hint"].textContent = reminderText;
+  }
+}
+
+function clearPasscodeSetupError() {
+  if (els["pin-setup-error"]) {
+    els["pin-setup-error"].textContent = "";
+  }
+}
+
+function openPasscodeReminderEditor() {
+  state.passcodeReminderEditorOpen = true;
+  setPasscodeReminderInputs();
+  syncPasscodeReminderEditor();
+  if (els["pin-reminder-editor"]) {
+    focusFirstInteractive(els["pin-reminder-editor"]);
+  }
+}
+
+function closePasscodeReminderEditor() {
+  state.passcodeReminderEditorOpen = false;
+  setPasscodeReminderInputs();
+  clearPasscodeSetupError();
+  syncPasscodeReminderEditor();
+}
+
+function syncPasscodeReminderEditor() {
+  const reminder = getPasscodeReminder();
+  const pinConfigured = isPinLockConfigured();
+  const showEditor = !pinConfigured || state.passcodeReminderEditorOpen;
+
+  if (els["pin-reminder-summary"]) {
+    els["pin-reminder-summary"].innerHTML = reminder
+      ? renderSettingsRow("Reminder", `${reminder.question} • ${maskPasscodeReminderAnswer(reminder.answer)}`)
+      : renderSettingsRow("Reminder", "Not set");
+    els["pin-reminder-summary"].hidden = !pinConfigured && !reminder;
+  }
+  if (els["pin-reminder-edit"]) {
+    els["pin-reminder-edit"].hidden = !pinConfigured;
+  }
+  if (els["pin-reminder-clear"]) {
+    els["pin-reminder-clear"].hidden = !reminder;
+  }
+  if (els["pin-reminder-editor"]) {
+    els["pin-reminder-editor"].hidden = !showEditor;
+  }
+  if (els["pin-reminder-save"]) {
+    els["pin-reminder-save"].hidden = !pinConfigured || !showEditor;
+  }
+  if (els["pin-reminder-cancel"]) {
+    els["pin-reminder-cancel"].hidden = !pinConfigured || !showEditor;
+  }
+
+  if (showEditor) {
+    setPasscodeReminderInputs(reminder);
+  }
+}
+
 async function pinMatchesProfile(pin) {
   if (!state.profile) return false;
+  if (state.profile.pinKdf === PASSCODE_KDF_VERSION) {
+    const iterations = Number(state.profile.pinIterations || PASSCODE_PBKDF2_ITERATIONS);
+    return (await hashPasscodeWithPbkdf2(pin, state.profile.pinSalt, iterations)) === state.profile.pinHash;
+  }
   if (state.profile.pinSalt) {
     return (await hashPin(pin, state.profile.pinSalt)) === state.profile.pinHash;
   }
@@ -1989,44 +2293,22 @@ async function pinMatchesProfile(pin) {
 }
 
 async function upgradeLegacyPinHash(pin) {
-  if (!(state.profile && !state.profile.pinSalt && state.profile.pinHash)) return;
+  if (!(state.profile && state.profile.pinHash && state.profile.pinKdf !== PASSCODE_KDF_VERSION)) return;
   state.profile.pinSalt = createPinSalt();
-  state.profile.pinHash = await hashPin(pin, state.profile.pinSalt);
-  await saveProfile(state.profile);
+  state.profile.pinIterations = PASSCODE_PBKDF2_ITERATIONS;
+  state.profile.pinKdf = PASSCODE_KDF_VERSION;
+  state.profile.pinHash = await hashPasscodeWithPbkdf2(pin, state.profile.pinSalt, PASSCODE_PBKDF2_ITERATIONS);
+  await saveProfile(state.profile, { skipPush: true });
 }
 
 async function handlePinKey(digit) {
-  if (!(state.profile && state.profile.pinEnabled && state.profile.pinHash)) return;
-
-  if (digit === "back") {
-    state.pinEntry = state.pinEntry.slice(0, -1);
-    updatePinDots();
+  if (digit === "back" && els["pin-entry-input"]) {
+    els["pin-entry-input"].value = els["pin-entry-input"].value.slice(0, -1);
     return;
   }
-
-  if (state.pinEntry.length >= 4) return;
-  state.pinEntry += digit;
-  updatePinDots();
-
-  if (state.pinEntry.length !== 4) return;
-
-  if (await pinMatchesProfile(state.pinEntry)) {
-    if (!state.profile.pinSalt) {
-      await upgradeLegacyPinHash(state.pinEntry);
-    }
-    state.pinAttempts = 0;
-    hidePinLock();
-    els["pin-error"].textContent = "";
-    return;
+  if (els["pin-entry-input"] && digit && digit !== "back") {
+    els["pin-entry-input"].value += digit;
   }
-
-  state.pinAttempts += 1;
-  state.pinEntry = "";
-  updatePinDots();
-  els["pin-error"].textContent = state.pinAttempts >= 3 ? "Too many attempts. Try again." : "Incorrect PIN. Try again.";
-  setTimeout(() => {
-    if (els["pin-error"]) els["pin-error"].textContent = "";
-  }, 2000);
 }
 
 function isPinLockConfigured() {
@@ -2043,27 +2325,44 @@ function showSecurityStatusMessage(message) {
 }
 
 async function applyPinLock(newPin) {
+  const reminder = (!isPinLockConfigured() || state.passcodeReminderEditorOpen)
+    ? getPasscodeReminderFromInputs()
+    : getPasscodeReminder();
   state.profile.pinEnabled = true;
   state.profile.pinSalt = createPinSalt();
-  state.profile.pinHash = await hashPin(newPin, state.profile.pinSalt);
-  await saveProfile(state.profile);
+  state.profile.pinIterations = PASSCODE_PBKDF2_ITERATIONS;
+  state.profile.pinKdf = PASSCODE_KDF_VERSION;
+  state.profile.pinHash = await hashPasscodeWithPbkdf2(newPin, state.profile.pinSalt, PASSCODE_PBKDF2_ITERATIONS);
+  if (reminder) {
+    state.profile.passcodeReminder = clonePasscodeReminder(reminder);
+  } else {
+    delete state.profile.passcodeReminder;
+  }
+  delete state.profile.passcode_hint;
+  await saveProfile(state.profile, { skipPush: true });
 
+  state.pinAttempts = 0;
   els["pin-input-new"].value = "";
   els["pin-input-confirm"].value = "";
+  state.passcodeReminderEditorOpen = false;
+  syncPasscodeReminderEditor();
+  syncPasscodeReminderDisplays();
   els["pin-setup-error"].textContent = "";
   els["pin-lock-toggle"].classList.add("on");
   els["pin-remove-btn"].hidden = false;
+  if (els["pin-reset-btn"]) els["pin-reset-btn"].hidden = false;
   els["pin-setup-area"].hidden = false;
-  els["pin-setup-label"].textContent = "PIN is set — current PIN required to change";
-  showSecurityStatusMessage("PIN lock enabled");
+  els["pin-setup-label"].textContent = "Passcode is set — current passcode required to change";
+  if (els["pin-save-btn"]) els["pin-save-btn"].textContent = "Update passcode";
+  showSecurityStatusMessage("Passcode lock enabled");
 }
 
 async function disablePinLockWithConfirmation() {
   const confirmedPin = await requestCurrentPinConfirmation({
-    title: "Remove PIN lock?",
-    copy: "Enter your current PIN to turn off app lock on this device.",
-    confirmText: "Remove PIN lock",
-    wrongPinMessage: "Incorrect PIN. Security lock not removed."
+    title: "Remove passcode lock?",
+    copy: "Enter your current passcode to turn off app lock on this device.",
+    confirmText: "Remove passcode lock",
+    wrongPinMessage: "Incorrect passcode. Security lock not removed."
   });
 
   if (!confirmedPin) {
@@ -2074,14 +2373,23 @@ async function disablePinLockWithConfirmation() {
   state.profile.pinEnabled = false;
   state.profile.pinHash = null;
   state.profile.pinSalt = null;
-  await saveProfile(state.profile);
+  state.profile.pinKdf = null;
+  state.profile.pinIterations = null;
+  delete state.profile.passcodeReminder;
+  delete state.profile.passcode_hint;
+  await saveProfile(state.profile, { skipPush: true });
+  state.pinAttempts = 0;
   els["pin-lock-toggle"].classList.remove("on");
   els["pin-setup-area"].hidden = true;
   els["pin-remove-btn"].hidden = true;
+  if (els["pin-reset-btn"]) els["pin-reset-btn"].hidden = true;
   els["pin-input-new"].value = "";
   els["pin-input-confirm"].value = "";
+  state.passcodeReminderEditorOpen = false;
+  setPasscodeReminderInputs(null);
+  syncPasscodeReminderEditor();
   els["pin-setup-error"].textContent = "";
-  showSecurityStatusMessage("PIN removed");
+  showSecurityStatusMessage("Passcode removed");
   return true;
 }
 
@@ -2095,38 +2403,55 @@ async function togglePinLockPreference() {
 
   const enabled = els["pin-lock-toggle"].classList.toggle("on");
   if (enabled) {
+    state.passcodeReminderEditorOpen = true;
     els["pin-setup-area"].hidden = false;
     els["pin-remove-btn"].hidden = !state.profile.pinEnabled;
-    els["pin-setup-label"].textContent = state.profile.pinEnabled ? "PIN is set — current PIN required to change" : "Set a 4-digit PIN";
+    if (els["pin-reset-btn"]) els["pin-reset-btn"].hidden = !state.profile.pinEnabled;
+    els["pin-setup-label"].textContent = state.profile.pinEnabled ? "Passcode is set — current passcode required to change" : "Create a passcode";
+    if (els["pin-save-btn"]) els["pin-save-btn"].textContent = state.profile.pinEnabled ? "Update passcode" : "Save passcode";
+    syncPasscodeReminderEditor();
     return;
   }
 
+  state.passcodeReminderEditorOpen = false;
   els["pin-setup-area"].hidden = true;
   els["pin-remove-btn"].hidden = true;
+  if (els["pin-reset-btn"]) els["pin-reset-btn"].hidden = true;
   els["pin-setup-error"].textContent = "";
+  syncPasscodeReminderEditor();
 }
 
 async function savePinLock() {
   if (!state.profile) return;
   const newPin = els["pin-input-new"].value.trim();
   const confirmPin = els["pin-input-confirm"].value.trim();
+  const reminder = (!isPinLockConfigured() || state.passcodeReminderEditorOpen)
+    ? getPasscodeReminderFromInputs()
+    : getPasscodeReminder();
 
-  if (!/^\d{4}$/.test(newPin)) {
-    els["pin-setup-error"].textContent = "PIN must be exactly 4 digits";
+  const passcodeError = getPasscodeValidationMessage(newPin);
+  if (passcodeError) {
+    els["pin-setup-error"].textContent = passcodeError;
     return;
   }
 
   if (newPin !== confirmPin) {
-    els["pin-setup-error"].textContent = "PINs do not match";
+    els["pin-setup-error"].textContent = "Passcodes do not match";
+    return;
+  }
+
+  const reminderError = getPasscodeReminderValidationMessage(newPin, reminder?.question, reminder?.answer);
+  if (reminderError) {
+    els["pin-setup-error"].textContent = reminderError;
     return;
   }
 
   if (isPinLockConfigured()) {
     const confirmedPin = await requestCurrentPinConfirmation({
-      title: "Confirm current PIN",
-      copy: "Enter your current PIN before setting a new one.",
-      confirmText: "Confirm PIN",
-      wrongPinMessage: "Incorrect PIN. PIN not changed."
+      title: "Confirm current passcode",
+      copy: "Enter your current passcode before setting a new one.",
+      confirmText: "Confirm passcode",
+      wrongPinMessage: "Incorrect passcode. Passcode not changed."
     });
 
     if (!confirmedPin) {
@@ -2137,9 +2462,93 @@ async function savePinLock() {
   await applyPinLock(newPin);
 }
 
+async function savePasscodeReminderOnly() {
+  if (!state.profile) return;
+  const reminder = getPasscodeReminderFromInputs();
+  let currentPasscode = "";
+
+  if (isPinLockConfigured()) {
+    const confirmedPin = await requestCurrentPinConfirmation({
+      title: "Confirm current passcode",
+      copy: "Enter your current passcode before updating the reminder on this device.",
+      confirmText: "Save reminder",
+      wrongPinMessage: "Incorrect passcode. Reminder not changed."
+    });
+    if (!confirmedPin) {
+      return;
+    }
+    currentPasscode = confirmedPin;
+  }
+
+  const reminderError = getPasscodeReminderValidationMessage(currentPasscode, reminder?.question, reminder?.answer);
+  if (reminderError) {
+    els["pin-setup-error"].textContent = reminderError;
+    return;
+  }
+
+  if (reminder) {
+    state.profile.passcodeReminder = clonePasscodeReminder(reminder);
+  } else {
+    delete state.profile.passcodeReminder;
+  }
+  delete state.profile.passcode_hint;
+  await saveProfile(state.profile, { skipPush: true });
+  state.passcodeReminderEditorOpen = false;
+  clearPasscodeSetupError();
+  syncPasscodeReminderEditor();
+  syncPasscodeReminderDisplays();
+  showSecurityStatusMessage(reminder ? "Reminder updated" : "Reminder cleared");
+}
+
+async function clearPasscodeReminder() {
+  if (!state.profile) return;
+  delete state.profile.passcodeReminder;
+  delete state.profile.passcode_hint;
+  await saveProfile(state.profile, { skipPush: true });
+  state.passcodeReminderEditorOpen = false;
+  setPasscodeReminderInputs(null);
+  syncPasscodeReminderEditor();
+  syncPasscodeReminderDisplays();
+  clearPasscodeSetupError();
+  showSecurityStatusMessage("Reminder cleared");
+}
+
 async function removePinLock() {
   if (!state.profile) return;
   await disablePinLockWithConfirmation();
+}
+
+async function unlockWithPasscode() {
+  if (!(state.profile && state.profile.pinEnabled && state.profile.pinHash)) return;
+  const passcode = String(els["pin-entry-input"]?.value || "").trim();
+  if (!passcode) {
+    els["pin-error"].textContent = "Enter your passcode.";
+    return;
+  }
+
+  if (await pinMatchesProfile(passcode)) {
+    if (state.profile.pinKdf !== PASSCODE_KDF_VERSION) {
+      await upgradeLegacyPinHash(passcode);
+    }
+    state.pinAttempts = 0;
+    syncPasscodeReminderDisplays();
+    hidePinLock();
+    els["pin-error"].textContent = "";
+    if (els["pin-entry-input"]) {
+      els["pin-entry-input"].value = "";
+    }
+    return;
+  }
+
+  state.pinAttempts += 1;
+  syncPasscodeReminderDisplays();
+  if (els["pin-entry-input"]) {
+    els["pin-entry-input"].value = "";
+  }
+  els["pin-error"].textContent = state.pinAttempts >= 3 ? "Too many attempts. Try again." : "Incorrect passcode. Try again.";
+  window.setTimeout(() => {
+    if (els["pin-error"]) els["pin-error"].textContent = "";
+  }, 2400);
 }
 
 function renderExportScreen() {
@@ -2160,6 +2569,10 @@ function renderExportScreen() {
   }
   if (els["export-trust-status-v3"]) {
     els["export-trust-status-v3"].innerHTML = `
+      ${renderSettingsRow("Verification summary", getVerificationSummaryLabel())}
+      ${renderSettingsRow("Verification channels", getVerificationChannelAvailabilityLabel())}
+      ${renderSettingsRow("Email verification", getVerificationStatusLabel("email"))}
+      ${(state.smsSupported || state.profile?.phone_verified) ? renderSettingsRow("Phone verification", getVerificationStatusLabel("sms")) : ""}
       ${renderSettingsRow("Phone anchor", getPhoneAnchorStatusLabel())}
       ${renderSettingsRow("Device key", getDeviceKeyStatusLabel())}
       ${state.publicKeyFingerprint ? renderSettingsRow("Public key fingerprint", state.publicKeyFingerprint) : ""}
@@ -2229,7 +2642,7 @@ async function generateExport() {
     ? (attestation?.verify_url
       ? `Device-signed and server-attested. Verify at ${attestation.verify_url}`
       : "Device-signed on this device. Server attestation coming.")
-    : "Legacy unsigned history only. Complete phone verification to start device signing.";
+    : `Legacy unsigned history only. Complete ${getVerificationChannelLabel().toLowerCase()} to start device signing.`;
 
   const output = [
     "CONFIRMA V3 EXPORT",
@@ -2237,7 +2650,7 @@ async function generateExport() {
     `Profile: ${countryName(state.profile.country)} / ${BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id)?.name || "Unknown"}`,
     state.profile.display_name ? `Name: ${state.profile.display_name}` : null,
     state.profile.region ? `Region: ${state.profile.region}` : null,
-    `Phone Anchor: ${getPhoneAnchorStatusLabel()}`,
+    `Verification Anchor: ${getPhoneAnchorStatusLabel()}`,
     `Device Key: ${getDeviceKeyStatusLabel()}`,
     state.publicKeyFingerprint ? `Public Key Fingerprint: ${state.publicKeyFingerprint}` : null,
     `Sync Server: ${state.syncApiBaseUrl || "Not configured"}`,
@@ -2299,7 +2712,7 @@ function downloadBase64File(base64, filename, mimeType) {
 
 function initPaystackPayment(tier, amountKobo, windowDays) {
   if (!state.authToken || !state.deviceIdentity) {
-    setPaymentStatus("Complete phone verification on this device before purchasing a verified report.");
+    setPaymentStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before purchasing a verified report.`);
     return;
   }
 
@@ -3690,6 +4103,10 @@ function showScreen(id) {
     state.preferredLabelEditorOpen = false;
     syncPreferredLabelEditor();
   }
+  if (previousScreen === "screen-settings" && id !== "screen-settings" && state.passcodeReminderEditorOpen) {
+    state.passcodeReminderEditorOpen = false;
+    syncPasscodeReminderEditor();
+  }
   if (id !== "screen-confirm") {
     cancelConfirmationSpeech();
   }
@@ -3706,8 +4123,9 @@ function showScreen(id) {
 }
 
 function openTrustSetup(returnScreen = "screen-capture") {
-  syncPhoneVerificationState();
-  if (state.authToken && state.phoneVerified) {
+  const channel = getPreferredOtpChannel();
+  syncVerificationState();
+  if (hasVerifiedSessionForChannel(channel)) {
     return;
   }
   state.otpReturnScreen = returnScreen;
@@ -3762,10 +4180,10 @@ function resolvePinConfirmation(value) {
 }
 
 function requestCurrentPinConfirmation({
-  title = "Confirm current PIN",
-  copy = "Enter your current PIN to continue.",
+  title = "Confirm current passcode",
+  copy = "Enter your current passcode to continue.",
   confirmText = "Confirm",
-  wrongPinMessage = "Incorrect PIN."
+  wrongPinMessage = "Incorrect passcode."
 } = {}) {
   return new Promise((resolve) => {
     state.pinConfirmResolver = resolve;
@@ -3797,9 +4215,9 @@ async function submitPinConfirmation() {
   }
 
   const pin = els["pin-confirm-input"]?.value.trim() || "";
-  if (!/^\d{4}$/.test(pin)) {
+  if (!pin) {
     if (els["pin-confirm-error"]) {
-      els["pin-confirm-error"].textContent = "Enter your current 4-digit PIN.";
+      els["pin-confirm-error"].textContent = "Enter your current passcode.";
     }
     return;
   }
@@ -3813,7 +4231,7 @@ async function submitPinConfirmation() {
   }
 
   if (els["pin-confirm-error"]) {
-    els["pin-confirm-error"].textContent = state.pinConfirmWrongMessage || "Incorrect PIN.";
+    els["pin-confirm-error"].textContent = state.pinConfirmWrongMessage || "Incorrect passcode.";
   }
 }
 
@@ -3822,8 +4240,17 @@ function getActiveScreenId() {
 }
 
 function canRecoverPinWithOtp() {
-  syncPhoneVerificationState();
-  return Boolean(state.authToken && state.phoneVerified);
+  const channel = getPreferredOtpChannel();
+  syncVerificationState();
+  return Boolean(getVerifiedRecoveryIdentifier(channel));
+}
+
+function getVerifiedRecoveryIdentifier(channel = getPreferredOtpChannel()) {
+  if (!isChannelVerified(channel)) return "";
+  if (channel === "sms") {
+    return normalizePhoneNumber(state.profile?.phone_number || "", getPhoneInputCountry());
+  }
+  return normalizeEmailAddress(state.profile?.email || "");
 }
 
 function clearForgotPinError() {
@@ -3839,14 +4266,23 @@ function showForgotPinError(message) {
 
 function syncForgotPinHelperText() {
   if (!els["pin-forgot-helper"]) return;
+  const channel = getPreferredOtpChannel();
   els["pin-forgot-helper"].textContent = state.otpChallenge
     ? getOtpHelperText()
-    : "Request a reset code to continue.";
+    : channel === "sms"
+      ? "Request a reset code to continue."
+      : "Request a reset code by email to continue.";
 }
 
 function resetForgotPinModalState() {
   state.otpChallenge = null;
   clearForgotPinError();
+  if (els["pin-forgot-copy"]) {
+    els["pin-forgot-copy"].textContent = getPreferredOtpChannel() === "sms"
+      ? "We'll send a code to your verified phone number to reset your passcode."
+      : "We'll send a code to your verified email address to reset your passcode.";
+  }
+  syncPasscodeReminderDisplays();
   if (els["pin-forgot-code"]) {
     els["pin-forgot-code"].value = "";
   }
@@ -3905,17 +4341,23 @@ async function openForgotPinFlow() {
 
 async function sendForgotPinResetCode() {
   if (!state.profile) return;
-  const country = getSelectedCountryId();
+  const channel = getPreferredOtpChannel();
+  const country = getPhoneInputCountry();
+  const identifier = getVerifiedRecoveryIdentifier(channel);
   const phoneNumber = normalizePhoneNumber(state.profile.phone_number || "", country);
 
-  if (!phoneNumber) {
-    showForgotPinError(getPhoneValidationMessage(country));
+  if (!identifier) {
+    showForgotPinError(getIdentifierValidationMessage(channel, country));
     return;
   }
 
   clearForgotPinError();
   try {
-    await requestOtpChallengeForPhone(phoneNumber);
+    await requestOtpChallenge(identifier, {
+      channel,
+      phoneNumber,
+      fallbackToLocal: false
+    });
     if (els["pin-forgot-code-wrap"]) {
       els["pin-forgot-code-wrap"].hidden = false;
     }
@@ -3990,14 +4432,19 @@ async function confirmForgotPinReset() {
     state.profile.pinEnabled = false;
     delete state.profile.pinHash;
     delete state.profile.pinSalt;
-    await saveProfile(state.profile);
+    delete state.profile.pinKdf;
+    delete state.profile.pinIterations;
+    delete state.profile.passcodeReminder;
+    delete state.profile.passcode_hint;
+    await saveProfile(state.profile, { skipPush: true });
     state.pinAttempts = 0;
     state.pinEntry = "";
+    syncPasscodeReminderDisplays();
     updatePinDots();
     hidePinLock();
     closeForgotPinModal();
     await showCapture();
-    showPinRecoverySuccess("PIN removed. You can set a new one in Settings.");
+    showPinRecoverySuccess("Passcode removed. You can set a new one in Settings.");
   } catch (error) {
     const message = /expired|generate a code/i.test(error.message || "")
       ? error.message
@@ -4035,6 +4482,29 @@ function getRecognizedCountryId(country) {
 
 function getSelectedCountryId() {
   return normalizeCountryId(state.profile?.country);
+}
+
+function getPhoneInputCountry() {
+  return getRecognizedCountryId(state.authPhoneCountry)
+    || getRecognizedCountryId(state.profile?.country)
+    || "NG";
+}
+
+function initializeAuthPhoneCountry() {
+  state.authPhoneCountry = getRecognizedCountryId(state.authPhoneCountry)
+    || getRecognizedCountryId(state.profile?.country)
+    || "NG";
+}
+
+async function persistAuthPhoneCountry(country) {
+  const nextCountry = getRecognizedCountryId(country) || getPhoneInputCountry();
+  state.authPhoneCountry = nextCountry;
+  try {
+    await saveSetting("auth_phone_country", nextCountry);
+  } catch (error) {
+    console.warn("Unable to persist selected phone country.", error);
+  }
+  syncDevQaSnapshot("auth_phone_country_updated");
 }
 
 function getCountryDialCode(country) {
@@ -4101,6 +4571,123 @@ function getOtpPhonePlaceholder(country) {
   return "Phone number";
 }
 
+function isLocalDevelopmentOtpFallbackAllowed() {
+  const hostname = String(window.location.hostname || "").trim().toLowerCase();
+  return hostname === "127.0.0.1" || hostname === "localhost";
+}
+
+function isLocalQaMode() {
+  return isLocalDevelopmentOtpFallbackAllowed();
+}
+
+function normalizeEmailAddress(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isValidEmailAddress(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmailAddress(value));
+}
+
+function normalizeOtpChannel(channel) {
+  return String(channel || "").trim().toLowerCase() === "sms" ? "sms" : "email";
+}
+
+function getPreferredOtpChannel() {
+  return state.smsSupported ? normalizeOtpChannel(state.profile?.preferred_otp_channel || "email") : "email";
+}
+
+function getStoredPhoneAnchor() {
+  const phoneNumber = String(state.profile?.phone_number || "").trim();
+  return /^\+\d{7,15}$/.test(phoneNumber) ? phoneNumber : "";
+}
+
+function hasPhoneAnchor() {
+  return Boolean(getStoredPhoneAnchor());
+}
+
+function needsPhoneAnchorForFullActivation(channel = getPreferredOtpChannel()) {
+  return channel === "email" && !hasVerifiedSessionForChannel(channel) && !hasPhoneAnchor();
+}
+
+function getPhoneAnchorRequirementMessage(channel = getPreferredOtpChannel()) {
+  if (channel === "sms") {
+    return "Add a phone number to continue.";
+  }
+  return "Add a phone number to your profile before email verification can activate sync on this device.";
+}
+
+function getVerificationSummaryLabel() {
+  syncVerificationState();
+  if (state.emailVerified && state.phoneVerified) {
+    return "Email and phone verified";
+  }
+  if (state.emailVerified) {
+    return "Email verified";
+  }
+  if (state.phoneVerified) {
+    return "Phone verified";
+  }
+  return "Not verified";
+}
+
+function getVerificationChannelAvailabilityLabel() {
+  return state.smsSupported ? "Email and SMS available" : "Email OTP only right now";
+}
+
+function getVerificationChannelNoun(channel = getPreferredOtpChannel()) {
+  return channel === "sms" ? "phone" : "email";
+}
+
+function getVerificationChannelLabel(channel = getPreferredOtpChannel()) {
+  return channel === "sms" ? "Phone verification" : "Email verification";
+}
+
+function getVerificationActionLabel(channel = getPreferredOtpChannel()) {
+  return channel === "sms" ? "Verify phone" : "Verify by email";
+}
+
+function getRecoveryChannelCopy(channel = getPreferredOtpChannel()) {
+  return channel === "sms"
+    ? "Use your verified phone number to pull down your profile and records on this device."
+    : "Use your verified email to pull down your profile and records on this device.";
+}
+
+function isChannelVerified(channel) {
+  if (channel === "sms") return Boolean(state.profile?.phone_verified);
+  return Boolean(state.profile?.email_verified);
+}
+
+function hasVerifiedSessionForChannel(channel = getPreferredOtpChannel()) {
+  return Boolean(state.authToken && isChannelVerified(channel));
+}
+
+function hasVerifiedIdentityAnchor() {
+  return Boolean(
+    (state.profile?.identity_status === "verified_local" || state.profile?.identity_status === "verified_server")
+    && (state.profile?.email_verified || state.profile?.phone_verified)
+  );
+}
+
+function syncDevQaSnapshot(reason = "") {
+  if (!isLocalQaMode()) return;
+  window.CONFIRMA_DEV_QA = {
+    reason,
+    at: new Date().toISOString(),
+    screen: document.querySelector(".screen.active")?.id || "",
+    otp_channel: getPreferredOtpChannel(),
+    verification_summary: getVerificationSummaryLabel(),
+    email_verified: Boolean(state.profile?.email_verified),
+    phone_verified: Boolean(state.profile?.phone_verified),
+    phone_anchor: hasPhoneAnchor() ? "present" : "missing",
+    auth_phone_country: state.authPhoneCountry || "",
+    auth_session: Boolean(state.authToken),
+    device_identity: Boolean(state.deviceIdentity),
+    sms_supported: Boolean(state.smsSupported),
+    local_passcode_reminder: Boolean(getPasscodeReminder()),
+    sync_status: state.syncStatus || ""
+  };
+}
+
 function getRegionPlaceholder(country) {
   const countryId = getRecognizedCountryId(country);
   if (countryId === "US") {
@@ -4158,24 +4745,44 @@ function formatPhoneForInput(value, country) {
 }
 
 function syncCountryAwareInputs() {
-  const country = state.profile?.country;
+  const profileCountry = state.profile?.country;
+  const phoneCountry = getPhoneInputCountry();
+  const otpChannel = getPreferredOtpChannel();
   if (els["onboarding-phone"]) {
-    els["onboarding-phone"].placeholder = getOnboardingPhonePlaceholder(country);
+    els["onboarding-phone"].placeholder = getOnboardingPhonePlaceholder(profileCountry);
   }
   if (els["onboarding-state"]) {
-    els["onboarding-state"].placeholder = getRegionPlaceholder(country);
+    els["onboarding-state"].placeholder = getRegionPlaceholder(profileCountry);
+  }
+  if (els["otp-email-field"]) {
+    els["otp-email-field"].hidden = otpChannel !== "email";
+  }
+  if (els["otp-phone-field"]) {
+    els["otp-phone-field"].hidden = otpChannel !== "sms";
+  }
+  if (els["otp-email-input"]) {
+    els["otp-email-input"].value = state.profile?.email || "";
   }
   if (els["otp-phone-input"]) {
-    els["otp-phone-input"].placeholder = getOtpPhonePlaceholder(country);
+    els["otp-phone-input"].placeholder = getOtpPhonePlaceholder(phoneCountry);
   }
   if (els["otp-country-prefix"]) {
-    els["otp-country-prefix"].textContent = getCountryDialCode(country);
+    els["otp-country-prefix"].textContent = getCountryDialCode(phoneCountry);
+  }
+  if (els["restore-email-field"]) {
+    els["restore-email-field"].hidden = otpChannel !== "email";
+  }
+  if (els["restore-phone-field"]) {
+    els["restore-phone-field"].hidden = otpChannel !== "sms";
+  }
+  if (els["restore-email-input"]) {
+    els["restore-email-input"].value = state.profile?.email || "";
   }
   if (els["restore-phone-input"]) {
-    els["restore-phone-input"].placeholder = getOtpPhonePlaceholder(country);
+    els["restore-phone-input"].placeholder = getOtpPhonePlaceholder(phoneCountry);
   }
   if (els["restore-country-prefix"]) {
-    els["restore-country-prefix"].textContent = getCountryDialCode(country);
+    els["restore-country-prefix"].textContent = getCountryDialCode(phoneCountry);
   }
 }
 
@@ -4200,43 +4807,121 @@ function updateAmountInputStep() {
 }
 
 function renderOtpScreen() {
-  if (!els["otp-phone-input"]) return;
-  syncPhoneVerificationState();
+  if (!els["otp-helper-text"]) return;
+  const channel = getPreferredOtpChannel();
+  const missingPhoneAnchor = needsPhoneAnchorForFullActivation(channel);
+  syncVerificationState();
   syncCountryAwareInputs();
-  els["otp-phone-input"].value = formatPhoneForInput(state.profile?.phone_number || "", getSelectedCountryId());
-  els["otp-code-input"].value = "";
+  if (els["otp-screen-header-title"]) {
+    els["otp-screen-header-title"].textContent = getVerificationChannelLabel(channel);
+  }
+  if (els["otp-screen-header-copy"]) {
+    els["otp-screen-header-copy"].textContent = state.smsSupported
+      ? "Prepare this device for trusted exports and recovery"
+      : "Email OTP is active right now. SMS is not enabled yet.";
+  }
+  if (els["otp-screen-title"]) {
+    els["otp-screen-title"].textContent = channel === "sms" ? "Verify your phone on this device" : "Verify your email on this device";
+  }
+  if (els["otp-screen-copy"]) {
+    els["otp-screen-copy"].textContent = channel === "sms"
+      ? "Confirma will send a code to your phone number when SMS delivery is available."
+      : (missingPhoneAnchor
+        ? `${getPhoneAnchorRequirementMessage(channel)} Existing phone-anchored accounts with a saved email can still restore by email on a new device.`
+        : (isLocalDevelopmentOtpFallbackAllowed()
+          ? "Confirma sends a code to your email address. If delivery is unavailable in local development, this device can still use a local development code."
+          : "Confirma sends a code to your email address to verify this device."));
+  }
+  if (els["otp-email-input"]) {
+    els["otp-email-input"].value = state.profile?.email || "";
+  }
+  if (els["otp-phone-input"]) {
+    els["otp-phone-input"].value = formatPhoneForInput(state.profile?.phone_number || "", getPhoneInputCountry());
+  }
+  if (els["otp-request-code"]) {
+    els["otp-request-code"].textContent = channel === "sms" ? "Send verification code" : "Send verification code";
+  }
+  if (els["otp-verify-code"]) {
+    els["otp-verify-code"].textContent = channel === "sms" ? "Verify phone on this device" : "Verify email on this device";
+  }
+  if (els["otp-code-input"]) {
+    els["otp-code-input"].value = "";
+  }
   els["otp-helper-text"].textContent = state.otpChallenge
     ? getOtpHelperText()
-    : "Request a code. If the server is unavailable, Confirma falls back to a local development code for this device.";
+    : (missingPhoneAnchor
+      ? getPhoneAnchorRequirementMessage(channel)
+      : channel === "sms"
+        ? "Request a code to verify this device."
+        : "Request a code to verify your email on this device.");
   els["otp-status-card"].innerHTML = `
-    ${renderSettingsRow("Current status", getPhoneAnchorStatusLabel())}
+    ${renderSettingsRow("Verification summary", getVerificationSummaryLabel())}
+    ${renderSettingsRow("Verification channels", getVerificationChannelAvailabilityLabel())}
+    ${renderSettingsRow("Email verification", getVerificationStatusLabel("email"))}
+    ${(state.smsSupported || state.profile?.phone_verified) ? renderSettingsRow("Phone verification", getVerificationStatusLabel("sms")) : ""}
+    ${renderSettingsRow("Phone anchor", getPhoneAnchorStatusLabel())}
     ${renderSettingsRow("Device key", getDeviceKeyStatusLabel())}
     ${state.publicKeyFingerprint ? renderSettingsRow("Public key fingerprint", state.publicKeyFingerprint) : ""}
     ${renderSettingsRow("Sync server", state.syncApiBaseUrl || "Not configured")}
     ${renderSettingsRow("Auth session", getAuthSessionStatusLabel())}
-    ${renderSettingsRow("Phone on profile", state.profile?.phone_number || "Not set")}
+    ${renderSettingsRow("Recovery contact", channel === "sms" ? (state.profile?.phone_number || "Not set") : (state.profile?.email || "Not set"))}
+    ${state.profile?.phone_number ? renderSettingsRow("Phone on profile", state.profile.phone_number) : ""}
     ${renderSettingsRow("Email for delivery", state.profile?.email || "Not set")}
   `;
   clearOtpError();
 }
 
-async function requestOtpChallengeForPhone(phoneNumber, { fallbackToLocal = true } = {}) {
-  if (!phoneNumber) {
-    throw new Error(getPhoneValidationMessage(getSelectedCountryId()));
+function getCurrentOtpIdentifier(channel = getPreferredOtpChannel()) {
+  if (channel === "sms") {
+    return normalizePhoneNumber(els["otp-phone-input"]?.value.trim() || state.profile?.phone_number || "", getPhoneInputCountry());
+  }
+  return normalizeEmailAddress(els["otp-email-input"]?.value.trim() || state.profile?.email || "");
+}
+
+function getCurrentRestoreIdentifier(channel = getPreferredOtpChannel()) {
+  if (channel === "sms") {
+    return normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", getPhoneInputCountry());
+  }
+  return normalizeEmailAddress(els["restore-email-input"]?.value.trim() || state.profile?.email || "");
+}
+
+function getIdentifierValidationMessage(channel = getPreferredOtpChannel(), country = getPhoneInputCountry()) {
+  return channel === "sms" ? getPhoneValidationMessage(country) : "Enter a valid email address";
+}
+
+async function requestOtpChallenge(identifier, {
+  channel = getPreferredOtpChannel(),
+  fallbackToLocal = true,
+  phoneNumber = state.profile?.phone_number || ""
+} = {}) {
+  const normalizedChannel = normalizeOtpChannel(channel);
+  if (!identifier) {
+    throw new Error(getIdentifierValidationMessage(normalizedChannel));
   }
 
   try {
-    const response = await requestOtpCode(state.syncApiBaseUrl, phoneNumber);
+    const response = await requestOtpCode(state.syncApiBaseUrl, identifier, {
+      channel: normalizedChannel,
+      phone_number: normalizedChannel === "email" ? phoneNumber || "" : identifier,
+      email: normalizedChannel === "email" ? identifier : (state.profile?.email || "")
+    });
+    state.smsSupported = Boolean(response?.sms_available);
     state.otpChallenge = {
-      phoneNumber,
+      identifier,
+      phoneNumber: phoneNumber || "",
+      channel: normalizedChannel,
       expiresAt: Date.now() + 10 * 60 * 1000,
       source: "server",
       devCode: response.dev_code || "",
       serverBaseUrl: state.syncApiBaseUrl
     };
-    state.syncStatus = "OTP requested from sync server.";
+    state.syncStatus = `${getVerificationChannelLabel(normalizedChannel)} requested from sync server.`;
+    syncDevQaSnapshot("otp_requested");
   } catch (error) {
-    if (!fallbackToLocal) {
+    const allowLocalFallback = fallbackToLocal
+      && normalizedChannel === "email"
+      && isLocalDevelopmentOtpFallbackAllowed();
+    if (!allowLocalFallback) {
       throw error;
     }
     const random = new Uint32Array(1);
@@ -4244,17 +4929,26 @@ async function requestOtpChallengeForPhone(phoneNumber, { fallbackToLocal = true
     const code = String(random[0] % 1000000).padStart(6, "0");
     state.otpChallenge = {
       code,
-      phoneNumber,
+      identifier,
+      phoneNumber: phoneNumber || "",
+      channel: normalizedChannel,
       expiresAt: Date.now() + 10 * 60 * 1000,
       source: "local"
     };
-    state.syncStatus = "Sync server unavailable. Using local OTP fallback.";
+    state.syncStatus = "Sync server unavailable in local development. Using a local verification fallback.";
+    syncDevQaSnapshot("otp_local_fallback");
   }
 
   return state.otpChallenge;
 }
 
-async function verifyActiveOtpChallenge(enteredCode, { country = getSelectedCountryId() } = {}) {
+async function verifyActiveOtpChallenge(
+  enteredCode,
+  {
+    country = getPhoneInputCountry(),
+    persistProfileRemotely = true
+  } = {}
+) {
   if (!state.profile) {
     throw new Error("Profile not loaded yet.");
   }
@@ -4273,75 +4967,119 @@ async function verifyActiveOtpChallenge(enteredCode, { country = getSelectedCoun
     throw new Error("Enter a valid 6-digit code");
   }
 
+  const challengeChannel = normalizeOtpChannel(activeChallenge.channel || getPreferredOtpChannel());
+  const normalizedChallengeIdentifier = challengeChannel === "sms"
+    ? normalizePhoneNumber(activeChallenge.identifier, country)
+    : normalizeEmailAddress(activeChallenge.identifier);
   const normalizedChallengePhone = normalizePhoneNumber(activeChallenge.phoneNumber, country);
-  if (!normalizedChallengePhone) {
-    throw new Error(getPhoneValidationMessage(country));
+
+  if (!normalizedChallengeIdentifier) {
+    throw new Error(getIdentifierValidationMessage(challengeChannel, country));
   }
 
   if (activeChallenge.source === "server") {
     await createAndStoreDeviceKeyMaterial();
     const response = await verifyOtpCode(
       activeChallenge.serverBaseUrl || state.syncApiBaseUrl,
-      normalizedChallengePhone,
+      normalizedChallengeIdentifier,
       enteredCode,
       {
+        channel: challengeChannel,
+        phone_number: normalizedChallengePhone || state.profile.phone_number || "",
+        email: challengeChannel === "email" ? normalizedChallengeIdentifier : (state.profile.email || ""),
         device_identity: state.deviceIdentity || "",
         public_key: state.devicePublicKey || ""
       }
     );
     state.authToken = response.auth_token || "";
     state.authTokenExpiresAt = response.expires_at || "";
+    state.smsSupported = Boolean(response?.sms_available ?? state.smsSupported);
     if (response.device_identity) {
       state.deviceIdentity = response.device_identity;
       await saveSetting("device_identity", state.deviceIdentity);
       syncGlobalDeviceIdentity();
     }
-    state.profile.identity_anchor = "phone";
+    state.profile.identity_anchor = challengeChannel;
     state.profile.identity_status = "verified_server";
     state.profile.identity_verified_at = Date.now();
-    state.profile.phone_number = normalizedChallengePhone;
+    if (challengeChannel === "email") {
+      state.profile.email = response.email || normalizedChallengeIdentifier;
+      state.profile.email_verified = Boolean(response.email_verified ?? true);
+      if (response.phone_number) {
+        state.profile.phone_number = response.phone_number;
+      }
+    } else {
+      state.profile.phone_number = response.phone_number || normalizedChallengeIdentifier;
+      state.profile.phone_verified = Boolean(response.phone_verified ?? true);
+      if (response.email) {
+        state.profile.email = response.email;
+      }
+    }
+    state.profile.email_verified = Boolean(response.email_verified ?? state.profile.email_verified);
+    state.profile.phone_verified = Boolean(response.phone_verified ?? state.profile.phone_verified);
     await Promise.all([
-      saveProfile(state.profile),
+      saveProfile(state.profile, { skipPush: !persistProfileRemotely }),
       saveSetting("auth_token", state.authToken),
       saveSetting("auth_token_expires_at", state.authTokenExpiresAt)
     ]);
-    state.syncStatus = "Phone verified with sync server.";
+    state.syncStatus = `${getVerificationChannelLabel(challengeChannel)} completed with sync server.`;
   } else if (enteredCode !== activeChallenge.code) {
     throw new Error("Incorrect code. Please try again.");
   } else {
-    state.profile.phone_number = normalizedChallengePhone;
-    state.profile.identity_anchor = "phone";
+    if (challengeChannel === "email") {
+      state.profile.email = normalizedChallengeIdentifier;
+      state.profile.email_verified = true;
+    } else {
+      state.profile.phone_number = normalizedChallengeIdentifier;
+      state.profile.phone_verified = true;
+    }
+    state.profile.identity_anchor = challengeChannel;
     state.profile.identity_status = "verified_local";
     state.profile.identity_verified_at = Date.now();
-    await saveProfile(state.profile);
-    state.syncStatus = "Phone verified locally. Sign-in with the server still pending.";
+    await saveProfile(state.profile, { skipPush: !persistProfileRemotely });
+    state.syncStatus = `${getVerificationChannelLabel(challengeChannel)} completed locally. Server sign-in is still pending.`;
   }
 
   try {
     await ensureDeviceKeyMaterial();
   } catch (error) {
-    throw new Error(error.message || "Phone verified, but device key setup failed.");
+    throw new Error(error.message || "Verification succeeded, but device key setup failed.");
   }
 
   state.otpChallenge = null;
-  syncPhoneVerificationState();
+  syncVerificationState();
   await refreshSyncQueueCount();
-  return normalizedChallengePhone;
+  syncDevQaSnapshot("otp_verified");
+  return challengeChannel === "email"
+    ? (state.profile.email || normalizedChallengeIdentifier)
+    : (state.profile.phone_number || normalizedChallengeIdentifier);
 }
 
 async function requestLocalOtpCode() {
   if (!state.profile) return;
-  const country = getSelectedCountryId();
-  const phoneNumber = normalizePhoneNumber(els["otp-phone-input"]?.value.trim() || "", country);
-  if (!phoneNumber) {
-    showOtpError(getPhoneValidationMessage(country));
+  const channel = getPreferredOtpChannel();
+  const identifier = getCurrentOtpIdentifier(channel);
+  const phoneNumber = normalizePhoneNumber(state.profile.phone_number || "", getPhoneInputCountry());
+  if (needsPhoneAnchorForFullActivation(channel)) {
+    showOtpError(getPhoneAnchorRequirementMessage(channel));
+    return;
+  }
+  if (!identifier) {
+    showOtpError(getIdentifierValidationMessage(channel, getPhoneInputCountry()));
     return;
   }
 
-  state.profile.phone_number = phoneNumber;
+  if (channel === "email") {
+    state.profile.email = identifier;
+  } else {
+    state.profile.phone_number = identifier;
+  }
   await saveProfile(state.profile);
   try {
-    await requestOtpChallengeForPhone(phoneNumber);
+    await requestOtpChallenge(identifier, {
+      channel,
+      phoneNumber
+    });
   } catch (error) {
     showOtpError(error.message || "Failed to request OTP");
     return;
@@ -4360,7 +5098,7 @@ async function verifyLocalOtpCode() {
     if (!state.otpChallenge) {
       renderOtpScreen();
     }
-    showOtpError(error.message || "Server OTP verification failed.");
+    showOtpError(error.message || "Verification failed.");
     return;
   }
   const returnScreen = state.otpReturnScreen || "screen-capture";
@@ -4374,27 +5112,46 @@ async function verifyLocalOtpCode() {
   showScreen(returnScreen);
 }
 
+function getVerificationStatusLabel(channel = getPreferredOtpChannel()) {
+  const channelName = channel === "sms" ? "Phone" : "Email";
+  if (state.profile?.identity_status === "verified_server" && isChannelVerified(channel)) {
+    return `${channelName} verified with sync server`;
+  }
+  if (state.profile?.identity_status === "verified_local" && isChannelVerified(channel)) {
+    return `${channelName} verified on this device (local fallback)`;
+  }
+  return `${channelName} not verified yet`;
+}
+
 function getPhoneAnchorStatusLabel() {
-  if (state.profile?.identity_status === "verified_server") {
-    return "Verified with sync server";
+  const phoneAnchor = getStoredPhoneAnchor();
+  if (phoneAnchor) {
+    return phoneAnchor;
   }
-  if (state.profile?.identity_status === "verified_local") {
-    return "Verified on this device (local fallback)";
-  }
-  return "Not verified yet";
+  return getPhoneAnchorRequirementMessage();
+}
+
+function syncVerificationState() {
+  state.emailVerified = Boolean(state.profile?.email_verified);
+  state.phoneVerified = Boolean(state.profile?.phone_verified);
+  return {
+    emailVerified: state.emailVerified,
+    phoneVerified: state.phoneVerified
+  };
 }
 
 function syncPhoneVerificationState() {
-  state.phoneVerified = hasVerifiedPhoneAnchor();
+  syncVerificationState();
   return state.phoneVerified;
 }
 
 function refreshTrustSetupButtons() {
-  syncPhoneVerificationState();
-  const deviceVerified = Boolean(state.authToken && state.phoneVerified);
+  syncVerificationState();
+  const channel = getPreferredOtpChannel();
+  const deviceVerified = hasVerifiedSessionForChannel(channel);
   const trustButtons = [
-    { id: "settings-open-trust-v3", defaultText: "Set up phone verification" },
-    { id: "export-open-trust-v3", defaultText: "Open phone verification" }
+    { id: "settings-open-trust-v3", defaultText: getVerificationActionLabel(channel) },
+    { id: "export-open-trust-v3", defaultText: `Open ${getVerificationChannelLabel(channel).toLowerCase()}` }
   ];
 
   trustButtons.forEach(({ id, defaultText }) => {
@@ -4454,6 +5211,20 @@ async function fetchAuthenticatedJson(path, options = {}) {
   return data || {};
 }
 
+async function logoutFromServerSession() {
+  state.authToken = "";
+  state.authTokenExpiresAt = "";
+  state.otpChallenge = null;
+  state.syncStatus = "Signed out. Re-open verification to sync again.";
+  await Promise.all([
+    saveSetting("auth_token", ""),
+    saveSetting("auth_token_expires_at", "")
+  ]);
+  refreshTrustSetupButtons();
+  renderExportScreen();
+  await renderSettings();
+}
+
 function buildProfileSyncPayload(profile = state.profile) {
   if (!profile) return null;
   const displayName = String(profile.display_name || "").trim();
@@ -4464,7 +5235,8 @@ function buildProfileSyncPayload(profile = state.profile) {
     country: country || null,
     business_type_id: String(profile.business_type_id || "").trim() || null,
     sector_id: String(profile.sector_id || "").trim() || null,
-    preferred_labels: normalizePreferredLabels(profile.preferred_labels, profile.business_type_id)
+    preferred_labels: normalizePreferredLabels(profile.preferred_labels, profile.business_type_id),
+    email: normalizeEmailAddress(profile.email || "") || null
   };
 }
 
@@ -4482,11 +5254,12 @@ async function pushProfile() {
 function mergeServerProfile(serverProfile, fallbackCountry = getSelectedCountryId()) {
   if (!serverProfile) return null;
   const displayName = String(serverProfile.business_name || serverProfile.name || "").trim();
-  return {
+  return normalizeLocalProfile({
     ...(state.profile || {}),
     plan: normalizePlan(state.profile?.plan),
     display_name: displayName || state.profile?.display_name || "",
     phone_number: String(serverProfile.phone || state.profile?.phone_number || "").trim(),
+    email: normalizeEmailAddress(serverProfile.email || state.profile?.email || ""),
     country: normalizeCountryId(serverProfile.country || fallbackCountry || state.profile?.country),
     business_type_id: String(serverProfile.business_type_id || state.profile?.business_type_id || "").trim() || null,
     sector_id: String(serverProfile.sector_id || state.profile?.sector_id || "").trim() || null,
@@ -4494,11 +5267,14 @@ function mergeServerProfile(serverProfile, fallbackCountry = getSelectedCountryI
       serverProfile.preferred_labels,
       serverProfile.business_type_id || state.profile?.business_type_id
     ),
+    passcodeReminder: clonePasscodeReminder(getPasscodeReminder(state.profile)),
+    email_verified: Boolean(serverProfile.email_verified ?? state.profile?.email_verified),
+    phone_verified: Boolean(serverProfile.phone_verified ?? state.profile?.phone_verified),
     last_action: state.profile?.last_action || "sale",
-    identity_anchor: state.profile?.identity_anchor || "phone",
+    identity_anchor: state.profile?.identity_anchor || getPreferredOtpChannel(),
     identity_status: state.profile?.identity_status || "verified_server",
     identity_verified_at: state.profile?.identity_verified_at || Date.now()
-  };
+  });
 }
 
 async function pullProfile(fallbackCountry = getSelectedCountryId()) {
@@ -4508,7 +5284,9 @@ async function pullProfile(fallbackCountry = getSelectedCountryId()) {
   }
 
   state.profile = mergeServerProfile(response.profile, fallbackCountry);
-  await saveProfile(state.profile);
+  initializeAuthPhoneCountry();
+  await saveProfile(state.profile, { skipPush: true });
+  syncDevQaSnapshot("profile_pulled");
   return response.profile;
 }
 
@@ -4575,11 +5353,15 @@ async function pullRecordsFromServer() {
 }
 
 function getRestoreCountryId() {
-  return getRecognizedCountryId(state.profile?.country) || "NG";
+  return getPhoneInputCountry();
 }
 
 function syncRestoreModalCopy() {
   const country = getRestoreCountryId();
+  const channel = getPreferredOtpChannel();
+  if (els["restore-copy"]) {
+    els["restore-copy"].textContent = getRecoveryChannelCopy(channel);
+  }
   if (els["restore-phone-input"]) {
     els["restore-phone-input"].placeholder = getOtpPhonePlaceholder(country);
   }
@@ -4589,7 +5371,9 @@ function syncRestoreModalCopy() {
   if (els["restore-helper-text"]) {
     els["restore-helper-text"].textContent = state.otpChallenge
       ? getOtpHelperText()
-      : "Request a restore code to continue.";
+      : channel === "sms"
+        ? "Request a restore code to continue."
+        : "Request a restore code by email to continue.";
   }
 }
 
@@ -4626,14 +5410,18 @@ function resetRestoreModal() {
 }
 
 function openRestoreModal() {
-  if (!(state.profile && state.profile.country)) {
+  if (!state.profile) {
     state.profile = {
       ...(state.profile || {}),
       plan: normalizePlan(state.profile?.plan),
-      country: getRestoreCountryId()
+      country: getSelectedCountryId()
     };
   }
+  initializeAuthPhoneCountry();
   syncCountryAwareInputs();
+  if (els["restore-email-input"]) {
+    els["restore-email-input"].value = state.profile?.email || "";
+  }
   if (els["restore-phone-input"]) {
     els["restore-phone-input"].value = formatPhoneForInput(state.profile?.phone_number || "", getRestoreCountryId());
   }
@@ -4642,6 +5430,7 @@ function openRestoreModal() {
     els["restore-modal"].hidden = false;
     focusFirstInteractive(els["restore-modal"]);
   }
+  syncDevQaSnapshot("restore_modal_open");
 }
 
 function restoreAccountFlow() {
@@ -4656,10 +5445,12 @@ function closeRestoreModal() {
 }
 
 async function sendRestoreCode() {
+  const channel = getPreferredOtpChannel();
   const country = getRestoreCountryId();
-  const phoneNumber = normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || "", country);
-  if (!phoneNumber) {
-    showRestoreError(getPhoneValidationMessage(country));
+  const identifier = getCurrentRestoreIdentifier(channel);
+  const phoneNumber = normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", country);
+  if (!identifier) {
+    showRestoreError(getIdentifierValidationMessage(channel, country));
     return;
   }
 
@@ -4667,10 +5458,18 @@ async function sendRestoreCode() {
     state.profile = { plan: "free", country };
   }
 
-  state.profile.phone_number = phoneNumber;
+  if (channel === "email") {
+    state.profile.email = identifier;
+  } else {
+    state.profile.phone_number = identifier;
+  }
   clearRestoreError();
   try {
-    await requestOtpChallengeForPhone(phoneNumber, { fallbackToLocal: false });
+    await requestOtpChallenge(identifier, {
+      channel,
+      phoneNumber,
+      fallbackToLocal: false
+    });
     if (els["restore-code-wrap"]) {
       els["restore-code-wrap"].hidden = false;
     }
@@ -4688,18 +5487,22 @@ async function sendRestoreCode() {
 }
 
 function buildFallbackRecoveredProfile(country, phoneNumber) {
-  return {
+  return normalizeLocalProfile({
     ...(state.profile || {}),
     plan: normalizePlan(state.profile?.plan),
     display_name: state.profile?.display_name || "",
     phone_number: phoneNumber,
+    email: normalizeEmailAddress(state.profile?.email || ""),
     country: normalizeCountryId(country || state.profile?.country),
     preferred_labels: normalizePreferredLabels(state.profile?.preferred_labels, state.profile?.business_type_id),
     last_action: state.profile?.last_action || "sale",
-    identity_anchor: "phone",
+    identity_anchor: getPreferredOtpChannel(),
     identity_status: state.profile?.identity_status || "verified_server",
-    identity_verified_at: state.profile?.identity_verified_at || Date.now()
-  };
+    identity_verified_at: state.profile?.identity_verified_at || Date.now(),
+    email_verified: Boolean(state.profile?.email_verified),
+    phone_verified: Boolean(state.profile?.phone_verified),
+    passcodeReminder: clonePasscodeReminder(getPasscodeReminder(state.profile))
+  });
 }
 
 function formatDeviceIdentityShort(deviceIdentity) {
@@ -4764,7 +5567,7 @@ async function revokeDevice(deviceIdentity) {
 async function renderTrustedDevicesSettings() {
   if (!els["settings-devices-v2"]) return;
   if (!state.authToken) {
-    els["settings-devices-v2"].innerHTML = `<div class="record-meta">Verify your phone on this device to manage trusted devices.</div>`;
+    els["settings-devices-v2"].innerHTML = `<div class="record-meta">${getVerificationActionLabel()} on this device to manage trusted devices.</div>`;
     return;
   }
 
@@ -4825,10 +5628,10 @@ async function finishRestoreFlow(country, phoneNumber) {
 
   if (!state.profile) {
     state.profile = buildFallbackRecoveredProfile(country, phoneNumber);
-    await saveProfile(state.profile);
+    await saveProfile(state.profile, { skipPush: true });
   } else {
     state.profile = buildFallbackRecoveredProfile(country, state.profile.phone_number || phoneNumber);
-    await saveProfile(state.profile);
+    await saveProfile(state.profile, { skipPush: true });
   }
 
   const records = await pullRecordsFromServer();
@@ -4836,16 +5639,19 @@ async function finishRestoreFlow(country, phoneNumber) {
   hydrateProfileUi();
   closeRestoreModal();
   await showCapture();
+  syncDevQaSnapshot("restore_completed");
   await maybePromptToRevokeOldDevices();
 }
 
 async function verifyRestoreCode() {
   const country = getRestoreCountryId();
-  const phoneNumber = normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || "", country);
+  const channel = getPreferredOtpChannel();
+  const phoneNumber = normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", country);
+  const identifier = getCurrentRestoreIdentifier(channel);
   const code = (els["restore-code-input"]?.value || "").trim();
 
-  if (!phoneNumber) {
-    showRestoreError(getPhoneValidationMessage(country));
+  if (!identifier) {
+    showRestoreError(getIdentifierValidationMessage(channel, country));
     return;
   }
 
@@ -4854,8 +5660,8 @@ async function verifyRestoreCode() {
     if (state.otpChallenge?.source !== "server") {
       throw new Error("Account restore requires the verification server. Please try again when you are online.");
     }
-    await verifyActiveOtpChallenge(code, { country });
-    await finishRestoreFlow(country, phoneNumber);
+    await verifyActiveOtpChallenge(code, { country, persistProfileRemotely: false });
+    await finishRestoreFlow(country, phoneNumber || state.profile?.phone_number || "");
   } catch (error) {
     showRestoreError(error.message || "Unable to restore this account right now.");
   }
@@ -5115,33 +5921,33 @@ function getProfile() {
         resolve(null);
         return;
       }
-      resolve({
-        ...request.result,
-        plan: normalizePlan(request.result.plan),
-        preferred_labels: normalizePreferredLabels(request.result.preferred_labels, request.result.business_type_id)
-      });
+      resolve(normalizeLocalProfile(request.result, { trackReminderMigration: true }));
     };
     request.onerror = () => reject(request.error);
   });
 }
 
-function saveProfile(profile) {
+function saveProfile(profile, { skipPush = false } = {}) {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("settings", "readwrite");
+    const nextProfile = normalizeLocalProfile(profile) || {};
     const normalizedProfile = {
-      ...profile,
-      plan: normalizePlan(profile?.plan),
-      preferred_labels: normalizePreferredLabels(profile?.preferred_labels, profile?.business_type_id),
+      ...nextProfile,
       key: "profile"
     };
     if (profile) {
-      profile.plan = normalizedProfile.plan;
-      profile.preferred_labels = normalizedProfile.preferred_labels;
+      Object.keys(profile).forEach((key) => {
+        delete profile[key];
+      });
+      Object.assign(profile, nextProfile);
     }
     tx.objectStore("settings").put(normalizedProfile);
     tx.oncomplete = () => {
       resolve();
-      void pushProfile();
+      syncDevQaSnapshot(skipPush ? "profile_saved_local_only" : "profile_saved");
+      if (!skipPush) {
+        void pushProfile();
+      }
     };
     tx.onerror = () => reject(tx.error);
   });
@@ -5342,8 +6148,8 @@ async function createAndStoreDeviceKeyMaterial() {
 }
 
 async function ensureDeviceKeyMaterial() {
-  if (!hasVerifiedPhoneAnchor()) {
-    throw new Error("Verify a phone number before setting up this device key.");
+  if (!hasVerifiedIdentityAnchor()) {
+    throw new Error(`Complete ${getVerificationChannelLabel().toLowerCase()} before setting up this device key.`);
   }
   await createAndStoreDeviceKeyMaterial();
 }
@@ -5424,7 +6230,7 @@ async function flushSyncQueue() {
       : "Server already had the queued entries.";
   } catch (error) {
     if (error.statusCode === 401) {
-      state.syncStatus = "Sync auth expired. Re-verify your phone.";
+      state.syncStatus = `Sync auth expired. Re-open ${getVerificationChannelLabel().toLowerCase()}.`;
     } else if (error.statusCode === 409) {
       state.syncStatus = "Server reported a fork. Sync paused until remediation.";
     } else {
@@ -5539,10 +6345,7 @@ function canonicalizePublicJwk(jwk) {
 }
 
 function hasVerifiedPhoneAnchor() {
-  return Boolean(
-    (state.profile?.identity_status === "verified_local" || state.profile?.identity_status === "verified_server")
-    && state.profile?.phone_number
-  );
+  return hasVerifiedIdentityAnchor();
 }
 
 function stopActiveRecognition() {
@@ -5566,7 +6369,7 @@ function isSigningReady() {
 function getDeviceKeyStatusLabel() {
   if (!isWebCryptoAvailable()) return "WebCrypto not available in this browser";
   if (state.devicePrivateKey && state.publicKeyFingerprint) return "Ready on this device";
-  if (hasVerifiedPhoneAnchor()) return "Phone verified, device key still missing";
+  if (hasVerifiedIdentityAnchor()) return `${getVerificationChannelLabel()} complete, device key still missing`;
   return "Not set up yet";
 }
 
@@ -5579,8 +6382,8 @@ function getAuthSessionStatusLabel() {
 }
 
 function getSigningBlockReason() {
-  if (!hasVerifiedPhoneAnchor()) {
-    return "Verify your phone before confirming a new record.";
+  if (!hasVerifiedIdentityAnchor()) {
+    return `Complete ${getVerificationChannelLabel().toLowerCase()} before confirming a new record.`;
   }
   if (!isWebCryptoAvailable()) {
     return "This browser does not support device signing, so confirmation is disabled.";
@@ -5595,13 +6398,15 @@ function getOtpHelperText() {
   if (!state.otpChallenge) {
     return "";
   }
+  const channel = normalizeOtpChannel(state.otpChallenge.channel || getPreferredOtpChannel());
+  const deliveryNoun = channel === "sms" ? "text message" : "email";
   if (state.otpChallenge.source === "server" && state.otpChallenge.devCode) {
-    return `Server OTP requested. Development code: ${state.otpChallenge.devCode}. It expires in 10 minutes.`;
+    return `Verification code requested from the server. Development code: ${state.otpChallenge.devCode}. It expires in 10 minutes.`;
   }
   if (state.otpChallenge.source === "server") {
-    return "Server OTP requested. Enter the code sent by the sync server.";
+    return `Verification code requested. Enter the code sent by ${deliveryNoun}.`;
   }
-  return `Local fallback code for this device: ${state.otpChallenge.code}. It expires in 10 minutes.`;
+  return `Local development code for this device: ${state.otpChallenge.code}. It expires in 10 minutes.`;
 }
 
 function buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash) {
@@ -5635,51 +6440,9 @@ function customLabelContextForLearnedFrom(learnedFrom) {
 }
 
 async function requestServerOtpCode() {
-  if (!state.profile) return;
-  const phoneInput = document.getElementById("otp-phone-input");
-  const country = getSelectedCountryId();
-  const phoneNumber = normalizePhoneNumber(phoneInput.value.trim(), country);
-
-  if (!phoneNumber) {
-    showOtpError(getPhoneValidationMessage(country));
-    return;
-  }
-
-  state.profile.phone_number = phoneNumber;
-  await saveProfile(state.profile);
-  try {
-    clearOtpError();
-    await requestOtpChallengeForPhone(phoneNumber);
-    renderOtpScreen();
-  } catch (err) {
-    showOtpError(err.message || "Failed to request OTP");
-  }
+  await requestLocalOtpCode();
 }
 
 async function verifyServerOtpCode() {
-  if (!state.profile) return;
-  const phoneInput = document.getElementById("otp-phone-input");
-  const codeInput = document.getElementById("otp-code-input");
-
-  const country = getSelectedCountryId();
-  const phoneNumber = normalizePhoneNumber(phoneInput.value.trim(), country);
-  const code = codeInput.value.trim();
-
-  if (!phoneNumber || !code) {
-    showOtpError(!phoneNumber ? getPhoneValidationMessage(country) : "Enter phone and code");
-    return;
-  }
-
-  try {
-    clearOtpError();
-    state.profile.phone_number = phoneNumber;
-    await saveProfile(state.profile);
-    await verifyActiveOtpChallenge(code, { country });
-    renderOtpScreen();
-  } catch (err) {
-    if (!state.otpChallenge) {
-      renderOtpScreen();
-    }
-    showOtpError(err.message || "Failed to verify OTP");
-  }
+  await verifyLocalOtpCode();
 }
