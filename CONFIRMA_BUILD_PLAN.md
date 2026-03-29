@@ -2,7 +2,7 @@
 **Patent:** USPTO Provisional 63/987,858
 **Stack:** Vanilla JS PWA + Fastify/Node.js + Railway PostgreSQL
 **Strategy:** PWA-first, server-anchored. Android/iOS deferred until MFI pilots require hardware attestation.
-**Last updated:** 2026-03-29 (Phase 1.6C + Phase S2 security complete, device recovery live)
+**Last updated:** 2026-03-29 (Phase 1.6D auth overhaul + passcode upgrade + restore hardening complete)
 
 ---
 
@@ -88,13 +88,23 @@ These functions form the integrity core. No module outside them may call `append
 
 **Device tracking:** `device_identities.revoked_at` (TIMESTAMPTZ, nullable) — revoked devices rejected by authenticated middleware
 
+**OTP channels:** `POST /auth/otp/request` accepts `channel: "email" | "sms"`. Email via Resend (default). SMS via Termii (only if `TERMII_API_KEY` set). Verification split: `email_verified` / `phone_verified` tracked separately.
+
+**Identity model:**
+- Phone = backend identity anchor (required for activation, recovery, device revocation)
+- Email = access/recovery channel (OTP delivery until SMS is live)
+- `phone_anchor_required` enforced on first-time activation
+- No silent partial identities
+
 **Environment variables (Railway):**
-- `DATABASE_URL`, `DATABASE_SSL`, `HOST`, `PORT`
-- `JWT_SECRET`, `SERVER_RECEIPT_SECRET`, `JWT_EXPIRY`
+- `DATABASE_URL` (private: `postgres.railway.internal`) — ✅ switched to internal endpoint
+- `DATABASE_SSL`, `HOST`, `PORT`
+- `JWT_SECRET`, `SERVER_RECEIPT_SECRET`, `JWT_EXPIRY` — ✅ startup validation enforced
 - `OTP_TTL_MINUTES`, `OTP_RATE_LIMIT_PER_HOUR`, `ALLOW_DEV_OTP`
+- `RESEND_API_KEY` — ✅ startup validation enforced (email OTP default)
+- `RESEND_FROM_EMAIL` — sender address validated at boot
 - `PAYSTACK_SECRET_KEY` (not yet set to live key)
-- `RESEND_API_KEY` (not yet set)
-- `TERMII_API_KEY`, `TERMII_SENDER_ID` (not yet set)
+- `TERMII_API_KEY`, `TERMII_SENDER_ID` (not yet set — SMS deferred)
 
 ---
 
@@ -186,6 +196,44 @@ All critical, high, and medium fixes done. See `docs/plans/v3-foundation-plan.md
 - All ads suppressed when `state.isRecording === true`
 - `state.profile.plan` controls tier: `"free"` | `"basic"` | `"pro"` (default `"free"`)
 
+### ✅ Phase 1.6D — Auth Overhaul + Passcode Upgrade + Restore Hardening (COMPLETE)
+
+**Auth overhaul:**
+- Channel-aware OTP: `POST /auth/otp/request` accepts `channel: "email" | "sms"`
+- Email OTP via Resend is the default — no SMS dependency to go live
+- Split verification model: `email_verified` and `phone_verified` tracked independently
+- Removed false "phone verified" state when user only completed email OTP
+- Phone = identity anchor (required for activation + recovery); email = access channel
+- `phone_anchor_required` enforced — no silent partial identities
+- Removed client-side OTP fallback — server is sole verification authority
+
+**Passcode system (replaces 6-digit PIN):**
+- 8+ character alphanumeric passcode (PBKDF2-hashed in IndexedDB)
+- Change passcode requires current passcode first
+- Reset via OTP (phone-verified path) or device wipe (no phone path)
+- Optional passcode hint: stored locally only, cannot equal or contain the passcode
+- Hint never sent to server, never included in sync or export payloads
+
+**Restore flow hardening:**
+- Server-authoritative restore: server profile overwrites local profile on pull
+- `skipPush` mechanism in `saveProfile()` — prevents local state from clobbering server data immediately after restore
+- No silent data corruption on new device
+
+**Phone prefix fix:**
+- Root cause: UI rehydration was resetting `country` to US on certain flows
+- Introduced `state.authPhoneCountry` + `getPhoneInputCountry()` helper
+- Phone prefix persists correctly through OTP + restore flows (Nigeria stays Nigeria)
+
+**Startup config validation:**
+- Server now refuses to boot if `JWT_SECRET`, `SERVER_RECEIPT_SECRET`, `RESEND_API_KEY`, or sender email are missing
+- Prevents silent misconfiguration in production
+
+**Duplicate verification bug fix:**
+- `POST /auth/otp/request` and restore flow now check if channel already verified before issuing a new challenge
+- No repeated OTP prompts for users who are already verified
+
+---
+
 ### ✅ Phase 1.6C — Account Recovery & Device Management (COMPLETE)
 - **Server:** `GET /records`, `GET /profile`, `POST /profile`, `POST /identity/revoke`, `GET /devices`
 - **App:** "Restore from phone" link on onboarding → OTP → pull records + profile → repopulate IndexedDB
@@ -205,8 +253,9 @@ See `docs/GO_LIVE_CHECKLIST.md` for full QA steps. Summary:
 
 ### Configuration (not yet done)
 - [ ] Set live `PAYSTACK_SECRET_KEY` in Railway + `PAYSTACK_PUBLIC_KEY` in app-v3/app.js
-- [ ] Set `RESEND_API_KEY` in Railway + verify sender domain
-- [ ] Set `TERMII_API_KEY` in Railway (for real SMS OTP instead of dev codes)
+- [ ] Set `RESEND_API_KEY` in Railway + verify sender domain (email OTP is default — required for go-live)
+- [ ] Set `RESEND_FROM_EMAIL` in Railway (validated at server boot)
+- [ ] Set `TERMII_API_KEY` in Railway (SMS OTP — deferred, email covers launch)
 - [ ] Set `ALLOW_DEV_OTP=false` in Railway for production
 
 ### Manual QA (not yet done)
@@ -238,9 +287,15 @@ See `docs/GO_LIVE_CHECKLIST.md` for full QA steps. Summary:
 ### ✅ Current Security Posture
 - ECDSA P-256 keypair per device (non-extractable, stored in IndexedDB)
 - Append-only hash chain with server-side fork detection
-- OTP phone verification → JWT auth
+- Channel-aware OTP (email default, SMS when Termii live) → JWT auth
+- Split verification: `email_verified` / `phone_verified` — no false verification states
 - HMAC-SHA256 server signatures on attestations
 - Paystack HMAC-SHA512 webhook verification
+- 8+ char alphanumeric passcode (PBKDF2, local-only, never transmitted)
+- Adaptive anomaly detection (warn-only, user-baseline thresholds)
+- Device revocation: server rejects revoked `device_identity` on all authenticated routes
+- Server startup validation: refuses to boot without critical env vars
+- Private Railway DB connection: internal endpoint, no egress fees
 
 ### 🔲 Phase S1 — Quick Wins (< 1 day each)
 - [ ] **CSP headers** — Add strict Content-Security-Policy via `vercel.json`. Prevents XSS from exfiltrating keys or records. Highest ROI security change available.
@@ -249,11 +304,11 @@ See `docs/GO_LIVE_CHECKLIST.md` for full QA steps. Summary:
 - [ ] **Short public key fingerprint only** — Show first 8 chars (`eda069ca`) as "Device ID" in Settings. Hide full 32-char device identity — internal value, no UX purpose.
 
 ### ✅ Phase S2 — Core Security Features (COMPLETE)
-- [x] **PIN / Biometric Lock** — 6-digit PIN (PBKDF2 hash in IndexedDB). Disabling or changing PIN requires current PIN confirmation. Auto-lock after 5 min inactivity. WebAuthn progressive enhancement deferred.
-  - ✅ Fixed PIN toggle security: disabling PIN now requires current PIN entry first
+- [x] **Passcode Lock** — 8+ char alphanumeric passcode (PBKDF2 hash in IndexedDB). Disabling or changing passcode requires current passcode first. Optional hint (cannot equal/contain passcode, local-only, never synced). Auto-lock after 5 min inactivity. WebAuthn progressive enhancement deferred.
+  - ✅ Fixed passcode toggle security: disabling passcode requires current passcode entry first
 - [x] **Device Revocation** — `POST /identity/revoke` (OTP-authenticated). Revoked `device_identity` rejected on all sync/attest calls. UI in Settings: "Revoke a lost device". Auto-prompt after restore if >1 active device detected.
 - [x] **Adaptive Anomaly Detection** — Warn (never block) on suspicious patterns. Wired from `confirmAppend()` post-append. `confirmed_at` normalised to ms internally. Thresholds scale with user's baseline (p95 hourly count × 3, floor 20). Local `anomaly_log` store + "Security alerts" review panel in Settings.
-- [ ] **Forgot PIN Recovery** — OTP reset if phone verified on device; else wipe + re-onboard (pending Codex prompt 1)
+- [ ] **Forgot Passcode Recovery** — OTP reset (email/SMS) if phone verified on device; else wipe + re-onboard (Codex prompt ready, pending run)
 - [ ] **Session-aware Export 2FA** — Require OTP re-confirmation before Verified Report generation only if session is older than 4 hours. Avoids friction on every export.
 
 ### 🔲 Phase S3 — Compliance & Trust Layer
