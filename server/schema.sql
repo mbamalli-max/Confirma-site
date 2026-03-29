@@ -3,11 +3,18 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS users (
   id UUID NOT NULL DEFAULT gen_random_uuid(),
   phone_number TEXT PRIMARY KEY,
+  email TEXT,
+  email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_id_unique
   ON users(id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
+  ON users ((LOWER(email)))
+  WHERE email IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS device_identities (
   device_identity TEXT PRIMARY KEY,
@@ -47,7 +54,9 @@ CREATE TABLE IF NOT EXISTS key_rotation_events (
 
 CREATE TABLE IF NOT EXISTS otp_challenges (
   id BIGSERIAL PRIMARY KEY,
-  phone_number TEXT NOT NULL,
+  phone_number TEXT,
+  identifier TEXT NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'sms',
   otp_hash TEXT NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -56,6 +65,9 @@ CREATE TABLE IF NOT EXISTS otp_challenges (
 
 CREATE INDEX IF NOT EXISTS idx_otp_challenges_phone_created_at
   ON otp_challenges (phone_number, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_otp_challenges_identifier_created_at
+  ON otp_challenges (identifier, channel, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_ledger_entries_device_synced
   ON ledger_entries (device_identity, synced_at DESC);
@@ -68,38 +80,11 @@ CREATE TABLE IF NOT EXISTS profiles (
   business_type_id TEXT,
   sector_id TEXT,
   preferred_labels JSONB DEFAULT '[]'::jsonb,
+  -- Retained for backward compatibility only. Passcode hints are local-only and are no longer synced.
+  passcode_hint TEXT,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS attestations (
   vt_id            TEXT PRIMARY KEY,
-  device_identity  TEXT NOT NULL REFERENCES device_identities(device_identity),
-  phone_number     TEXT NOT NULL REFERENCES users(phone_number),
-  ledger_root_hash TEXT NOT NULL,
-  window_start     TIMESTAMPTZ NOT NULL,
-  window_end       TIMESTAMPTZ NOT NULL,
-  entry_count      INTEGER NOT NULL,
-  server_signature TEXT NOT NULL,
-  status           TEXT NOT NULL DEFAULT 'VALID',
-  issued_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_attestations_device
-  ON attestations (device_identity, issued_at DESC);
-
-CREATE TABLE IF NOT EXISTS payments (
-  id BIGSERIAL PRIMARY KEY,
-  phone_number TEXT NOT NULL REFERENCES users(phone_number),
-  device_identity TEXT NOT NULL,
-  reference TEXT UNIQUE NOT NULL,
-  amount_kobo INTEGER NOT NULL,
-  tier TEXT NOT NULL,
-  window_days INTEGER NOT NULL,
-  paystack_status TEXT NOT NULL DEFAULT 'pending',
-  vt_id TEXT REFERENCES attestations(vt_id),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  completed_at TIMESTAMPTZ
-);
-
-CREATE INDEX IF NOT EXISTS idx_payments_phone
-  ON payments (phone_number, created_at DESC);
+  device_identity  TEXT NOT NU

@@ -46,27 +46,26 @@ export function getDefaultSyncApiBaseUrl() {
   return "https://confirma-site-production.up.railway.app";
 }
 
-export async function requestOtpCode(baseUrl, phoneNumber, extra = {}) {
-  return postJson(baseUrl, "/auth/otp/request", {
-    phone_number: phoneNumber,
+export async function requestOtpCode(baseUrl, identifier, extra = {}) {
+  const payload = {
+    identifier,
     ...extra
+  };
+  if (!("phone_number" in payload)) {
+    payload.phone_number = identifier;
+  }
+  return postJson(baseUrl, "/auth/otp/request", {
+    ...payload
   });
 }
 
-export async function verifyOtpCode(baseUrl, phoneNumber, code, extra = {}) {
-  return postJson(baseUrl, "/auth/otp/verify", {
-    phone_number: phoneNumber,
+export async function verifyOtpCode(baseUrl, identifier, code, extra = {}) {
+  const payload = {
+    identifier,
     code,
     ...extra
-  });
-}
-
-export async function syncQueuedEntries(baseUrl, authToken, payload) {
-  return postJson(baseUrl, "/sync/entries", payload, authToken);
-}
-
-export async function rotateDeviceIdentity(baseUrl, authToken, payload) {
-  return postJson(baseUrl, "/identity/rotate", payload, authToken);
-}
-
-export { normalizeApiBaseUrl };
+  };
+  if (!("phone_number" in payload)) {
+    payload.phone_number = identifier;
+  }
+  return postJson(b

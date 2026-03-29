@@ -84,30 +84,4 @@ export async function registerIdentityRoutes(app) {
       return reply.code(400).send({ error: "device_identity is required." });
     }
 
-    const deviceResult = await query(
-      `
-        SELECT device_identity, phone_number, revoked_at
-        FROM device_identities
-        WHERE device_identity = $1
-        LIMIT 1
-      `,
-      [deviceIdentity]
-    );
-
-    const device = deviceResult.rows[0];
-    if (!device || device.phone_number !== auth.phone_number) {
-      return reply.code(404).send({ error: "Device not found for this account." });
-    }
-
-    await query(
-      `
-        UPDATE device_identities
-        SET revoked_at = NOW(), updated_at = NOW()
-        WHERE device_identity = $1
-      `,
-      [deviceIdentity]
-    );
-
-    return { ok: true };
-  });
-}
+ 
