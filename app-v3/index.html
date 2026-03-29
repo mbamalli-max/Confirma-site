@@ -169,6 +169,52 @@
       background: #991f16;
       border-color: #991f16;
     }
+
+    .restore-link {
+      margin-top: 0.9rem;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.9rem;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+
+    .restore-link:hover,
+    .restore-link:focus-visible {
+      color: var(--primary);
+    }
+
+    .device-list {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .device-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.85rem 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .device-row:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .device-meta {
+      display: grid;
+      gap: 0.2rem;
+      min-width: 0;
+    }
+
+    .device-meta strong,
+    .device-meta span {
+      overflow-wrap: anywhere;
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
   <title>Confirma</title>
@@ -248,6 +294,7 @@
         <div class="step active" data-step="1">
           <h2>Choose your country</h2>
           <div class="visual-grid" id="country-grid"></div>
+          <button class="restore-link" id="restore-account-link" type="button">Already have an account? Restore from phone →</button>
         </div>
 
         <div class="step" data-step="2">
@@ -650,6 +697,11 @@
         </div>
       </div>
       <div class="panel">
+        <h2>Trusted devices</h2>
+        <p class="subtle">Review the phones that can still access this account.</p>
+        <div class="settings-list" id="settings-devices-v2"></div>
+      </div>
+      <div class="panel">
         <h2>Data on this device</h2>
         <div class="settings-list" id="settings-summary-v2"></div>
       </div>
@@ -804,6 +856,55 @@
       <div class="button-stack">
         <button class="btn btn-danger" id="pin-wipe-confirm" type="button">Wipe and restart</button>
         <button class="btn btn-secondary" id="pin-wipe-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-shell" id="restore-modal" hidden>
+    <div class="modal-backdrop" id="restore-close"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="restore-title">
+      <div class="action-header">
+        <div>
+          <h2 id="restore-title">Restore your account</h2>
+          <p class="subtle">Use your verified phone number to pull down your profile and records on this device.</p>
+        </div>
+      </div>
+      <label class="field">
+        Phone number
+        <div class="phone-input-shell">
+          <span class="phone-prefix" id="restore-country-prefix" aria-hidden="true">+234</span>
+          <input id="restore-phone-input" type="tel" placeholder="08099840666" autocomplete="tel" inputmode="tel" aria-describedby="restore-helper-text">
+        </div>
+      </label>
+      <p class="record-meta" id="restore-helper-text">Request a restore code to continue.</p>
+      <div id="restore-code-wrap" hidden>
+        <label class="field">
+          Enter 6-digit code
+          <input id="restore-code-input" type="text" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+        </label>
+      </div>
+      <p class="error" id="restore-error-text" role="alert" aria-live="polite" aria-atomic="true" hidden></p>
+      <div class="button-stack">
+        <button class="btn btn-primary" id="restore-send-code" type="button">Send restore code</button>
+        <button class="btn btn-primary" id="restore-verify-code" type="button" hidden>Verify and restore</button>
+        <button class="btn btn-secondary" id="restore-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-shell" id="revoke-old-devices-modal" hidden>
+    <div class="modal-backdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="revoke-old-devices-title">
+      <div class="action-header">
+        <div>
+          <h2 id="revoke-old-devices-title">Previous device detected</h2>
+          <p class="subtle">We found another active device linked to your account.
+          If you've lost or replaced that phone, revoke it now to prevent unauthorised access.</p>
+        </div>
+      </div>
+      <div class="device-list" id="revoke-old-devices-list"></div>
+      <div class="button-stack" style="margin-top:12px">
+        <button class="btn btn-secondary" id="revoke-old-devices-skip" type="button">Skip for now</button>
       </div>
     </div>
   </div>

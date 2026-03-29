@@ -51,9 +51,15 @@ export async function registerAuthRoutes(app) {
   app.post("/auth/otp/verify", async (request, reply) => {
     const phoneNumber = normalizePhoneNumber(request.body?.phone_number);
     const code = String(request.body?.code || "").trim();
+    const deviceIdentity = String(request.body?.device_identity || "").trim();
+    const publicKey = String(request.body?.public_key || "").trim();
 
     if (!isValidPhoneNumber(phoneNumber) || !/^\d{6}$/.test(code)) {
       return reply.code(400).send({ error: "Phone number and 6-digit code are required." });
+    }
+
+    if ((deviceIdentity && !publicKey) || (!deviceIdentity && publicKey)) {
+      return reply.code(400).send({ error: "device_identity and public_key must be provided together." });
     }
 
     const otpResult = await query(
@@ -95,10 +101,35 @@ export async function registerAuthRoutes(app) {
       [phoneNumber]
     );
 
+    if (deviceIdentity && publicKey) {
+      await query(
+        `
+          INSERT INTO device_identities (
+            device_identity,
+            public_key,
+            phone_number,
+            status,
+            last_seen_at,
+            revoked_at
+          )
+          VALUES ($1, $2, $3, 'ACTIVE', NOW(), NULL)
+          ON CONFLICT (device_identity)
+          DO UPDATE SET
+            public_key = EXCLUDED.public_key,
+            phone_number = EXCLUDED.phone_number,
+            status = 'ACTIVE',
+            revoked_at = NULL,
+            last_seen_at = NOW(),
+            updated_at = NOW()
+        `,
+        [deviceIdentity, publicKey, phoneNumber]
+      );
+    }
+
     return {
       ok: true,
       phone_number: phoneNumber,
-      ...buildAuthReply(phoneNumber)
+      ...buildAuthReply(phoneNumber, deviceIdentity)
     };
   });
 }

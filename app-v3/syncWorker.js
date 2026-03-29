@@ -14,6 +14,7 @@ export async function postJson(baseUrl, path, body, authToken) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(window.CONFIRMA_DEVICE_IDENTITY ? { "X-Device-Identity": window.CONFIRMA_DEVICE_IDENTITY } : {}),
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
     },
     body: JSON.stringify(body)
@@ -45,16 +46,18 @@ export function getDefaultSyncApiBaseUrl() {
   return "https://confirma-site-production.up.railway.app";
 }
 
-export async function requestOtpCode(baseUrl, phoneNumber) {
+export async function requestOtpCode(baseUrl, phoneNumber, extra = {}) {
   return postJson(baseUrl, "/auth/otp/request", {
-    phone_number: phoneNumber
+    phone_number: phoneNumber,
+    ...extra
   });
 }
 
-export async function verifyOtpCode(baseUrl, phoneNumber, code) {
+export async function verifyOtpCode(baseUrl, phoneNumber, code, extra = {}) {
   return postJson(baseUrl, "/auth/otp/verify", {
     phone_number: phoneNumber,
-    code
+    code,
+    ...extra
   });
 }
 

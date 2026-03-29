@@ -1,7 +1,13 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS users (
+  id UUID NOT NULL DEFAULT gen_random_uuid(),
   phone_number TEXT PRIMARY KEY,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_id_unique
+  ON users(id);
 
 CREATE TABLE IF NOT EXISTS device_identities (
   device_identity TEXT PRIMARY KEY,
@@ -11,6 +17,8 @@ CREATE TABLE IF NOT EXISTS device_identities (
   rotated_to TEXT,
   receipt_counter BIGINT NOT NULL DEFAULT 0,
   last_synced_entry_id BIGINT NOT NULL DEFAULT 0,
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -51,3 +59,47 @@ CREATE INDEX IF NOT EXISTS idx_otp_challenges_phone_created_at
 
 CREATE INDEX IF NOT EXISTS idx_ledger_entries_device_synced
   ON ledger_entries (device_identity, synced_at DESC);
+
+CREATE TABLE IF NOT EXISTS profiles (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT,
+  business_name TEXT,
+  country CHAR(2),
+  business_type_id TEXT,
+  sector_id TEXT,
+  preferred_labels JSONB DEFAULT '[]'::jsonb,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS attestations (
+  vt_id            TEXT PRIMARY KEY,
+  device_identity  TEXT NOT NULL REFERENCES device_identities(device_identity),
+  phone_number     TEXT NOT NULL REFERENCES users(phone_number),
+  ledger_root_hash TEXT NOT NULL,
+  window_start     TIMESTAMPTZ NOT NULL,
+  window_end       TIMESTAMPTZ NOT NULL,
+  entry_count      INTEGER NOT NULL,
+  server_signature TEXT NOT NULL,
+  status           TEXT NOT NULL DEFAULT 'VALID',
+  issued_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_attestations_device
+  ON attestations (device_identity, issued_at DESC);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id BIGSERIAL PRIMARY KEY,
+  phone_number TEXT NOT NULL REFERENCES users(phone_number),
+  device_identity TEXT NOT NULL,
+  reference TEXT UNIQUE NOT NULL,
+  amount_kobo INTEGER NOT NULL,
+  tier TEXT NOT NULL,
+  window_days INTEGER NOT NULL,
+  paystack_status TEXT NOT NULL DEFAULT 'pending',
+  vt_id TEXT REFERENCES attestations(vt_id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_payments_phone
+  ON payments (phone_number, created_at DESC);

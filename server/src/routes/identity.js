@@ -1,23 +1,9 @@
-import { buildReceiptSignature, getBearerToken, verifyAuthToken } from "../auth-utils.js";
-import { withTransaction } from "../db.js";
-
-function authenticate(request, reply) {
-  try {
-    const token = getBearerToken(request);
-    if (!token) {
-      reply.code(401).send({ error: "Missing bearer token." });
-      return null;
-    }
-    return verifyAuthToken(token);
-  } catch (error) {
-    reply.code(401).send({ error: "Invalid or expired auth token." });
-    return null;
-  }
-}
+import { authenticateRequest, buildReceiptSignature } from "../auth-utils.js";
+import { query, withTransaction } from "../db.js";
 
 export async function registerIdentityRoutes(app) {
   app.post("/identity/rotate", async (request, reply) => {
-    const auth = authenticate(request, reply);
+    const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
     const oldDeviceIdentity = String(request.body?.old_device_identity || "").trim();
@@ -87,5 +73,41 @@ export async function registerIdentityRoutes(app) {
         error: error.message || "Identity rotation failed."
       });
     }
+  });
+
+  app.post("/identity/revoke", async (request, reply) => {
+    const auth = await authenticateRequest(request, reply);
+    if (!auth) return reply;
+
+    const deviceIdentity = String(request.body?.device_identity || "").trim();
+    if (!deviceIdentity) {
+      return reply.code(400).send({ error: "device_identity is required." });
+    }
+
+    const deviceResult = await query(
+      `
+        SELECT device_identity, phone_number, revoked_at
+        FROM device_identities
+        WHERE device_identity = $1
+        LIMIT 1
+      `,
+      [deviceIdentity]
+    );
+
+    const device = deviceResult.rows[0];
+    if (!device || device.phone_number !== auth.phone_number) {
+      return reply.code(404).send({ error: "Device not found for this account." });
+    }
+
+    await query(
+      `
+        UPDATE device_identities
+        SET revoked_at = NOW(), updated_at = NOW()
+        WHERE device_identity = $1
+      `,
+      [deviceIdentity]
+    );
+
+    return { ok: true };
   });
 }

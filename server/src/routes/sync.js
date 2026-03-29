@@ -1,22 +1,8 @@
-import { buildReceiptSignature, getBearerToken, verifyAuthToken } from "../auth-utils.js";
-import { verifyEntrySignature } from "../crypto.js";
+import { authenticateRequest, buildReceiptSignature } from "../auth-utils.js";
+import { verifyEntrySignature } from "../crypto-verify.js";
 import { withTransaction } from "../db.js";
 
 const EMPTY_HASH = "0".repeat(64);
-
-function authenticate(request, reply) {
-  try {
-    const token = getBearerToken(request);
-    if (!token) {
-      reply.code(401).send({ error: "Missing bearer token." });
-      return null;
-    }
-    return verifyAuthToken(token);
-  } catch (error) {
-    reply.code(401).send({ error: "Invalid or expired auth token." });
-    return null;
-  }
-}
 
 async function markDeviceStatus(client, deviceIdentity, status) {
   await client.query(
@@ -31,7 +17,7 @@ async function markDeviceStatus(client, deviceIdentity, status) {
 
 export async function registerSyncRoutes(app) {
   app.post("/sync/entries", async (request, reply) => {
-    const auth = authenticate(request, reply);
+    const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
     const deviceIdentity = String(request.body?.device_identity || "").trim();
@@ -59,7 +45,7 @@ export async function registerSyncRoutes(app) {
 
         const deviceResult = await client.query(
           `
-            SELECT device_identity, status, receipt_counter, last_synced_entry_id
+            SELECT device_identity, status, receipt_counter, last_synced_entry_id, revoked_at
             FROM device_identities
             WHERE device_identity = $1
             LIMIT 1
@@ -67,6 +53,10 @@ export async function registerSyncRoutes(app) {
           [deviceIdentity]
         );
         const device = deviceResult.rows[0];
+
+        if (device?.revoked_at) {
+          throw Object.assign(new Error("device_revoked"), { statusCode: 401 });
+        }
 
         const lastEntryResult = await client.query(
           `

@@ -393,6 +393,14 @@ const els = {};
 
 document.addEventListener("DOMContentLoaded", init);
 
+function syncGlobalDeviceIdentity() {
+  if (state.deviceIdentity) {
+    window.CONFIRMA_DEVICE_IDENTITY = state.deviceIdentity;
+  } else {
+    delete window.CONFIRMA_DEVICE_IDENTITY;
+  }
+}
+
 async function init() {
   cacheElements();
   state.db = await openDb();
@@ -451,7 +459,7 @@ async function init() {
 function cacheElements() {
   [
     "interstitial-slot", "interstitial-countdown", "interstitial-skip",
-    "country-grid", "sector-grid", "business-grid", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
+    "country-grid", "restore-account-link", "sector-grid", "business-grid", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
     "onboarding-next", "onboarding-name", "onboarding-phone", "onboarding-email", "onboarding-state",
     "onboarding-birth-year", "onboarding-gender", "onboarding-profile-error",
     "business-helper", "profile-summary", "anomaly-banner", "anomaly-banner-text", "anomaly-banner-cta", "primary-actions", "advanced-panel", "transfer-actions",
@@ -463,13 +471,16 @@ function cacheElements() {
     "pin-forgot-link", "pin-forgot-modal", "pin-forgot-close", "pin-forgot-helper", "pin-forgot-code-wrap",
     "pin-forgot-code", "pin-forgot-send", "pin-forgot-confirm", "pin-forgot-cancel", "pin-forgot-error",
     "pin-wipe-modal", "pin-wipe-close", "pin-wipe-confirm", "pin-wipe-cancel",
+    "restore-modal", "restore-close", "restore-country-prefix", "restore-phone-input", "restore-helper-text",
+    "restore-code-wrap", "restore-code-input", "restore-error-text", "restore-send-code", "restore-verify-code", "restore-cancel",
+    "revoke-old-devices-modal", "revoke-old-devices-list", "revoke-old-devices-skip",
     "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
     "voice-example-v2", "voice-announce", "banner-history", "banner-dashboard", "banner-export",
     "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-preferred-edit-v2", "settings-preferred-editor", "settings-preferred-grid", "settings-preferred-done-v2",
     "settings-voice-corrections-v2", "anomaly-panel", "anomaly-badge", "anomaly-list", "mark-anomalies-reviewed",
-    "settings-capture-v2", "settings-summary-v2", "settings-trust-v3", "settings-change-profile-v2",
+    "settings-capture-v2", "settings-summary-v2", "settings-trust-v3", "settings-devices-v2", "settings-change-profile-v2",
     "settings-open-trust-v3", "export-button-v2", "export-status-v2", "export-trust-status-v3", "export-open-trust-v3",
     "rewarded-export-wrap", "rewarded-export-button", "rewarded-ad-modal", "rewarded-ad-slot", "rewarded-ad-countdown", "rewarded-ad-complete",
     "verified-report-section", "verified-report-region-note", "payment-tiers", "payment-status",
@@ -487,6 +498,9 @@ function cacheElements() {
 function wireEvents() {
   document.getElementById("finish-onboarding").addEventListener("click", finishOnboarding);
   document.getElementById("onboarding-next").addEventListener("click", () => updateOnboardingStep(5));
+  document.getElementById("restore-account-link").addEventListener("click", () => {
+    restoreAccountFlow();
+  });
   document.getElementById("change-profile").addEventListener("click", openChangeProfileConfirm);
   document.getElementById("anomaly-banner-cta").addEventListener("click", () => {
     void openAnomalyReview();
@@ -517,6 +531,17 @@ function wireEvents() {
   document.getElementById("pin-wipe-confirm").addEventListener("click", () => {
     void handlePinWipeRestart();
   });
+  document.getElementById("restore-send-code").addEventListener("click", () => {
+    void sendRestoreCode();
+  });
+  document.getElementById("restore-verify-code").addEventListener("click", () => {
+    void verifyRestoreCode();
+  });
+  document.getElementById("restore-cancel").addEventListener("click", closeRestoreModal);
+  document.getElementById("restore-close").addEventListener("click", closeRestoreModal);
+  document.getElementById("restore-phone-input").addEventListener("input", clearRestoreError);
+  document.getElementById("restore-code-input").addEventListener("input", clearRestoreError);
+  document.getElementById("revoke-old-devices-skip").addEventListener("click", closeRevocationPrompt);
   els["onboarding-back"].addEventListener("click", goToPreviousOnboardingStep);
   document.getElementById("advanced-toggle").addEventListener("click", () => {
     els["advanced-panel"].hidden = !els["advanced-panel"].hidden;
@@ -1092,6 +1117,7 @@ async function renderSettings() {
   renderPreferredLabelsSummary();
   await renderVoiceCorrectionsSettings();
   await renderAnomalyPanel();
+  await renderTrustedDevicesSettings();
   syncPreferredLabelEditor();
 
   els["settings-summary-v2"].innerHTML = `
@@ -1188,6 +1214,7 @@ async function logAnomaly(type, detail, entry_id) {
 }
 
 async function checkForAnomalies(newEntry) {
+  if (newEntry?.importedFromServer) return;
   try {
     const threshold = await getAnomalyThreshold();
     const recentRecords = await getRecords();
@@ -2164,7 +2191,7 @@ async function generateExport() {
   const lines = records.map((record) => {
     const timestamp = new Date(record.confirmed_at * 1000).toLocaleString();
     return [
-      record.id,
+      record.server_entry_id || record.id,
       record.transaction_type,
       record.label,
       formatMoney(record.amount_minor, currency),
@@ -4144,6 +4171,12 @@ function syncCountryAwareInputs() {
   if (els["otp-country-prefix"]) {
     els["otp-country-prefix"].textContent = getCountryDialCode(country);
   }
+  if (els["restore-phone-input"]) {
+    els["restore-phone-input"].placeholder = getOtpPhonePlaceholder(country);
+  }
+  if (els["restore-country-prefix"]) {
+    els["restore-country-prefix"].textContent = getCountryDialCode(country);
+  }
 }
 
 function supportsVerifiedReports(country) {
@@ -4246,9 +4279,23 @@ async function verifyActiveOtpChallenge(enteredCode, { country = getSelectedCoun
   }
 
   if (activeChallenge.source === "server") {
-    const response = await verifyOtpCode(activeChallenge.serverBaseUrl || state.syncApiBaseUrl, normalizedChallengePhone, enteredCode);
+    await createAndStoreDeviceKeyMaterial();
+    const response = await verifyOtpCode(
+      activeChallenge.serverBaseUrl || state.syncApiBaseUrl,
+      normalizedChallengePhone,
+      enteredCode,
+      {
+        device_identity: state.deviceIdentity || "",
+        public_key: state.devicePublicKey || ""
+      }
+    );
     state.authToken = response.auth_token || "";
     state.authTokenExpiresAt = response.expires_at || "";
+    if (response.device_identity) {
+      state.deviceIdentity = response.device_identity;
+      await saveSetting("device_identity", state.deviceIdentity);
+      syncGlobalDeviceIdentity();
+    }
     state.profile.identity_anchor = "phone";
     state.profile.identity_status = "verified_server";
     state.profile.identity_verified_at = Date.now();
@@ -4366,6 +4413,452 @@ function showOtpError(message) {
 
 function clearOtpError() {
   showOtpError("");
+}
+
+async function fetchAuthenticatedJson(path, options = {}) {
+  const normalizedBaseUrl = String(state.syncApiBaseUrl || "").trim().replace(/\/+$/, "");
+  if (!normalizedBaseUrl) {
+    const error = new Error("Sync server URL is not configured.");
+    error.statusCode = 0;
+    throw error;
+  }
+
+  const response = await fetch(`${normalizedBaseUrl}${path}`, {
+    method: options.method || "GET",
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(state.deviceIdentity ? { "X-Device-Identity": state.deviceIdentity } : {}),
+      ...(state.authToken ? { Authorization: `Bearer ${state.authToken}` } : {})
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch (error) {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const message = data?.error || data?.message || `Request failed with status ${response.status}`;
+    const error = new Error(message);
+    error.statusCode = response.status;
+    error.payload = data;
+    if (response.status === 401 && data?.error === "device_revoked") {
+      state.syncStatus = "This device has been revoked. Restore your account again to continue.";
+    }
+    throw error;
+  }
+
+  return data || {};
+}
+
+function buildProfileSyncPayload(profile = state.profile) {
+  if (!profile) return null;
+  const displayName = String(profile.display_name || "").trim();
+  const country = getRecognizedCountryId(profile.country);
+  return {
+    name: displayName || null,
+    business_name: displayName || null,
+    country: country || null,
+    business_type_id: String(profile.business_type_id || "").trim() || null,
+    sector_id: String(profile.sector_id || "").trim() || null,
+    preferred_labels: normalizePreferredLabels(profile.preferred_labels, profile.business_type_id)
+  };
+}
+
+async function pushProfile() {
+  if (!(state.profile && state.authToken && state.syncApiBaseUrl)) return;
+  const payload = buildProfileSyncPayload();
+  if (!payload) return;
+  try {
+    await postJson(state.syncApiBaseUrl, "/profile", payload, state.authToken);
+  } catch (error) {
+    console.warn("Profile push skipped.", error);
+  }
+}
+
+function mergeServerProfile(serverProfile, fallbackCountry = getSelectedCountryId()) {
+  if (!serverProfile) return null;
+  const displayName = String(serverProfile.business_name || serverProfile.name || "").trim();
+  return {
+    ...(state.profile || {}),
+    plan: normalizePlan(state.profile?.plan),
+    display_name: displayName || state.profile?.display_name || "",
+    phone_number: String(serverProfile.phone || state.profile?.phone_number || "").trim(),
+    country: normalizeCountryId(serverProfile.country || fallbackCountry || state.profile?.country),
+    business_type_id: String(serverProfile.business_type_id || state.profile?.business_type_id || "").trim() || null,
+    sector_id: String(serverProfile.sector_id || state.profile?.sector_id || "").trim() || null,
+    preferred_labels: normalizePreferredLabels(
+      serverProfile.preferred_labels,
+      serverProfile.business_type_id || state.profile?.business_type_id
+    ),
+    last_action: state.profile?.last_action || "sale",
+    identity_anchor: state.profile?.identity_anchor || "phone",
+    identity_status: state.profile?.identity_status || "verified_server",
+    identity_verified_at: state.profile?.identity_verified_at || Date.now()
+  };
+}
+
+async function pullProfile(fallbackCountry = getSelectedCountryId()) {
+  const response = await fetchAuthenticatedJson("/profile");
+  if (!response.profile) {
+    return null;
+  }
+
+  state.profile = mergeServerProfile(response.profile, fallbackCountry);
+  await saveProfile(state.profile);
+  return response.profile;
+}
+
+function normalizeServerTransactionType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "sell") return "sale";
+  if (normalized === "buy") return "purchase";
+  if (normalized === "pay") return "payment";
+  if (normalized === "receive") return "receipt";
+  return normalized || "sale";
+}
+
+function normalizeImportedRecord(record, index) {
+  const transactionType = normalizeServerTransactionType(record.transaction_type || record.action);
+  const confirmedAt = Number(record.confirmed_at || 0);
+  return {
+    id: 1000000000 + index + 1,
+    server_entry_id: Number(record.entry_id || 0),
+    importedFromServer: true,
+    device_identity: String(record.device_identity || "").trim(),
+    transaction_type: transactionType,
+    label: String(record.label || "").trim() || "Imported record",
+    normalized_label: String(record.normalized_label || "").trim() || normalizeText(record.label || transactionType),
+    amount_minor: Number(record.amount_minor || 0),
+    currency: record.currency || (state.profile?.country === "US" ? "USD" : "NGN"),
+    counterparty: record.counterparty ?? null,
+    source_account: record.source_account ?? null,
+    destination_account: record.destination_account ?? null,
+    input_mode: record.input_mode || "server_restore",
+    confirmation_state: "confirmed",
+    business_type_id: record.business_type_id || state.profile?.business_type_id || null,
+    sector_id: record.sector_id || state.profile?.sector_id || null,
+    country: record.country || state.profile?.country || getSelectedCountryId(),
+    reversed_entry_hash: record.reversed_entry_hash ?? null,
+    reversed_transaction_type: record.reversed_transaction_type ?? null,
+    confirmed_at: confirmedAt,
+    prev_entry_hash: record.prev_entry_hash || "0".repeat(64),
+    entry_hash: record.entry_hash || "",
+    signature: record.signature || null,
+    public_key_fingerprint: record.public_key_fingerprint || null
+  };
+}
+
+async function replaceLocalRecordsWithImported(records) {
+  const importedRecords = records.map((record, index) => normalizeImportedRecord(record, index));
+  await new Promise((resolve, reject) => {
+    const tx = state.db.transaction(["records", "syncQueue"], "readwrite");
+    const recordsStore = tx.objectStore("records");
+    const syncQueueStore = tx.objectStore("syncQueue");
+    recordsStore.clear();
+    syncQueueStore.clear();
+    importedRecords.forEach((record) => {
+      recordsStore.add(record);
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  await refreshSyncQueueCount();
+}
+
+async function pullRecordsFromServer() {
+  const response = await fetchAuthenticatedJson("/records");
+  return Array.isArray(response.records) ? response.records : [];
+}
+
+function getRestoreCountryId() {
+  return getRecognizedCountryId(state.profile?.country) || "NG";
+}
+
+function syncRestoreModalCopy() {
+  const country = getRestoreCountryId();
+  if (els["restore-phone-input"]) {
+    els["restore-phone-input"].placeholder = getOtpPhonePlaceholder(country);
+  }
+  if (els["restore-country-prefix"]) {
+    els["restore-country-prefix"].textContent = getCountryDialCode(country);
+  }
+  if (els["restore-helper-text"]) {
+    els["restore-helper-text"].textContent = state.otpChallenge
+      ? getOtpHelperText()
+      : "Request a restore code to continue.";
+  }
+}
+
+function clearRestoreError() {
+  if (!els["restore-error-text"]) return;
+  els["restore-error-text"].hidden = true;
+  els["restore-error-text"].textContent = "";
+}
+
+function showRestoreError(message) {
+  if (!els["restore-error-text"]) return;
+  els["restore-error-text"].hidden = !message;
+  els["restore-error-text"].textContent = message || "";
+}
+
+function resetRestoreModal() {
+  state.otpChallenge = null;
+  if (els["restore-code-input"]) {
+    els["restore-code-input"].value = "";
+  }
+  if (els["restore-code-wrap"]) {
+    els["restore-code-wrap"].hidden = true;
+  }
+  if (els["restore-send-code"]) {
+    els["restore-send-code"].hidden = false;
+    els["restore-send-code"].disabled = false;
+  }
+  if (els["restore-verify-code"]) {
+    els["restore-verify-code"].hidden = true;
+    els["restore-verify-code"].disabled = false;
+  }
+  clearRestoreError();
+  syncRestoreModalCopy();
+}
+
+function openRestoreModal() {
+  if (!(state.profile && state.profile.country)) {
+    state.profile = {
+      ...(state.profile || {}),
+      plan: normalizePlan(state.profile?.plan),
+      country: getRestoreCountryId()
+    };
+  }
+  syncCountryAwareInputs();
+  if (els["restore-phone-input"]) {
+    els["restore-phone-input"].value = formatPhoneForInput(state.profile?.phone_number || "", getRestoreCountryId());
+  }
+  resetRestoreModal();
+  if (els["restore-modal"]) {
+    els["restore-modal"].hidden = false;
+    focusFirstInteractive(els["restore-modal"]);
+  }
+}
+
+function restoreAccountFlow() {
+  openRestoreModal();
+}
+
+function closeRestoreModal() {
+  if (els["restore-modal"]) {
+    els["restore-modal"].hidden = true;
+  }
+  resetRestoreModal();
+}
+
+async function sendRestoreCode() {
+  const country = getRestoreCountryId();
+  const phoneNumber = normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || "", country);
+  if (!phoneNumber) {
+    showRestoreError(getPhoneValidationMessage(country));
+    return;
+  }
+
+  if (!state.profile) {
+    state.profile = { plan: "free", country };
+  }
+
+  state.profile.phone_number = phoneNumber;
+  clearRestoreError();
+  try {
+    await requestOtpChallengeForPhone(phoneNumber, { fallbackToLocal: false });
+    if (els["restore-code-wrap"]) {
+      els["restore-code-wrap"].hidden = false;
+    }
+    if (els["restore-send-code"]) {
+      els["restore-send-code"].hidden = true;
+    }
+    if (els["restore-verify-code"]) {
+      els["restore-verify-code"].hidden = false;
+    }
+    syncRestoreModalCopy();
+    focusFirstInteractive(els["restore-modal"]);
+  } catch (error) {
+    showRestoreError(error.message || "Failed to request restore code.");
+  }
+}
+
+function buildFallbackRecoveredProfile(country, phoneNumber) {
+  return {
+    ...(state.profile || {}),
+    plan: normalizePlan(state.profile?.plan),
+    display_name: state.profile?.display_name || "",
+    phone_number: phoneNumber,
+    country: normalizeCountryId(country || state.profile?.country),
+    preferred_labels: normalizePreferredLabels(state.profile?.preferred_labels, state.profile?.business_type_id),
+    last_action: state.profile?.last_action || "sale",
+    identity_anchor: "phone",
+    identity_status: state.profile?.identity_status || "verified_server",
+    identity_verified_at: state.profile?.identity_verified_at || Date.now()
+  };
+}
+
+function formatDeviceIdentityShort(deviceIdentity) {
+  const value = String(deviceIdentity || "").trim();
+  return `Device •••${value.slice(-8) || "unknown"}`;
+}
+
+function getDeviceStatusCopy(device) {
+  if (device.is_current) return "This device";
+  if (device.revoked_at) return `Revoked ${new Date(device.revoked_at).toLocaleString()}`;
+  return `Active since ${new Date(device.created_at).toLocaleString()}`;
+}
+
+function getActiveNonCurrentDevices(devices) {
+  return devices.filter((device) => !device.is_current && !device.revoked_at);
+}
+
+function closeRevocationPrompt() {
+  if (els["revoke-old-devices-modal"]) {
+    els["revoke-old-devices-modal"].hidden = true;
+  }
+}
+
+async function getTrustedDevices() {
+  const response = await fetchAuthenticatedJson("/devices");
+  return Array.isArray(response.devices) ? response.devices : [];
+}
+
+function renderDeviceRows(container, devices, onRevoke, emptyMessage) {
+  if (!container) return;
+  if (!devices.length) {
+    container.innerHTML = `<div class="record-meta">${emptyMessage}</div>`;
+    return;
+  }
+
+  container.innerHTML = devices.map((device) => `
+    <div class="device-row">
+      <div class="device-meta">
+        <strong>${formatDeviceIdentityShort(device.device_identity)}</strong>
+        <span class="record-meta">${getDeviceStatusCopy(device)}</span>
+      </div>
+      ${(!device.is_current && !device.revoked_at)
+        ? `<button class="btn btn-secondary" type="button" data-device-revoke="${device.device_identity}">Revoke</button>`
+        : ""}
+    </div>
+  `).join("");
+
+  container.querySelectorAll("[data-device-revoke]").forEach((button) => {
+    button.addEventListener("click", () => {
+      void onRevoke(String(button.dataset.deviceRevoke || ""));
+    });
+  });
+}
+
+async function revokeDevice(deviceIdentity) {
+  if (!deviceIdentity) return;
+  await postJson(state.syncApiBaseUrl, "/identity/revoke", {
+    device_identity: deviceIdentity
+  }, state.authToken);
+}
+
+async function renderTrustedDevicesSettings() {
+  if (!els["settings-devices-v2"]) return;
+  if (!state.authToken) {
+    els["settings-devices-v2"].innerHTML = `<div class="record-meta">Verify your phone on this device to manage trusted devices.</div>`;
+    return;
+  }
+
+  try {
+    const devices = await getTrustedDevices();
+    renderDeviceRows(
+      els["settings-devices-v2"],
+      devices,
+      async (deviceIdentity) => {
+        await revokeDevice(deviceIdentity);
+        await renderTrustedDevicesSettings();
+      },
+      "No trusted devices found yet."
+    );
+  } catch (error) {
+    els["settings-devices-v2"].innerHTML = `<div class="record-meta">${error.message || "Unable to load trusted devices."}</div>`;
+  }
+}
+
+async function maybePromptToRevokeOldDevices() {
+  if (!els["revoke-old-devices-modal"]) return;
+
+  try {
+    const devices = await getTrustedDevices();
+    const candidates = getActiveNonCurrentDevices(devices);
+    if (!candidates.length) {
+      closeRevocationPrompt();
+      return;
+    }
+
+    renderDeviceRows(
+      els["revoke-old-devices-list"],
+      candidates,
+      async (deviceIdentity) => {
+        await revokeDevice(deviceIdentity);
+        await maybePromptToRevokeOldDevices();
+      },
+      "No previous active devices found."
+    );
+    els["revoke-old-devices-modal"].hidden = false;
+    focusFirstInteractive(els["revoke-old-devices-modal"]);
+  } catch (error) {
+    console.warn("Unable to load devices for revocation prompt.", error);
+    closeRevocationPrompt();
+  }
+}
+
+async function finishRestoreFlow(country, phoneNumber) {
+  try {
+    await pullProfile(country);
+  } catch (error) {
+    if (error.statusCode) {
+      console.warn("Profile pull skipped.", error);
+    } else {
+      throw error;
+    }
+  }
+
+  if (!state.profile) {
+    state.profile = buildFallbackRecoveredProfile(country, phoneNumber);
+    await saveProfile(state.profile);
+  } else {
+    state.profile = buildFallbackRecoveredProfile(country, state.profile.phone_number || phoneNumber);
+    await saveProfile(state.profile);
+  }
+
+  const records = await pullRecordsFromServer();
+  await replaceLocalRecordsWithImported(records);
+  hydrateProfileUi();
+  closeRestoreModal();
+  await showCapture();
+  await maybePromptToRevokeOldDevices();
+}
+
+async function verifyRestoreCode() {
+  const country = getRestoreCountryId();
+  const phoneNumber = normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || "", country);
+  const code = (els["restore-code-input"]?.value || "").trim();
+
+  if (!phoneNumber) {
+    showRestoreError(getPhoneValidationMessage(country));
+    return;
+  }
+
+  try {
+    clearRestoreError();
+    if (state.otpChallenge?.source !== "server") {
+      throw new Error("Account restore requires the verification server. Please try again when you are online.");
+    }
+    await verifyActiveOtpChallenge(code, { country });
+    await finishRestoreFlow(country, phoneNumber);
+  } catch (error) {
+    showRestoreError(error.message || "Unable to restore this account right now.");
+  }
 }
 
 function renderFirstRecordGuide(records) {
@@ -4646,7 +5139,10 @@ function saveProfile(profile) {
       profile.preferred_labels = normalizedProfile.preferred_labels;
     }
     tx.objectStore("settings").put(normalizedProfile);
-    tx.oncomplete = () => resolve();
+    tx.oncomplete = () => {
+      resolve();
+      void pushProfile();
+    };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -4720,7 +5216,11 @@ function getRecords() {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("records", "readonly");
     const request = tx.objectStore("records").getAll();
-    request.onsuccess = () => resolve(request.result.sort((a, b) => a.id - b.id));
+    request.onsuccess = () => resolve(request.result.sort((a, b) => {
+      const timeDiff = getRecordConfirmedAtMs(a) - getRecordConfirmedAtMs(b);
+      if (timeDiff) return timeDiff;
+      return Number(a.id || 0) - Number(b.id || 0);
+    }));
     request.onerror = () => reject(request.error);
   });
 }
@@ -4754,7 +5254,18 @@ function getLastRecord() {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("records", "readonly");
     const request = tx.objectStore("records").openCursor(null, "prev");
-    request.onsuccess = () => resolve(request.result ? request.result.value : null);
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) {
+        resolve(null);
+        return;
+      }
+      if (cursor.value?.importedFromServer) {
+        cursor.continue();
+        return;
+      }
+      resolve(cursor.value);
+    };
     request.onerror = () => reject(request.error);
   });
 }
@@ -4771,6 +5282,7 @@ async function loadDeviceTrustState() {
   state.devicePublicKey = devicePublicKey || "";
   state.deviceIdentity = deviceIdentity || "";
   state.publicKeyFingerprint = publicKeyFingerprint || "";
+  syncGlobalDeviceIdentity();
 }
 
 async function loadSyncState() {
@@ -4796,10 +5308,7 @@ async function loadSyncState() {
     : "Waiting for server OTP verification.";
 }
 
-async function ensureDeviceKeyMaterial() {
-  if (!hasVerifiedPhoneAnchor()) {
-    throw new Error("Verify a phone number before setting up this device key.");
-  }
+async function createAndStoreDeviceKeyMaterial() {
   if (!isWebCryptoAvailable()) {
     throw new Error("This browser does not support WebCrypto signing.");
   }
@@ -4829,6 +5338,14 @@ async function ensureDeviceKeyMaterial() {
   state.devicePublicKey = publicKeyString;
   state.deviceIdentity = deviceIdentity;
   state.publicKeyFingerprint = publicKeyFingerprint;
+  syncGlobalDeviceIdentity();
+}
+
+async function ensureDeviceKeyMaterial() {
+  if (!hasVerifiedPhoneAnchor()) {
+    throw new Error("Verify a phone number before setting up this device key.");
+  }
+  await createAndStoreDeviceKeyMaterial();
 }
 
 async function getDevicePrivateKey() {
