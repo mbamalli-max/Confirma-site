@@ -77,7 +77,7 @@ export function validateRuntimeConfig() {
     errors.push("SMS_PROVIDER_ENABLED=true, but no SMS provider integration is configured in this build. Disable SMS_PROVIDER_ENABLED until SMS delivery is implemented.");
   }
 
-  if (strictMode || !config.allowDevOtp) {
+  if (!config.allowDevOtp) {
     if (!config.resendApiKey) {
       errors.push("RESEND_API_KEY is required when email OTP is enabled without development fallback.");
     }
