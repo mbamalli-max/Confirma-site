@@ -1,4 +1,3 @@
-import { Resend } from "resend";
 import { config } from "../config.js";
 import { query } from "../db.js";
 import {
@@ -13,6 +12,18 @@ import {
 } from "../auth-utils.js";
 
 let schemaReady = false;
+let resendModulePromise = null;
+
+async function getResendClient(apiKey) {
+  if (!apiKey) {
+    throw new Error("Email verification is not configured.");
+  }
+  if (!resendModulePromise) {
+    resendModulePromise = import("resend");
+  }
+  const { Resend } = await resendModulePromise;
+  return new Resend(apiKey);
+}
 
 function getOtpIdentifier(channel, body) {
   if (channel === "sms") {
@@ -103,11 +114,7 @@ async function getUserByEmail(email) {
 }
 
 async function sendOtpByEmail(email, code) {
-  if (!config.resendApiKey) {
-    throw new Error("Email verification is not configured.");
-  }
-
-  const resend = new Resend(config.resendApiKey);
+  const resend = await getResendClient(config.resendApiKey);
   await resend.emails.send({
     from: config.resendFromEmail,
     to: email,

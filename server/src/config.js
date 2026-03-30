@@ -23,7 +23,7 @@ function isPlaceholderSecret(value, placeholders = []) {
 export const config = {
   nodeEnv: process.env.NODE_ENV || "development",
   host: process.env.HOST || "0.0.0.0",
-  port: Number(process.env.PORT || 8787),
+  port: Number(process.env.PORT || 8080),
   databaseUrl: normalizeDatabaseUrl(process.env.DATABASE_URL),
   databaseSsl: String(process.env.DATABASE_SSL || "false") === "true",
   jwtSecret: process.env.JWT_SECRET || "konfirmata-dev-jwt-secret",

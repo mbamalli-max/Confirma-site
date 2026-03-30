@@ -1,13 +1,38 @@
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
-import PDFDocument from "pdfkit";
-import QRCode from "qrcode";
-import { Resend } from "resend";
 import { authenticateRequest, buildReceiptSignature } from "../auth-utils.js";
 import { query } from "../db.js";
 
 const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL || "https://konfirmata.com";
 const PATENT_NOTICE = "Protected under USPTO Provisional Application 63/987,858. Konfirmata Temporal Attestation System (TAS). Unauthorized reproduction of this attestation mechanism is prohibited.";
+let resendModulePromise = null;
+let pdfkitModulePromise = null;
+let qrCodeModulePromise = null;
+
+async function getResendClient(apiKey) {
+  if (!apiKey) return null;
+  if (!resendModulePromise) {
+    resendModulePromise = import("resend");
+  }
+  const { Resend } = await resendModulePromise;
+  return new Resend(apiKey);
+}
+
+async function getPdfDocumentConstructor() {
+  if (!pdfkitModulePromise) {
+    pdfkitModulePromise = import("pdfkit");
+  }
+  const module = await pdfkitModulePromise;
+  return module.default;
+}
+
+async function getQrCodeModule() {
+  if (!qrCodeModulePromise) {
+    qrCodeModulePromise = import("qrcode");
+  }
+  const module = await qrCodeModulePromise;
+  return module.default || module;
+}
 
 function parseWindowDays(value, fallback = 30) {
   const parsed = Number(value);
@@ -267,6 +292,8 @@ async function buildVerifiedReportPdf({
   amountKobo,
   keyRotationEvents
 }) {
+  const PDFDocument = await getPdfDocumentConstructor();
+  const QRCode = await getQrCodeModule();
   const doc = new PDFDocument({ size: "A4", margin: 50 });
   const chunks = [];
 
@@ -395,7 +422,8 @@ async function buildVerifiedReportPdf({
 async function sendVerifiedReportEmail({ email, filename, pdfBuffer, vtId, verifyUrl }) {
   if (!email || !process.env.RESEND_API_KEY) return;
 
-  const resend = new Resend(process.env.RESEND_API_KEY);
+  const resend = await getResendClient(process.env.RESEND_API_KEY);
+  if (!resend) return;
   await resend.emails.send({
     from: "Konfirmata <reports@konfirmata.com>",
     to: email,

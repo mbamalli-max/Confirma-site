@@ -9,9 +9,27 @@ import { registerAttestRoutes } from "./src/routes/attest.js";
 import { registerPaymentRoutes } from "./src/routes/payment.js";
 import { registerAccountRoutes } from "./src/routes/account.js";
 
+async function registerRouteGroup(app, name, registerFn) {
+  try {
+    await registerFn(app);
+  } catch (error) {
+    app.log.error({ err: error, route_group: name }, "Route registration failed; continuing startup");
+  }
+}
+
 async function main() {
-  validateRuntimeConfig();
   const app = Fastify({ logger: true });
+
+  try {
+    validateRuntimeConfig();
+  } catch (err) {
+    if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEV_OTP !== "true") {
+      console.error("Fatal config error:", err.message);
+      process.exit(1);
+    } else {
+      console.warn("Config warnings (non-fatal):", err.message);
+    }
+  }
 
   app.log.info(getAuthDeliverySummary(), "Auth delivery config");
 
@@ -25,18 +43,21 @@ async function main() {
     global: false
   });
 
-  app.get("/health", async () => ({
-    ok: true,
-    service: "konfirmata-sync",
-    ts: new Date().toISOString()
-  }));
+  app.get("/health", async (request, reply) => {
+    return reply.send({
+      status: "ok",
+      service: "konfirmata-sync-server",
+      timestamp: new Date().toISOString(),
+      env: process.env.NODE_ENV || "development"
+    });
+  });
 
-  await registerAuthRoutes(app);
-  await registerAccountRoutes(app);
-  await registerSyncRoutes(app);
-  await registerIdentityRoutes(app);
-  await registerAttestRoutes(app);
-  await registerPaymentRoutes(app);
+  await registerRouteGroup(app, "auth", registerAuthRoutes);
+  await registerRouteGroup(app, "account", registerAccountRoutes);
+  await registerRouteGroup(app, "sync", registerSyncRoutes);
+  await registerRouteGroup(app, "identity", registerIdentityRoutes);
+  await registerRouteGroup(app, "attest", registerAttestRoutes);
+  await registerRouteGroup(app, "payment", registerPaymentRoutes);
 
   await app.listen({ host: config.host, port: config.port });
 }
