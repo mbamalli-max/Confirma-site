@@ -504,7 +504,7 @@ function cacheElements() {
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-preferred-edit-v2", "settings-preferred-editor", "settings-preferred-grid", "settings-preferred-done-v2",
     "settings-voice-corrections-v2", "anomaly-panel", "anomaly-badge", "anomaly-list", "mark-anomalies-reviewed",
-    "settings-capture-v2", "settings-summary-v2", "settings-trust-v3", "settings-devices-v2", "settings-change-profile-v2",
+    "settings-capture-v2", "settings-summary-v2", "settings-trust-toggle", "settings-trust-panel", "settings-trust-v3", "settings-devices-v2", "settings-change-profile-v2",
     "settings-open-trust-v3", "export-button-v2", "export-status-v2", "export-trust-status-v3", "export-open-trust-v3",
     "rewarded-export-wrap", "rewarded-export-button", "rewarded-ad-modal", "rewarded-ad-slot", "rewarded-ad-countdown", "rewarded-ad-complete",
     "verified-report-section", "verified-report-region-note", "payment-tiers", "payment-status",
@@ -599,6 +599,7 @@ function wireEvents() {
   document.getElementById("back-home").addEventListener("click", () => showScreen("screen-capture"));
   document.getElementById("settings-change-profile-v2").addEventListener("click", openChangeProfileConfirm);
   document.getElementById("settings-open-trust-v3").addEventListener("click", () => openTrustSetup("screen-settings"));
+  document.getElementById("settings-trust-toggle").addEventListener("click", toggleSettingsTrustDetails);
   document.getElementById("upgrade-plan-btn")?.addEventListener("click", () => {
     renderExportScreen();
     showScreen("screen-export");
@@ -685,6 +686,7 @@ function wireEvents() {
     });
   });
   wireChartToggle();
+  syncSettingsTrustDetailsToggle();
 }
 
 function wirePaymentTierButtons() {
@@ -702,6 +704,11 @@ function wirePaymentTierButtons() {
 function registerPwa() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/app/sw.js");
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      if (event.data?.type === "SW_UPDATED") {
+        showUpdateBanner();
+      }
+    });
   }
 
   // PWA install prompt (Chrome/Android/Edge)
@@ -747,6 +754,13 @@ function registerPwa() {
       btn.hidden = true;
       panel.hidden = false;
     }
+  }
+}
+
+function showUpdateBanner() {
+  const banner = document.getElementById("sw-update-banner");
+  if (banner) {
+    banner.hidden = false;
   }
 }
 
@@ -922,6 +936,7 @@ async function finishOnboarding() {
     ...(state.profile || {}),
     plan: normalizePlan(state.profile?.plan),
     preferred_labels: state.profile?.preferred_labels || [],
+    created_at: state.profile?.created_at || new Date().toISOString(),
     display_name: displayName,
     phone_number: normalizedPhoneNumber,
     email,
@@ -1159,6 +1174,39 @@ function renderDashboardRecords(records) {
   );
 }
 
+function maskContact(value) {
+  const contact = String(value || "").trim();
+  if (!contact) return value;
+
+  if (contact.includes("@")) {
+    const [localPart, ...domainParts] = contact.split("@");
+    const domain = domainParts.join("@");
+    if (!localPart || !domain) return value;
+    return `${localPart.slice(0, 2)}***@${domain}`;
+  }
+
+  if (contact.startsWith("+") || /^\d+$/.test(contact)) {
+    return `${contact.slice(0, 4)}***${contact.slice(-4)}`;
+  }
+
+  return value;
+}
+
+function syncSettingsTrustDetailsToggle() {
+  if (!els["settings-trust-toggle"] || !els["settings-trust-panel"]) return;
+  const expanded = !els["settings-trust-panel"].hidden;
+  els["settings-trust-toggle"].textContent = expanded
+    ? "Device & sync details ▾"
+    : "Device & sync details ▸";
+  els["settings-trust-toggle"].setAttribute("aria-expanded", expanded ? "true" : "false");
+}
+
+function toggleSettingsTrustDetails() {
+  if (!els["settings-trust-panel"]) return;
+  els["settings-trust-panel"].hidden = !els["settings-trust-panel"].hidden;
+  syncSettingsTrustDetailsToggle();
+}
+
 async function renderSettings() {
   if (!state.profile) return;
   refreshTrustSetupButtons();
@@ -1182,8 +1230,8 @@ async function renderSettings() {
     ${renderSettingsRow("Sector", sector?.name || "Not selected")}
     ${renderSettingsRow("Business type", businessType?.name || "Not selected")}
     ${state.profile.display_name ? renderSettingsRow("Name", state.profile.display_name) : ""}
-    ${state.profile.phone_number ? renderSettingsRow("Phone", state.profile.phone_number) : ""}
-    ${state.profile.email ? renderSettingsRow("Email", state.profile.email) : ""}
+    ${state.profile.phone_number ? renderSettingsRow("Phone", maskContact(state.profile.phone_number)) : ""}
+    ${state.profile.email ? renderSettingsRow("Email", maskContact(state.profile.email)) : ""}
     ${state.profile.region ? renderSettingsRow("Region", state.profile.region) : ""}
     ${renderSettingsRow("Last action", friendlyActionLabel(state.profile.last_action || "sale"))}
     ${renderSettingsRow("Plan", getPlanLabel(state.profile.plan))}
@@ -1207,9 +1255,19 @@ async function renderSettings() {
     ${renderSettingsRow("Queued sync entries", String(state.syncQueueCount))}
     ${renderSettingsRow("Sync status", state.syncStatus || "Idle")}
     ${state.lastSyncAt ? renderSettingsRow("Last sync", new Date(state.lastSyncAt).toLocaleString()) : ""}
-    ${renderSettingsRow("Recovery contact", state.profile.email || state.profile.phone_number || "Not set")}
-    ${renderSettingsRow("Week B status", isSigningReady() ? "This device can sign locally and queue entries for server sync." : `Finish ${getVerificationChannelLabel().toLowerCase()} and device key setup before confirming new entries.`)}
+    ${renderSettingsRow("Recovery contact", maskContact(state.profile.email || state.profile.phone_number || "Not set"))}
   `;
+
+  if (els["settings-open-trust-v3"]) {
+    if (state.profile?.email_verified) {
+      els["settings-open-trust-v3"].textContent = "Email verified ✓";
+    } else if (state.profile?.phone_verified) {
+      els["settings-open-trust-v3"].textContent = "Device verified ✓";
+    } else {
+      els["settings-open-trust-v3"].textContent = "Verify this device";
+    }
+  }
+  syncSettingsTrustDetailsToggle();
 
   renderRecordingSetupSummary();
 
@@ -2722,6 +2780,69 @@ async function refreshTierButtonLabels() {
   }
 }
 
+function canClaimFreeReport() {
+  return localStorage.getItem("freeReportUsed") !== "1"
+    && (
+      !state.profile?.created_at
+      || Date.now() - new Date(state.profile.created_at).getTime() < 60 * 24 * 60 * 60 * 1000
+    );
+}
+
+function ensureFreeReportOfferElements() {
+  const paymentTiers = els["payment-tiers"];
+  const parent = paymentTiers?.parentElement;
+  if (!(paymentTiers && parent)) {
+    return { banner: null, button: null };
+  }
+
+  let banner = document.getElementById("free-report-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.className = "record-meta";
+    banner.id = "free-report-banner";
+    banner.textContent = "🎁 Your first Verified Report is free — no payment needed.";
+    parent.insertBefore(banner, paymentTiers);
+  }
+
+  let button = document.getElementById("free-report-btn");
+  if (!button) {
+    button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-primary";
+    button.id = "free-report-btn";
+    button.textContent = "Get free report";
+    button.addEventListener("click", () => {
+      void claimFreeReport();
+    });
+    parent.insertBefore(button, paymentTiers);
+  }
+
+  return { banner, button };
+}
+
+function syncFreeReportOffer() {
+  const shouldShow = Boolean(
+    els["verified-report-section"]
+    && !els["verified-report-section"].hidden
+    && els["payment-tiers"]
+    && !els["payment-tiers"].hidden
+    && canClaimFreeReport()
+  );
+
+  let banner = document.getElementById("free-report-banner");
+  let button = document.getElementById("free-report-btn");
+  if (shouldShow && (!banner || !button)) {
+    ({ banner, button } = ensureFreeReportOfferElements());
+  }
+
+  if (banner) {
+    banner.hidden = !shouldShow;
+  }
+  if (button) {
+    button.hidden = !shouldShow;
+  }
+}
+
 function renderExportScreen() {
   refreshTrustSetupButtons();
   const verifiedReportsAvailable = supportsVerifiedReports(state.profile?.country);
@@ -2749,9 +2870,10 @@ function renderExportScreen() {
       ${state.publicKeyFingerprint ? renderSettingsRow("Device ID", state.publicKeyFingerprint.slice(0, 8)) : ""}
       ${renderSettingsRow("Sync status", state.syncStatus || "Idle")}
       ${renderSettingsRow("Queued sync entries", String(state.syncQueueCount))}
-      ${renderSettingsRow("Recovery contact", state.profile?.email || state.profile?.phone_number || "Not set")}
+      ${renderSettingsRow("Recovery contact", maskContact(state.profile?.email || state.profile?.phone_number || "Not set"))}
     `;
   }
+  syncFreeReportOffer();
   void refreshTierButtonLabels();
   refreshRewardedExportState();
   refreshBannerAd("screen-export");
@@ -2946,6 +3068,64 @@ function downloadBase64File(base64, filename, mimeType) {
   URL.revokeObjectURL(url);
 }
 
+function getVerifiedReportDownloadPayload(response) {
+  if (!(response?.ok && response?.pdf_base64 && response?.filename)) {
+    throw new Error("Invalid PDF response.");
+  }
+  return response;
+}
+
+function downloadVerifiedReportPayload(response) {
+  const payload = getVerifiedReportDownloadPayload(response);
+  downloadBase64File(payload.pdf_base64, payload.filename, "application/pdf");
+  setPaymentStatus("Verified report downloaded.");
+  return payload;
+}
+
+async function claimFreeReport() {
+  if (!state.authToken || !state.deviceIdentity) {
+    setPaymentStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before purchasing a verified report.`);
+    return;
+  }
+
+  if (!supportsVerifiedReports(state.profile?.country)) {
+    setPaymentStatus("Verified Reports are coming soon for your region.");
+    return;
+  }
+
+  const button = document.getElementById("free-report-btn");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Generating free report...";
+  }
+  setPaymentStatus("Generating your free verified report...");
+
+  try {
+    const response = await postJson(state.syncApiBaseUrl, "/payment/generate-pdf", {
+      free_claim: true
+    }, state.authToken);
+    getVerifiedReportDownloadPayload(response);
+    localStorage.setItem("freeReportUsed", "1");
+    if (state.profile) {
+      state.profile.free_report_used = true;
+    }
+    syncFreeReportOffer();
+    downloadVerifiedReportPayload(response);
+  } catch (error) {
+    console.error("Free verified report generation failed.", error);
+    if (error?.statusCode === 403 && String(error.message || "").trim() === "Free report already claimed.") {
+      localStorage.setItem("freeReportUsed", "1");
+      syncFreeReportOffer();
+    }
+    setPaymentStatus(error.message || "Unable to generate your free verified report right now.");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Get free report";
+    }
+  }
+}
+
 async function initPaystackPayment(tier, amountKobo, windowDays) {
   try {
     await requireFreshPin();
@@ -3009,12 +3189,7 @@ async function handlePaymentSuccess(transaction, windowDays) {
       window_days: windowDays
     }, state.authToken);
 
-    if (!(response?.ok && response?.pdf_base64 && response?.filename)) {
-      throw new Error("Invalid PDF response.");
-    }
-
-    downloadBase64File(response.pdf_base64, response.filename, "application/pdf");
-    setPaymentStatus("Verified report downloaded.");
+    downloadVerifiedReportPayload(response);
   } catch (error) {
     console.error("Verified report generation failed.", error);
     setPaymentStatus("Report generation failed. Contact support with reference: " + reference);
@@ -3120,7 +3295,7 @@ function rememberVoiceTranscript(transcript, context) {
 
 function getSpeechRecognitionErrorMessage(errorType) {
   if (errorType === "not-allowed") {
-    return "Microphone access was denied. Please allow microphone access in your browser settings.";
+    return "Microphone access denied. In Safari, go to Settings → Safari → Microphone and allow access for this site.";
   }
   if (errorType === "no-speech") {
     return "No speech detected. Please try again.";
@@ -3260,7 +3435,7 @@ function parseNaturalTransaction(input) {
   return null;
 }
 
-function startVoiceRecordShortcut() {
+async function startVoiceRecordShortcut() {
   setVoiceRecordError("");
   clearPendingVoiceTranscript();
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -3274,7 +3449,9 @@ function startVoiceRecordShortcut() {
   const recognition = new SpeechRec();
   state.activeRecognition = recognition;
   setRecordingState(true);
-  recognition.lang = state.profile.country === "US" ? "en-US" : "en-NG";
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  recognition.lang = isSafari ? "en-US"
+    : (state.profile?.country === "US" ? "en-US" : "en-NG");
   recognition.continuous = false;
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
@@ -3319,6 +3496,13 @@ function startVoiceRecordShortcut() {
     setRecordingState(false);
   };
 
+  if (isSafari && navigator.mediaDevices?.getUserMedia) {
+    await navigator.mediaDevices.getUserMedia({ audio: true })
+      .then((stream) => {
+        stream.getTracks().forEach((track) => track.stop());
+      })
+      .catch(() => {});
+  }
   recognition.start();
 }
 
@@ -3528,7 +3712,9 @@ async function startSpeechMatch() {
   const recognition = new SpeechRec();
   state.activeRecognition = recognition;
   setRecordingState(true);
-  recognition.lang = state.profile.country === "US" ? "en-US" : "en-NG";
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  recognition.lang = isSafari ? "en-US"
+    : (state.profile?.country === "US" ? "en-US" : "en-NG");
   recognition.continuous = false;
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
@@ -3567,6 +3753,13 @@ async function startSpeechMatch() {
     }
     setRecordingState(false);
   };
+  if (isSafari && navigator.mediaDevices?.getUserMedia) {
+    await navigator.mediaDevices.getUserMedia({ audio: true })
+      .then((stream) => {
+        stream.getTracks().forEach((track) => track.stop());
+      })
+      .catch(() => {});
+  }
   recognition.start();
 }
 
@@ -5105,9 +5298,9 @@ function renderOtpScreen() {
     ${renderSettingsRow("Device key", getDeviceKeyStatusLabel())}
     ${state.publicKeyFingerprint ? renderSettingsRow("Device ID", state.publicKeyFingerprint.slice(0, 8)) : ""}
     ${renderSettingsRow("Auth session", getAuthSessionStatusLabel())}
-    ${renderSettingsRow("Recovery contact", channel === "sms" ? (state.profile?.phone_number || "Not set") : (state.profile?.email || "Not set"))}
-    ${state.profile?.phone_number ? renderSettingsRow("Phone on profile", state.profile.phone_number) : ""}
-    ${renderSettingsRow("Email for delivery", state.profile?.email || "Not set")}
+    ${renderSettingsRow("Recovery contact", maskContact(channel === "sms" ? (state.profile?.phone_number || "Not set") : (state.profile?.email || "Not set")))}
+    ${state.profile?.phone_number ? renderSettingsRow("Phone on profile", maskContact(state.profile.phone_number)) : ""}
+    ${renderSettingsRow("Email for delivery", maskContact(state.profile?.email || "Not set"))}
   `;
   clearOtpError();
 }

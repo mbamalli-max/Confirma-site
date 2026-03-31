@@ -216,11 +216,36 @@
     .device-meta span {
       overflow-wrap: anywhere;
     }
+
+    .collapsible-toggle {
+      display: inline-flex;
+      align-items: center;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--primary-mid);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .collapsible-toggle:hover,
+    .collapsible-toggle:focus-visible {
+      color: var(--primary);
+    }
+
+    .collapsible-panel {
+      margin-top: 0.85rem;
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" integrity="sha384-dug+JxfBvklEQdJ4AYuBBAIScUz0bVN73xpy273gcAwHjb3qI0fXmuYNaNfdyYJG" crossorigin="anonymous"></script>
   <title>Konfirmata</title>
 </head>
 <body>
+  <div id="sw-update-banner" hidden style="position:fixed;top:0;left:0;right:0;background:#1B2F1F;color:#fff;padding:10px 16px;z-index:9999;display:flex;justify-content:space-between;align-items:center;font-size:14px">
+    <span>New version available</span>
+    <button onclick="window.location.reload()" style="background:#52B788;color:#fff;border:none;padding:6px 14px;border-radius:20px;cursor:pointer;font-size:13px">Refresh</button>
+  </div>
   <div id="pin-lock-screen" hidden>
     <div class="pin-lock-card">
       <div class="pin-lock-mark">📒</div>
@@ -614,8 +639,12 @@
         <div class="settings-list" id="settings-profile-v2"></div>
       </div>
       <div class="panel">
-        <h2>Device trust</h2>
-        <div class="settings-list" id="settings-trust-v3"></div>
+        <button class="collapsible-toggle" id="settings-trust-toggle" type="button" aria-expanded="false" aria-controls="settings-trust-panel">
+          Device & sync details ▸
+        </button>
+        <div class="collapsible-panel" id="settings-trust-panel" hidden>
+          <div class="settings-list" id="settings-trust-v3"></div>
+        </div>
       </div>
       <div class="panel">
         <h2>Recording setup</h2>

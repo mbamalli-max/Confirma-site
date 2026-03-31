@@ -8,6 +8,7 @@ const PATENT_NOTICE = "Protected under USPTO Provisional Application 63/987,858.
 let resendModulePromise = null;
 let pdfkitModulePromise = null;
 let qrCodeModulePromise = null;
+let paymentProfileColumnsReady = false;
 
 async function getResendClient(apiKey) {
   if (!apiKey) return null;
@@ -356,13 +357,14 @@ async function upsertPaymentRecord(payment) {
   );
 }
 
-async function activatePlan(phoneNumber, tier) {
-  const normalizedTier = String(tier || "").trim().toLowerCase();
-  if (!(normalizedTier === "basic" || normalizedTier === "pro")) return;
+async function ensurePaymentProfileColumns() {
+  if (paymentProfileColumnsReady) return;
 
   await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS phone_number TEXT`);
   await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan TEXT`);
   await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan_activated_at TIMESTAMPTZ`);
+  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS free_report_used BOOLEAN DEFAULT FALSE`);
+  await query(`UPDATE profiles SET free_report_used = FALSE WHERE free_report_used IS NULL`);
   await query(
     `
       UPDATE profiles p
@@ -372,6 +374,78 @@ async function activatePlan(phoneNumber, tier) {
         AND (p.phone_number IS NULL OR p.phone_number <> u.phone_number)
     `
   );
+
+  paymentProfileColumnsReady = true;
+}
+
+async function ensureProfileRowForPhone(phoneNumber) {
+  await ensurePaymentProfileColumns();
+  await query(
+    `
+      INSERT INTO profiles (
+        user_id,
+        phone_number,
+        updated_at
+      )
+      SELECT
+        u.id,
+        u.phone_number,
+        NOW()
+      FROM users u
+      WHERE u.phone_number = $1
+      ON CONFLICT (user_id)
+      DO UPDATE SET
+        phone_number = EXCLUDED.phone_number
+    `,
+    [phoneNumber]
+  );
+}
+
+async function getFreeReportContext(phoneNumber) {
+  await ensureProfileRowForPhone(phoneNumber);
+  const result = await query(
+    `
+      SELECT
+        u.email,
+        COALESCE(p.business_name, p.name, '') AS business_name,
+        COALESCE(p.free_report_used, FALSE) AS free_report_used,
+        (
+          SELECT MIN(di.created_at)
+          FROM device_identities di
+          WHERE di.phone_number = u.phone_number
+        ) AS first_device_created_at,
+        EXISTS (
+          SELECT 1
+          FROM payments pay
+          WHERE pay.phone_number = u.phone_number
+            AND pay.vt_id IS NOT NULL
+            AND COALESCE(pay.paystack_status, '') = 'success'
+            AND COALESCE(pay.amount_kobo, 0) > 0
+        ) AS has_paid_report
+      FROM users u
+      LEFT JOIN profiles p
+        ON p.user_id = u.id
+      WHERE u.phone_number = $1
+      LIMIT 1
+    `,
+    [phoneNumber]
+  );
+  return result.rows[0] || null;
+}
+
+function canUseFreeReport(context) {
+  const accountCreatedAtMs = Date.parse(String(context?.first_device_created_at || ""));
+  const qualifiesByAge = Number.isNaN(accountCreatedAtMs)
+    ? true
+    : Date.now() - accountCreatedAtMs < 60 * 24 * 60 * 60 * 1000;
+  return qualifiesByAge || !context?.has_paid_report;
+}
+
+async function activatePlan(phoneNumber, tier) {
+  const normalizedTier = String(tier || "").trim().toLowerCase();
+  if (!(normalizedTier === "basic" || normalizedTier === "pro")) return;
+
+  await ensurePaymentProfileColumns();
 
   const updateResult = await query(
     `
@@ -679,6 +753,59 @@ async function buildVerifiedReportPdf({
   return pdfReady;
 }
 
+async function assertActiveDevice(phoneNumber, deviceIdentity) {
+  const device = await getDeviceRecord(deviceIdentity);
+  if (!device || device.phone_number !== phoneNumber) {
+    const error = new Error("Device does not belong to this account.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (device.status !== "ACTIVE") {
+    const error = new Error("Device is not active.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (device.revoked_at) {
+    const error = new Error("Device has been revoked.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return device;
+}
+
+async function generateVerifiedReport({
+  phoneNumber,
+  deviceIdentity,
+  businessName,
+  email,
+  tier,
+  windowDays,
+  amountKobo
+}) {
+  const attestation = await createAttestation(phoneNumber, deviceIdentity, windowDays);
+  const keyRotationEvents = await getKeyRotationCount(deviceIdentity);
+  const filename = `confirma-verified-report-${new Date().toISOString().slice(0, 10)}.pdf`;
+  const pdfBuffer = await buildVerifiedReportPdf({
+    attestation,
+    businessName,
+    phoneNumber,
+    email,
+    tier,
+    windowDays,
+    amountKobo,
+    keyRotationEvents
+  });
+
+  return {
+    attestation,
+    filename,
+    pdfBuffer
+  };
+}
+
 async function sendVerifiedReportEmail({ email, filename, pdfBuffer, vtId, verifyUrl }) {
   if (!email || !process.env.RESEND_API_KEY) return;
 
@@ -772,8 +899,76 @@ export async function registerPaymentRoutes(app) {
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
+    const freeClaim = request.body?.free_claim === true;
     const reference = String(request.body?.reference || "").trim();
     const requestedWindowDays = parseWindowDays(request.body?.window_days, 90);
+
+    if (freeClaim) {
+      const deviceIdentity = String(auth.device_identity || request.headers["x-device-identity"] || "").trim();
+      if (!deviceIdentity) {
+        return reply.code(400).send({ error: "device_identity is required." });
+      }
+
+      const freeReportContext = await getFreeReportContext(auth.phone_number);
+      if (!freeReportContext) {
+        return reply.code(404).send({ error: "User account not found." });
+      }
+
+      if (freeReportContext.free_report_used) {
+        return reply.code(403).send({ error: "Free report already claimed." });
+      }
+
+      if (!canUseFreeReport(freeReportContext)) {
+        return reply.code(403).send({ error: "Free report unavailable for this account." });
+      }
+
+      try {
+        await assertActiveDevice(auth.phone_number, deviceIdentity);
+      } catch (error) {
+        return reply.code(error.statusCode || 500).send({ error: error.message });
+      }
+
+      const report = await generateVerifiedReport({
+        phoneNumber: auth.phone_number,
+        deviceIdentity,
+        businessName: String(freeReportContext.business_name || "").trim(),
+        email: String(freeReportContext.email || "").trim(),
+        tier: "free",
+        windowDays: requestedWindowDays,
+        amountKobo: 0
+      });
+
+      const claimResult = await query(
+        `
+          UPDATE profiles
+          SET free_report_used = TRUE
+          WHERE phone_number = $1
+            AND COALESCE(free_report_used, FALSE) = FALSE
+        `,
+        [auth.phone_number]
+      );
+
+      if (!claimResult.rowCount) {
+        return reply.code(403).send({ error: "Free report already claimed." });
+      }
+
+      sendVerifiedReportEmail({
+        email: String(freeReportContext.email || "").trim(),
+        filename: report.filename,
+        pdfBuffer: report.pdfBuffer,
+        vtId: report.attestation.vt_id,
+        verifyUrl: report.attestation.verify_url
+      }).catch((error) => {
+        request.log.error({ err: error }, "Verified report email delivery failed.");
+      });
+
+      return {
+        ok: true,
+        pdf_base64: report.pdfBuffer.toString("base64"),
+        filename: report.filename,
+        vt_id: report.attestation.vt_id
+      };
+    }
 
     if (!reference) {
       return reply.code(400).send({ error: "reference is required." });
@@ -814,21 +1009,12 @@ export async function registerPaymentRoutes(app) {
       return reply.code(400).send({ error: "device_identity is required in payment metadata." });
     }
 
-    const device = await getDeviceRecord(deviceIdentity);
-    if (!device || device.phone_number !== auth.phone_number) {
-      return reply.code(403).send({ error: "Device does not belong to this account." });
+    try {
+      await assertActiveDevice(auth.phone_number, deviceIdentity);
+    } catch (error) {
+      return reply.code(error.statusCode || 500).send({ error: error.message });
     }
 
-    if (device.status !== "ACTIVE") {
-      return reply.code(403).send({ error: "Device is not active." });
-    }
-
-    if (device.revoked_at) {
-      return reply.code(403).send({ error: "Device has been revoked." });
-    }
-
-    const attestation = await createAttestation(auth.phone_number, deviceIdentity, effectiveWindowDays);
-    const keyRotationEvents = await getKeyRotationCount(deviceIdentity);
     const email = String(
       result.data.customer?.email
       || metadataFields.email
@@ -840,17 +1026,14 @@ export async function registerPaymentRoutes(app) {
       || result.data.customer?.first_name
       || ""
     ).trim();
-    const filename = `confirma-verified-report-${new Date().toISOString().slice(0, 10)}.pdf`;
-
-    const pdfBuffer = await buildVerifiedReportPdf({
-      attestation,
-      businessName,
+    const report = await generateVerifiedReport({
       phoneNumber: auth.phone_number,
+      deviceIdentity,
+      businessName,
       email,
       tier,
       windowDays: effectiveWindowDays,
-      amountKobo: Number(result.data.amount || 0),
-      keyRotationEvents
+      amountKobo: Number(result.data.amount || 0)
     });
 
     await upsertPaymentRecord({
@@ -861,25 +1044,25 @@ export async function registerPaymentRoutes(app) {
       tier,
       window_days: effectiveWindowDays,
       paystack_status: String(result.data.status || "success"),
-      vt_id: attestation.vt_id,
+      vt_id: report.attestation.vt_id,
       completed_at: result.data.paid_at || new Date().toISOString()
     });
 
     sendVerifiedReportEmail({
       email,
-      filename,
-      pdfBuffer,
-      vtId: attestation.vt_id,
-      verifyUrl: attestation.verify_url
+      filename: report.filename,
+      pdfBuffer: report.pdfBuffer,
+      vtId: report.attestation.vt_id,
+      verifyUrl: report.attestation.verify_url
     }).catch((error) => {
       request.log.error({ err: error }, "Verified report email delivery failed.");
     });
 
     return {
       ok: true,
-      pdf_base64: pdfBuffer.toString("base64"),
-      filename,
-      vt_id: attestation.vt_id
+      pdf_base64: report.pdfBuffer.toString("base64"),
+      filename: report.filename,
+      vt_id: report.attestation.vt_id
     };
   });
 }
