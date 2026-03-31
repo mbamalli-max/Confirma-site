@@ -354,6 +354,7 @@ const state = {
   isRecording: false,
   pinEntry: "",
   pinAttempts: 0,
+  lastPinUnlockAt: 0,
   reminderDismissed: false,
   isConfirming: false,
   dashboardMetricsCache: null,
@@ -2351,6 +2352,12 @@ async function pinMatchesProfile(pin) {
   return legacyHashPin(pin) === state.profile.pinHash;
 }
 
+async function verifyPin(inputPin) {
+  const pin = String(inputPin || "").trim();
+  if (!pin) return false;
+  return pinMatchesProfile(pin);
+}
+
 async function upgradeLegacyPinHash(pin) {
   if (!(state.profile && state.profile.pinHash && state.profile.pinKdf !== PASSCODE_KDF_VERSION)) return;
   state.profile.pinSalt = createPinSalt();
@@ -2590,6 +2597,7 @@ async function unlockWithPasscode() {
       await upgradeLegacyPinHash(passcode);
     }
     state.pinAttempts = 0;
+    state.lastPinUnlockAt = Date.now();
     syncPasscodeReminderDisplays();
     hidePinLock();
     els["pin-error"].textContent = "";
@@ -2608,6 +2616,24 @@ async function unlockWithPasscode() {
   window.setTimeout(() => {
     if (els["pin-error"]) els["pin-error"].textContent = "";
   }, 2400);
+}
+
+async function requireFreshPin() {
+  if (!(state.profile?.pinEnabled && state.profile?.pinHash)) return;
+  if (Date.now() - (state.lastPinUnlockAt || 0) < 4 * 60 * 60 * 1000) return;
+
+  const confirmedPin = await requestCurrentPinConfirmation({
+    title: "Confirm PIN to continue",
+    copy: "Enter your current passcode to continue.",
+    confirmText: "Continue",
+    wrongPinMessage: "Incorrect passcode."
+  });
+
+  if (!confirmedPin) {
+    throw new Error("cancelled");
+  }
+
+  state.lastPinUnlockAt = Date.now();
 }
 
 function formatVerifiedReportSpanDate(date) {
@@ -2920,7 +2946,13 @@ function downloadBase64File(base64, filename, mimeType) {
   URL.revokeObjectURL(url);
 }
 
-function initPaystackPayment(tier, amountKobo, windowDays) {
+async function initPaystackPayment(tier, amountKobo, windowDays) {
+  try {
+    await requireFreshPin();
+  } catch {
+    return;
+  }
+
   if (!state.authToken || !state.deviceIdentity) {
     setPaymentStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before purchasing a verified report.`);
     return;
@@ -4432,7 +4464,7 @@ async function submitPinConfirmation() {
     return;
   }
 
-  if (await pinMatchesProfile(pin)) {
+  if (await verifyPin(pin)) {
     if (!state.profile.pinSalt) {
       await upgradeLegacyPinHash(pin);
     }
