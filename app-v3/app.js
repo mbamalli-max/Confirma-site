@@ -1201,8 +1201,7 @@ async function renderSettings() {
     ${renderSettingsRow("Phone anchor", getPhoneAnchorStatusLabel())}
     ${state.profile.identity_verified_at ? renderSettingsRow("Verified on", new Date(state.profile.identity_verified_at).toLocaleString()) : ""}
     ${renderSettingsRow("Device key", getDeviceKeyStatusLabel())}
-    ${state.publicKeyFingerprint ? renderSettingsRow("Public key fingerprint", state.publicKeyFingerprint) : ""}
-    ${state.deviceIdentity ? renderSettingsRow("Device identity", state.deviceIdentity) : ""}
+    ${state.publicKeyFingerprint ? renderSettingsRow("Device ID", state.publicKeyFingerprint.slice(0, 8)) : ""}
     ${renderSettingsRow("Auth session", getAuthSessionStatusLabel())}
     ${renderSettingsRow("Queued sync entries", String(state.syncQueueCount))}
     ${renderSettingsRow("Sync status", state.syncStatus || "Idle")}
@@ -2635,7 +2634,7 @@ function renderExportScreen() {
       ${(state.smsSupported || state.profile?.phone_verified) ? renderSettingsRow("Phone verification", getVerificationStatusLabel("sms")) : ""}
       ${renderSettingsRow("Phone anchor", getPhoneAnchorStatusLabel())}
       ${renderSettingsRow("Device key", getDeviceKeyStatusLabel())}
-      ${state.publicKeyFingerprint ? renderSettingsRow("Public key fingerprint", state.publicKeyFingerprint) : ""}
+      ${state.publicKeyFingerprint ? renderSettingsRow("Device ID", state.publicKeyFingerprint.slice(0, 8)) : ""}
       ${renderSettingsRow("Sync status", state.syncStatus || "Idle")}
       ${renderSettingsRow("Queued sync entries", String(state.syncQueueCount))}
       ${renderSettingsRow("Recovery contact", state.profile?.email || state.profile?.phone_number || "Not set")}
@@ -4985,8 +4984,7 @@ function renderOtpScreen() {
     ${(state.smsSupported || state.profile?.phone_verified) ? renderSettingsRow("Phone verification", getVerificationStatusLabel("sms")) : ""}
     ${renderSettingsRow("Phone anchor", getPhoneAnchorStatusLabel())}
     ${renderSettingsRow("Device key", getDeviceKeyStatusLabel())}
-    ${state.publicKeyFingerprint ? renderSettingsRow("Public key fingerprint", state.publicKeyFingerprint) : ""}
-    ${renderSettingsRow("Sync server", state.syncApiBaseUrl || "Not configured")}
+    ${state.publicKeyFingerprint ? renderSettingsRow("Device ID", state.publicKeyFingerprint.slice(0, 8)) : ""}
     ${renderSettingsRow("Auth session", getAuthSessionStatusLabel())}
     ${renderSettingsRow("Recovery contact", channel === "sms" ? (state.profile?.phone_number || "Not set") : (state.profile?.email || "Not set"))}
     ${state.profile?.phone_number ? renderSettingsRow("Phone on profile", state.profile.phone_number) : ""}
