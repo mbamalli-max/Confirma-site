@@ -2610,6 +2610,92 @@ async function unlockWithPasscode() {
   }, 2400);
 }
 
+function formatVerifiedReportSpanDate(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "N/A";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  }).format(date);
+}
+
+function getTierButtonPriceLabel(button, currencyPrefix) {
+  const amountMinor = Number(button?.dataset?.amount || 0);
+  const amountMajor = amountMinor > 0 ? Math.round(amountMinor / 100) : 0;
+  return `${currencyPrefix}${amountMajor.toLocaleString("en-US")}`;
+}
+
+async function refreshTierButtonLabels() {
+  if (!state.db) return;
+
+  try {
+    const records = await getRecords();
+    if (!records.length) return;
+
+    const distinctDays = new Set();
+    let earliestDate = null;
+    let latestDate = null;
+
+    records.forEach((record) => {
+      const confirmedAtMs = getRecordConfirmedAtMs(record);
+      if (!confirmedAtMs) return;
+
+      const confirmedDate = new Date(confirmedAtMs);
+      if (Number.isNaN(confirmedDate.getTime())) return;
+
+      const dayKey = [
+        confirmedDate.getFullYear(),
+        String(confirmedDate.getMonth() + 1).padStart(2, "0"),
+        String(confirmedDate.getDate()).padStart(2, "0")
+      ].join("-");
+
+      distinctDays.add(dayKey);
+
+      if (!earliestDate || confirmedDate < earliestDate) {
+        earliestDate = confirmedDate;
+      }
+      if (!latestDate || confirmedDate > latestDate) {
+        latestDate = confirmedDate;
+      }
+    });
+
+    const totalDays = distinctDays.size;
+    if (!totalDays || !earliestDate || !latestDate) return;
+
+    const currencyPrefix = state.profile?.country === "US" ? "$" : "₦";
+    const paymentTierButtons = els["payment-tiers"]?.querySelectorAll(".tier-btn") || [];
+
+    paymentTierButtons.forEach((button) => {
+      const priceLabel = getTierButtonPriceLabel(button, currencyPrefix);
+
+      if (button.dataset.window === "30") {
+        button.innerText = totalDays <= 30
+          ? `${priceLabel} — All ${totalDays} days`
+          : `${priceLabel} — Last 30 days`;
+        return;
+      }
+
+      if (button.dataset.window === "90") {
+        button.innerText = totalDays <= 90
+          ? `${priceLabel} — All ${totalDays} days`
+          : `${priceLabel} — Last 90 days`;
+        return;
+      }
+
+      if (button.dataset.window === "0") {
+        button.innerText = `${priceLabel} — Full history (${totalDays} days)`;
+      }
+    });
+
+    const verifiedReportSubtitle = els["verified-report-region-note"]?.previousElementSibling;
+    if (verifiedReportSubtitle?.matches("p.subtle")) {
+      verifiedReportSubtitle.textContent = `Server-attested PDF. Your records span ${formatVerifiedReportSpanDate(earliestDate)} to ${formatVerifiedReportSpanDate(latestDate)}.`;
+    }
+  } catch (error) {
+    console.warn("Unable to refresh verified report tier labels.", error);
+  }
+}
+
 function renderExportScreen() {
   refreshTrustSetupButtons();
   const verifiedReportsAvailable = supportsVerifiedReports(state.profile?.country);
@@ -2640,6 +2726,7 @@ function renderExportScreen() {
       ${renderSettingsRow("Recovery contact", state.profile?.email || state.profile?.phone_number || "Not set")}
     `;
   }
+  void refreshTierButtonLabels();
   refreshRewardedExportState();
   refreshBannerAd("screen-export");
   refreshStorageWarning();
