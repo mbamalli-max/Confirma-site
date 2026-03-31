@@ -698,6 +698,51 @@ function registerPwa() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/app/sw.js");
   }
+
+  // PWA install prompt (Chrome/Android/Edge)
+  let deferredInstallPrompt = null;
+
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    const panel = document.getElementById("install-app-panel");
+    if (panel) panel.hidden = false;
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    const panel = document.getElementById("install-app-panel");
+    if (panel) panel.hidden = true;
+  });
+
+  const installBtn = document.getElementById("install-app-btn");
+  if (installBtn) {
+    installBtn.addEventListener("click", async () => {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        const { outcome } = await deferredInstallPrompt.userChoice;
+        if (outcome === "accepted") {
+          deferredInstallPrompt = null;
+          const panel = document.getElementById("install-app-panel");
+          if (panel) panel.hidden = true;
+        }
+      }
+    });
+  }
+
+  // iOS Safari — no beforeinstallprompt; show manual instructions
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isInStandaloneMode = ("standalone" in navigator && navigator.standalone);
+  if (isIos && !isInStandaloneMode) {
+    const panel = document.getElementById("install-app-panel");
+    const hint = document.getElementById("install-app-hint");
+    const btn = document.getElementById("install-app-btn");
+    if (panel && hint && btn) {
+      hint.textContent = "To install: tap the Share button in Safari, then choose \u201cAdd to Home Screen\u201d.";
+      btn.hidden = true;
+      panel.hidden = false;
+    }
+  }
 }
 
 function renderOnboarding() {
