@@ -598,6 +598,10 @@ function wireEvents() {
   document.getElementById("back-home").addEventListener("click", () => showScreen("screen-capture"));
   document.getElementById("settings-change-profile-v2").addEventListener("click", openChangeProfileConfirm);
   document.getElementById("settings-open-trust-v3").addEventListener("click", () => openTrustSetup("screen-settings"));
+  document.getElementById("upgrade-plan-btn")?.addEventListener("click", () => {
+    renderExportScreen();
+    showScreen("screen-export");
+  });
   document.getElementById("settings-preferred-edit-v2").addEventListener("click", () => togglePreferredLabelEditor());
   document.getElementById("settings-preferred-done-v2").addEventListener("click", () => togglePreferredLabelEditor(false));
   document.getElementById("mark-anomalies-reviewed").addEventListener("click", () => {
@@ -1181,7 +1185,13 @@ async function renderSettings() {
     ${state.profile.email ? renderSettingsRow("Email", state.profile.email) : ""}
     ${state.profile.region ? renderSettingsRow("Region", state.profile.region) : ""}
     ${renderSettingsRow("Last action", friendlyActionLabel(state.profile.last_action || "sale"))}
+    ${renderSettingsRow("Plan", getPlanLabel(state.profile.plan))}
   `;
+
+  const upgradePlanPanel = document.getElementById("upgrade-plan-panel");
+  if (upgradePlanPanel) {
+    upgradePlanPanel.hidden = (state.profile?.plan === "pro" || state.profile?.plan === "basic");
+  }
 
   els["settings-trust-v3"].innerHTML = `
     ${renderSettingsRow("Verification summary", getVerificationSummaryLabel())}
@@ -1193,7 +1203,6 @@ async function renderSettings() {
     ${renderSettingsRow("Device key", getDeviceKeyStatusLabel())}
     ${state.publicKeyFingerprint ? renderSettingsRow("Public key fingerprint", state.publicKeyFingerprint) : ""}
     ${state.deviceIdentity ? renderSettingsRow("Device identity", state.deviceIdentity) : ""}
-    ${renderSettingsRow("Sync server", state.syncApiBaseUrl || "Not configured")}
     ${renderSettingsRow("Auth session", getAuthSessionStatusLabel())}
     ${renderSettingsRow("Queued sync entries", String(state.syncQueueCount))}
     ${renderSettingsRow("Sync status", state.syncStatus || "Idle")}
@@ -1512,6 +1521,12 @@ function normalizePlan(plan) {
 
 function getCurrentPlan() {
   return normalizePlan(state.profile?.plan);
+}
+
+function getPlanLabel(plan) {
+  if (plan === "pro") return "Pro — unlimited exports, no ads";
+  if (plan === "basic") return "Basic — reduced ads, extra exports";
+  return "Free — includes ads";
 }
 
 function setRecordingState(isRecording) {
@@ -5365,7 +5380,7 @@ function mergeServerProfile(serverProfile, fallbackCountry = getSelectedCountryI
   const displayName = String(serverProfile.business_name || serverProfile.name || "").trim();
   return normalizeLocalProfile({
     ...(state.profile || {}),
-    plan: normalizePlan(state.profile?.plan),
+    plan: ["basic", "pro"].includes(serverProfile.plan) ? serverProfile.plan : normalizePlan(state.profile?.plan),
     display_name: displayName || state.profile?.display_name || "",
     phone_number: String(serverProfile.phone || state.profile?.phone_number || "").trim(),
     email: normalizeEmailAddress(serverProfile.email || state.profile?.email || ""),
@@ -5393,6 +5408,11 @@ async function pullProfile(fallbackCountry = getSelectedCountryId()) {
   }
 
   state.profile = mergeServerProfile(response.profile, fallbackCountry);
+  if (response.profile.plan && ["basic", "pro"].includes(response.profile.plan)) {
+    state.profile.plan = response.profile.plan;
+    state.profile.plan = normalizePlan(state.profile.plan);
+    await saveProfile(state.profile, { skipPush: true });
+  }
   initializeAuthPhoneCountry();
   await saveProfile(state.profile, { skipPush: true });
   syncDevQaSnapshot("profile_pulled");

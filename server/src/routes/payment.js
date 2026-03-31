@@ -356,6 +356,63 @@ async function upsertPaymentRecord(payment) {
   );
 }
 
+async function activatePlan(phoneNumber, tier) {
+  const normalizedTier = String(tier || "").trim().toLowerCase();
+  if (!(normalizedTier === "basic" || normalizedTier === "pro")) return;
+
+  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS phone_number TEXT`);
+  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan TEXT`);
+  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan_activated_at TIMESTAMPTZ`);
+  await query(
+    `
+      UPDATE profiles p
+      SET phone_number = u.phone_number
+      FROM users u
+      WHERE p.user_id = u.id
+        AND (p.phone_number IS NULL OR p.phone_number <> u.phone_number)
+    `
+  );
+
+  const updateResult = await query(
+    `
+      UPDATE profiles
+      SET plan = $1,
+          plan_activated_at = NOW()
+      WHERE phone_number = $2
+    `,
+    [normalizedTier, phoneNumber]
+  );
+
+  if (updateResult.rowCount) return;
+
+  await query(
+    `
+      INSERT INTO profiles (
+        user_id,
+        phone_number,
+        plan,
+        plan_activated_at,
+        updated_at
+      )
+      SELECT
+        u.id,
+        u.phone_number,
+        $2,
+        NOW(),
+        NOW()
+      FROM users u
+      WHERE u.phone_number = $1
+      ON CONFLICT (user_id)
+      DO UPDATE SET
+        phone_number = EXCLUDED.phone_number,
+        plan = EXCLUDED.plan,
+        plan_activated_at = EXCLUDED.plan_activated_at,
+        updated_at = NOW()
+    `,
+    [phoneNumber, normalizedTier]
+  );
+}
+
 function drawStatusBadge(doc, x, y, text) {
   doc.save();
   doc.roundedRect(x, y, 90, 28, 14).fillAndStroke("#E8F5E9", "#52B788");
@@ -683,7 +740,7 @@ export async function registerPaymentRoutes(app) {
         const metadataFields = getMetadataFields(event.data?.metadata);
         const phoneNumber = String(metadataFields.phone || "").trim();
         const deviceIdentity = String(metadataFields.device_identity || "").trim();
-        const tier = String(metadataFields.tier || "unknown").trim();
+        const tier = String(metadataFields.tier || "unknown").trim().toLowerCase();
         const windowDays = parseWindowDays(metadataFields.window_days, 30);
 
         if (phoneNumber && deviceIdentity && event.data?.reference) {
@@ -698,6 +755,10 @@ export async function registerPaymentRoutes(app) {
             vt_id: null,
             completed_at: event.data?.paid_at || new Date().toISOString()
           });
+
+          if (tier === "basic" || tier === "pro") {
+            await activatePlan(phoneNumber, tier);
+          }
         }
       }
     } catch (error) {

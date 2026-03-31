@@ -42,7 +42,19 @@ async function ensureAccountRecoverySchema() {
       )
     `
   );
+  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS phone_number TEXT`);
+  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan TEXT`);
+  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan_activated_at TIMESTAMPTZ`);
   await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS passcode_hint TEXT`);
+  await query(
+    `
+      UPDATE profiles p
+      SET phone_number = u.phone_number
+      FROM users u
+      WHERE p.user_id = u.id
+        AND (p.phone_number IS NULL OR p.phone_number <> u.phone_number)
+    `
+  );
   await query(`UPDATE profiles SET passcode_hint = NULL WHERE passcode_hint IS NOT NULL`);
 }
 
@@ -85,7 +97,9 @@ function buildProfileResponse(row, fallbackPhoneNumber) {
       phone: row.phone_number || fallbackPhoneNumber || "",
       email: row.email || "",
       email_verified: Boolean(row.email_verified),
-      phone_verified: Boolean(row.phone_verified)
+      phone_verified: Boolean(row.phone_verified),
+      plan: row.plan || null,
+      plan_activated_at: row.plan_activated_at || null
     }
   };
 }
@@ -172,6 +186,8 @@ export async function registerAccountRoutes(app) {
           p.business_type_id,
           p.sector_id,
           p.preferred_labels,
+          p.plan,
+          p.plan_activated_at,
           u.phone_number,
           u.email,
           u.email_verified,
@@ -221,17 +237,19 @@ export async function registerAccountRoutes(app) {
           user_id,
           name,
           business_name,
+          phone_number,
           country,
           business_type_id,
           sector_id,
           preferred_labels,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())
         ON CONFLICT (user_id)
         DO UPDATE SET
           name = EXCLUDED.name,
           business_name = EXCLUDED.business_name,
+          phone_number = EXCLUDED.phone_number,
           country = EXCLUDED.country,
           business_type_id = EXCLUDED.business_type_id,
           sector_id = EXCLUDED.sector_id,
@@ -242,6 +260,7 @@ export async function registerAccountRoutes(app) {
         user.id,
         String(body.name || "").trim() || null,
         String(body.business_name || "").trim() || null,
+        user.phone_number,
         normalizeCountry(body.country),
         String(body.business_type_id || "").trim() || null,
         String(body.sector_id || "").trim() || null,
