@@ -288,18 +288,17 @@ See `docs/GO_LIVE_CHECKLIST.md` for full QA steps. Summary:
 - [ ] Confirmation flow untouched — no payment gate
 
 ### Pending UX + Config + Testing Items
-- [ ] **Forgot PIN recovery flow** — OTP reset if phone verified; else wipe + re-onboard (prompt 1 pending)
+- [x] **Forgot PIN recovery flow** — OTP reset via email/SMS built; UI modal wired to `pin-forgot-*` elements
+- [x] **CSP headers** — Strict `Content-Security-Policy` + `X-Frame-Options` + `X-Content-Type-Options` + `Referrer-Policy` + `Permissions-Policy` added to `vercel.json` for all routes
+- [x] **Remove sync server URL from Settings UI** — Sync server row removed; users no longer see internal API URL
+- [x] **Plan upgrade flow** — `state.profile.plan` now server-authoritative; Paystack `charge.success` webhook activates plan in `profiles` table; Settings shows plan label + free-only "Upgrade plan" CTA linking to Export screen
 - [ ] **End-to-end device recovery test** — New device → restore from phone → pull records → see revocation prompt
-- [ ] **CSP headers** — Add strict Content-Security-Policy via `vercel.json` (5 min task, high security impact)
 - [ ] **Subresource Integrity (SRI)** — Add `integrity="sha384-..."` to Chart.js and QRCode.js CDN tags (5 min task)
-- [ ] **Remove sync server URL from Settings UI** — Replace `https://api.konfirmata.com` with "Connected / Last synced X min ago"
 - [ ] **Short device ID only** — Settings shows first 8 chars of fingerprint as "Device ID"; hide full device_identity
 - [ ] **Voice recording end-to-end test** — Nigerian English + US English; confirm correction dictionary triggers on manual edits
 - [ ] **Accessibility audit for US users** — Screen reader end-to-end test, VoiceOver (iOS) + TalkBack (Android)
-- [ ] **Brand rename** — Template prompt saved; run when name is chosen (Credentia or final decision)
 - [ ] **AdSense account setup** — Publisher ID inserted into ad slots (replace house ads with real network)
 - [ ] **Direct ad sales** — Approach Nigerian MFIs, banks, B2B SaaS for ₦20–50 CPM placements
-- [ ] **Plan upgrade flow** — Wire `state.profile.plan` to Paystack subscription product (basic / pro)
 - [ ] **Rewarded ad** — Replace house ad modal with real video ad network (AdMob web SDK or IronSource)
 
 ---
@@ -320,7 +319,7 @@ See `docs/GO_LIVE_CHECKLIST.md` for full QA steps. Summary:
 - Private Railway DB connection: internal endpoint, no egress fees
 
 ### 🔲 Phase S1 — Quick Wins (< 1 day each)
-- [ ] **CSP headers** — Add strict Content-Security-Policy via `vercel.json`. Prevents XSS from exfiltrating keys or records. Highest ROI security change available.
+- [x] **CSP headers** — Added to `vercel.json`; see Phase 1.5F above.
 - [ ] **Subresource Integrity (SRI)** — Add `integrity="sha384-..."` to Chart.js and QRCode.js CDN tags. A compromised CDN response undoes all other security measures.
 - [ ] **Remove server URL from Settings** — Replace `https://api.konfirmata.com` display with "Connected / Last synced X min ago". No user needs the raw URL.
 - [ ] **Short public key fingerprint only** — Show first 8 chars (`eda069ca`) as "Device ID" in Settings. Hide full 32-char device identity — internal value, no UX purpose.
@@ -330,7 +329,7 @@ See `docs/GO_LIVE_CHECKLIST.md` for full QA steps. Summary:
   - ✅ Fixed passcode toggle security: disabling passcode requires current passcode entry first
 - [x] **Device Revocation** — `POST /identity/revoke` (OTP-authenticated). Revoked `device_identity` rejected on all sync/attest calls. UI in Settings: "Revoke a lost device". Auto-prompt after restore if >1 active device detected.
 - [x] **Adaptive Anomaly Detection** — Warn (never block) on suspicious patterns. Wired from `confirmAppend()` post-append. `confirmed_at` normalised to ms internally. Thresholds scale with user's baseline (p95 hourly count × 3, floor 20). Local `anomaly_log` store + "Security alerts" review panel in Settings.
-- [ ] **Forgot Passcode Recovery** — OTP reset (email/SMS) if phone verified on device; else wipe + re-onboard (Codex prompt ready, pending run)
+- [x] **Forgot Passcode Recovery** — OTP reset (email/SMS) if phone verified on device; UI wired, `pin-forgot-*` elements and server OTP flow complete
 - [ ] **Session-aware Export 2FA** — Require OTP re-confirmation before Verified Report generation only if session is older than 4 hours. Avoids friction on every export.
 
 ### 🔲 Phase S3 — Compliance & Trust Layer
