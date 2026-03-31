@@ -159,6 +159,18 @@ All critical, high, and medium fixes done. See `docs/plans/v3-foundation-plan.md
 - `payments` table created on Railway
 - Free plain-text export remains available — no paywall on basic ledger access
 
+### ✅ Phase 1.5E — Financial Statements Export (COMPLETE)
+- **Free text export** (`app-v3/app.js` → `generateExport()`): now prepends two structured sections before the raw ledger appendix:
+  - **Income Statement** — Revenue (Sales), Other Receipts, Cost of Goods / Purchases, Operating Expenses, Net Income
+  - **Monthly Cash Flow** — per-calendar-month table: Inflows / Outflows / Net, with a TOTAL row
+- **Paid PDF** (`server/src/routes/payment.js` → `buildVerifiedReportPdf()`): two new pages inserted after the cover page:
+  - Page 2: Income Statement (PDFKit two-column layout, divider lines, NET INCOME emphasized)
+  - Page 3: Monthly Cash Flow (PDFKit four-column table, bold TOTAL row)
+  - Transaction Ledger moved to **Appendix** (labelled "Appendix: Full Transaction Ledger")
+- `computeFinancialStatements(entries, currency)` helper added server-side; `buildFinancialStatements(entries, currency)` added client-side
+- **Reversal handling**: reversed entries are excluded from all totals — a reversal negates its target from its original category
+- `fmt()` helper uses `Intl.NumberFormat` for "NGN 12,345.00" / "USD 12,345.00" format — no new dependencies
+
 ### ✅ Deployment & UX Polish (COMPLETE)
 - Website (website-v2) deployed to Vercel as root
 - PWA (app-v3) deployed at `/app` with `<base href="/app/">`

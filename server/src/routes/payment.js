@@ -88,6 +88,118 @@ function formatDateOnly(value) {
   });
 }
 
+function fmt(amountMinor, cur = "NGN") {
+  const currency = String(cur || "NGN").toUpperCase() === "USD" ? "USD" : "NGN";
+  const locale = currency === "USD" ? "en-US" : "en-NG";
+  const amount = Number(amountMinor || 0) / 100;
+  return `${currency} ${new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(amount)}`;
+}
+
+function getStatementTransactionType(entry) {
+  return String(
+    entry?.transaction_type
+    || entry?.payload?.transaction_type
+    || entry?.payload?.action
+    || ""
+  ).trim().toLowerCase();
+}
+
+function getStatementAmountMinor(entry) {
+  return Number(entry?.amount_minor ?? entry?.payload?.amount_minor ?? 0);
+}
+
+function getStatementReversedHash(entry) {
+  return String(entry?.reversed_entry_hash || entry?.payload?.reversed_entry_hash || "").trim();
+}
+
+function getStatementConfirmedAtSeconds(entry) {
+  const value = entry?.confirmed_at;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value > 1e12) return Math.floor(value / 1000);
+    return Math.floor(value);
+  }
+  if (value instanceof Date) {
+    return Math.floor(value.getTime() / 1000);
+  }
+  const parsed = Date.parse(String(value || ""));
+  return Number.isNaN(parsed) ? 0 : Math.floor(parsed / 1000);
+}
+
+function computeFinancialStatements(entries, currency) {
+  const reversedHashes = new Set(
+    entries
+      .filter((entry) => getStatementTransactionType(entry) === "reversal" && getStatementReversedHash(entry))
+      .map((entry) => getStatementReversedHash(entry))
+  );
+
+  const effective = entries.filter((entry) => {
+    const transactionType = getStatementTransactionType(entry);
+    if (transactionType === "reversal") return false;
+    return !reversedHashes.has(String(entry?.entry_hash || ""));
+  });
+
+  let grossRevenue = 0;
+  let otherIncome = 0;
+  let costOfGoods = 0;
+  let operatingExpenses = 0;
+  let start = null;
+  let end = null;
+  const monthlyBuckets = new Map();
+
+  effective.forEach((entry) => {
+    const transactionType = getStatementTransactionType(entry);
+    const amountMinor = getStatementAmountMinor(entry);
+    const confirmedAt = getStatementConfirmedAtSeconds(entry);
+    if (!confirmedAt) return;
+
+    if (start == null || confirmedAt < start) start = confirmedAt;
+    if (end == null || confirmedAt > end) end = confirmedAt;
+
+    const month = new Date(confirmedAt * 1000).toISOString().slice(0, 7);
+    const bucket = monthlyBuckets.get(month) || { inflows: 0, outflows: 0, net: 0 };
+
+    if (transactionType === "sale") {
+      grossRevenue += amountMinor;
+      bucket.inflows += amountMinor;
+    } else if (transactionType === "receipt") {
+      otherIncome += amountMinor;
+      bucket.inflows += amountMinor;
+    } else if (transactionType === "purchase") {
+      costOfGoods += amountMinor;
+      bucket.outflows += amountMinor;
+    } else if (transactionType === "payment") {
+      operatingExpenses += amountMinor;
+      bucket.outflows += amountMinor;
+    }
+
+    bucket.net = bucket.inflows - bucket.outflows;
+    monthlyBuckets.set(month, bucket);
+  });
+
+  return {
+    incomeStatement: {
+      grossRevenue,
+      otherIncome,
+      costOfGoods,
+      operatingExpenses,
+      netIncome: (grossRevenue + otherIncome) - (costOfGoods + operatingExpenses)
+    },
+    cashFlowByMonth: [...monthlyBuckets.entries()]
+      .sort(([monthA], [monthB]) => monthA.localeCompare(monthB))
+      .map(([month, values]) => ({
+        month,
+        inflows: values.inflows,
+        outflows: values.outflows,
+        net: values.net
+      })),
+    dateRange: { start, end },
+    currency
+  };
+}
+
 function truncateText(value, maxLength) {
   const text = String(value ?? "");
   if (text.length <= maxLength) return text;
@@ -282,6 +394,27 @@ function drawEntryPageFooter(doc, runningTotal, currency) {
     });
 }
 
+function drawPatentFooter(doc, options = {}) {
+  const { y = doc.page.height - 90, fontSize = 9, lineGap = 2, color = "#6B7C6B" } = options;
+  doc.font("Helvetica").fontSize(fontSize).fillColor(color).text(PATENT_NOTICE, 50, y, {
+    width: 495,
+    lineGap
+  });
+}
+
+function drawStatementRow(doc, y, label, value, options = {}) {
+  const { bold = false, emphasized = false } = options;
+  const labelFont = emphasized ? 13 : 11;
+  const valueFont = emphasized ? 13 : 11;
+  doc.font(bold || emphasized ? "Helvetica-Bold" : "Helvetica").fontSize(labelFont).fillColor("#0F1A10").text(label, 50, y, {
+    width: 260
+  });
+  doc.font(bold || emphasized ? "Helvetica-Bold" : "Helvetica").fontSize(valueFont).fillColor("#0F1A10").text(value, 350, y, {
+    width: 195,
+    align: "right"
+  });
+}
+
 async function buildVerifiedReportPdf({
   attestation,
   businessName,
@@ -306,6 +439,18 @@ async function buildVerifiedReportPdf({
   const qrBuffer = await QRCode.toBuffer(attestation.verify_url, { width: 200, margin: 1 });
   const entries = attestation.entries;
   const reportCurrency = entries[0]?.payload?.currency || "NGN";
+  const statements = computeFinancialStatements(entries, reportCurrency);
+  const totalInflows = statements.incomeStatement.grossRevenue + statements.incomeStatement.otherIncome;
+  const totalOutflows = statements.incomeStatement.costOfGoods + statements.incomeStatement.operatingExpenses;
+  const cashFlowTotals = statements.cashFlowByMonth.reduce((totals, month) => {
+    totals.inflows += month.inflows;
+    totals.outflows += month.outflows;
+    totals.net += month.net;
+    return totals;
+  }, { inflows: 0, outflows: 0, net: 0 });
+  const periodLabel = statements.dateRange.start && statements.dateRange.end
+    ? `${formatDateOnly(new Date(statements.dateRange.start * 1000))} to ${formatDateOnly(new Date(statements.dateRange.end * 1000))}`
+    : "No confirmed entries";
 
   doc.fontSize(24).fillColor("#1B2F1F").text("Konfirmata Verified Report", 50, 60);
   doc.fontSize(13).fillColor("#6B7C6B").text("Server-Attested Business Activity Ledger", 50, 96);
@@ -339,14 +484,72 @@ async function buildVerifiedReportPdf({
     width: 140
   });
 
-  doc.fontSize(9).fillColor("#6B7C6B").text(PATENT_NOTICE, 50, doc.page.height - 90, {
-    width: 495,
-    lineGap: 2
-  });
+  drawPatentFooter(doc);
 
   doc.addPage();
-  doc.fontSize(18).fillColor("#1B2F1F").text("Entry List", 50, 50);
-  doc.fontSize(10).fillColor("#6B7C6B").text("Oldest to newest confirmed entries", 50, 74);
+  doc.font("Helvetica-Bold").fontSize(18).fillColor("#1B2F1F").text("Income Statement", 50, 50);
+  doc.font("Helvetica").fontSize(10).fillColor("#6B7C6B").text(`Period: ${periodLabel}`, 50, 74);
+  doc.moveTo(50, 94).lineTo(545, 94).strokeColor("#D4CDB8").stroke();
+
+  let statementY = 116;
+  drawStatementRow(doc, statementY, "Revenue (Sales)", fmt(statements.incomeStatement.grossRevenue, reportCurrency));
+  statementY += 24;
+  drawStatementRow(doc, statementY, "Other Receipts", fmt(statements.incomeStatement.otherIncome, reportCurrency));
+  statementY += 22;
+  doc.moveTo(50, statementY).lineTo(545, statementY).strokeColor("#D4CDB8").stroke();
+  statementY += 12;
+  drawStatementRow(doc, statementY, "Total Inflows", fmt(totalInflows, reportCurrency), { bold: true });
+  statementY += 34;
+  drawStatementRow(doc, statementY, "Cost of Goods / Purchases", fmt(statements.incomeStatement.costOfGoods, reportCurrency));
+  statementY += 24;
+  drawStatementRow(doc, statementY, "Operating Expenses", fmt(statements.incomeStatement.operatingExpenses, reportCurrency));
+  statementY += 22;
+  doc.moveTo(50, statementY).lineTo(545, statementY).strokeColor("#D4CDB8").stroke();
+  statementY += 12;
+  drawStatementRow(doc, statementY, "Total Outflows", fmt(totalOutflows, reportCurrency), { bold: true });
+  statementY += 34;
+  drawStatementRow(doc, statementY, "NET INCOME", fmt(statements.incomeStatement.netIncome, reportCurrency), { emphasized: true });
+  drawPatentFooter(doc);
+
+  doc.addPage();
+  doc.font("Helvetica-Bold").fontSize(18).fillColor("#1B2F1F").text("Monthly Cash Flow", 50, 50);
+  doc.font("Helvetica").fontSize(10).fillColor("#6B7C6B").text(`Period: ${periodLabel}`, 50, 74);
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(10)
+    .fillColor("#6B7C6B")
+    .text("Month", 50, 104)
+    .text("Inflows", 180, 104, { width: 110, align: "right" })
+    .text("Outflows", 305, 104, { width: 110, align: "right" })
+    .text("Net Cash", 435, 104, { width: 110, align: "right" });
+  doc.moveTo(50, 120).lineTo(545, 120).strokeColor("#D4CDB8").stroke();
+
+  let cashFlowY = 136;
+  doc.font("Helvetica").fontSize(10).fillColor("#0F1A10");
+  statements.cashFlowByMonth.forEach((row) => {
+    doc
+      .text(row.month, 50, cashFlowY, { width: 90 })
+      .text(fmt(row.inflows, reportCurrency), 180, cashFlowY, { width: 110, align: "right" })
+      .text(fmt(row.outflows, reportCurrency), 305, cashFlowY, { width: 110, align: "right" })
+      .text(fmt(row.net, reportCurrency), 435, cashFlowY, { width: 110, align: "right" });
+    cashFlowY += 20;
+  });
+
+  doc.moveTo(50, cashFlowY).lineTo(545, cashFlowY).strokeColor("#D4CDB8").stroke();
+  cashFlowY += 12;
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(10)
+    .fillColor("#0F1A10")
+    .text("TOTAL", 50, cashFlowY, { width: 90 })
+    .text(fmt(cashFlowTotals.inflows, reportCurrency), 180, cashFlowY, { width: 110, align: "right" })
+    .text(fmt(cashFlowTotals.outflows, reportCurrency), 305, cashFlowY, { width: 110, align: "right" })
+    .text(fmt(cashFlowTotals.net, reportCurrency), 435, cashFlowY, { width: 110, align: "right" });
+  drawPatentFooter(doc);
+
+  doc.addPage();
+  doc.font("Helvetica-Bold").fontSize(18).fillColor("#1B2F1F").text("Appendix: Full Transaction Ledger", 50, 50);
+  doc.font("Helvetica").fontSize(10).fillColor("#6B7C6B").text("Oldest to newest confirmed entries", 50, 74);
 
   let y = 100;
   let runningTotal = 0;
@@ -364,8 +567,8 @@ async function buildVerifiedReportPdf({
       drawEntryPageFooter(doc, runningTotal, reportCurrency);
       doc.addPage();
       entryPageNumber += 1;
-      doc.fontSize(18).fillColor("#1B2F1F").text("Entry List", 50, 50);
-      doc.fontSize(10).fillColor("#6B7C6B").text(`Continued - page ${entryPageNumber}`, 50, 74);
+      doc.font("Helvetica-Bold").fontSize(18).fillColor("#1B2F1F").text("Appendix: Full Transaction Ledger", 50, 50);
+      doc.font("Helvetica").fontSize(10).fillColor("#6B7C6B").text(`Continued - page ${entryPageNumber}`, 50, 74);
       y = 100;
       drawEntryTableHeader(doc, y);
       y += 26;

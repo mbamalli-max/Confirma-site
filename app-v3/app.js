@@ -2601,6 +2601,7 @@ async function generateExport() {
 
   const currency = state.profile?.country === "US" ? "USD" : "NGN";
   const ledgerRootHash = records[records.length - 1].entry_hash;
+  const financialStatements = buildFinancialStatements(records, currency);
   const lines = records.map((record) => {
     const timestamp = new Date(record.confirmed_at * 1000).toLocaleString();
     return [
@@ -2643,6 +2644,64 @@ async function generateExport() {
       ? `Device-signed and server-attested. Verify at ${attestation.verify_url}`
       : "Device-signed on this device. Server attestation coming.")
     : `Legacy unsigned history only. Complete ${getVerificationChannelLabel().toLowerCase()} to start device signing.`;
+  const {
+    grossRevenue,
+    otherIncome,
+    costOfGoods,
+    operatingExpenses,
+    netIncome
+  } = financialStatements.incomeStatement;
+  const totalInflows = grossRevenue + otherIncome;
+  const totalOutflows = costOfGoods + operatingExpenses;
+  const cashFlowTotals = financialStatements.cashFlowByMonth.reduce((totals, month) => {
+    totals.inflows += month.inflows;
+    totals.outflows += month.outflows;
+    totals.net += month.net;
+    return totals;
+  }, { inflows: 0, outflows: 0, net: 0 });
+  const formatExportDate = (timestampSeconds) => {
+    if (!timestampSeconds) return "N/A";
+    return new Date(timestampSeconds * 1000).toISOString().slice(0, 10);
+  };
+  const statementDivider = `${"".padEnd(29)}${"-".repeat(16)}`;
+  const formatStatementRow = (label, amountMinor) => `${String(label).padEnd(29)}${formatAmount(amountMinor, currency)}`;
+  const formatCashFlowValue = (value) => String(value).includes("$") || String(value).includes("₦")
+    ? String(value)
+    : formatAmount(value, currency);
+  const formatCashFlowRow = (monthLabel, inflows, outflows, net) => [
+    String(monthLabel).padEnd(11),
+    formatCashFlowValue(inflows).padStart(16),
+    formatCashFlowValue(outflows).padStart(16),
+    formatCashFlowValue(net).padStart(16)
+  ].join("");
+  const incomeStatementLines = [
+    "============================",
+    "INCOME STATEMENT",
+    `Period: ${formatExportDate(financialStatements.dateRange.start)} to ${formatExportDate(financialStatements.dateRange.end)}`,
+    "============================",
+    formatStatementRow("Revenue (Sales)", grossRevenue),
+    formatStatementRow("Other Receipts", otherIncome),
+    statementDivider,
+    formatStatementRow("Total Inflows", totalInflows),
+    "",
+    formatStatementRow("Cost of Goods / Purchases", costOfGoods),
+    formatStatementRow("Operating Expenses", operatingExpenses),
+    statementDivider,
+    formatStatementRow("Total Outflows", totalOutflows),
+    "",
+    formatStatementRow("NET INCOME", netIncome),
+    "============================"
+  ];
+  const monthlyCashFlowLines = [
+    "============================",
+    "MONTHLY CASH FLOW",
+    "============================",
+    formatCashFlowRow("Month", "Inflows", "Outflows", "Net"),
+    ...financialStatements.cashFlowByMonth.map((row) => formatCashFlowRow(row.month, row.inflows, row.outflows, row.net)),
+    "-".repeat(59),
+    formatCashFlowRow("TOTAL", cashFlowTotals.inflows, cashFlowTotals.outflows, cashFlowTotals.net),
+    "============================"
+  ];
 
   const output = [
     "KONFIRMATA V3 EXPORT",
@@ -2661,6 +2720,11 @@ async function generateExport() {
     `Signed entries: ${signedCount}`,
     `Unsigned legacy entries: ${unsignedCount}`,
     "---",
+    ...incomeStatementLines,
+    "",
+    ...monthlyCashFlowLines,
+    "",
+    "--- TRANSACTION LEDGER (APPENDIX) ---",
     ...lines,
     "---",
     `Ledger Root Hash: ${ledgerRootHash}`,
@@ -5749,6 +5813,10 @@ function formatMoney(amountMinor, currency) {
   return `₦${amount.toLocaleString("en-NG", { maximumFractionDigits: 0 })}`;
 }
 
+function formatAmount(amountMinor, currency) {
+  return formatMoney(amountMinor, currency);
+}
+
 function showError(message) {
   els["capture-error"].hidden = false;
   els["capture-error"].textContent = message;
@@ -5773,6 +5841,74 @@ function getOperationalRecords(records) {
     if (record.transaction_type === "reversal") return false;
     return !reversedHashes.has(record.entry_hash);
   });
+}
+
+function buildFinancialStatements(entries, currency) {
+  const reversedHashes = new Set(
+    entries
+      .filter((entry) => entry.transaction_type === "reversal" && entry.reversed_entry_hash)
+      .map((entry) => entry.reversed_entry_hash)
+  );
+  const effective = entries.filter((entry) => !reversedHashes.has(entry.entry_hash) && entry.transaction_type !== "reversal");
+
+  let grossRevenue = 0;
+  let otherIncome = 0;
+  let costOfGoods = 0;
+  let operatingExpenses = 0;
+  let start = null;
+  let end = null;
+  const monthlyBuckets = new Map();
+
+  effective.forEach((entry) => {
+    const amount = Number(entry.amount_minor || 0);
+    const confirmedAtMs = getRecordConfirmedAtMs(entry);
+    if (!confirmedAtMs) return;
+
+    const confirmedAtSeconds = Math.floor(confirmedAtMs / 1000);
+    if (start == null || confirmedAtSeconds < start) start = confirmedAtSeconds;
+    if (end == null || confirmedAtSeconds > end) end = confirmedAtSeconds;
+
+    const month = new Date(confirmedAtMs).toISOString().slice(0, 7);
+    const bucket = monthlyBuckets.get(month) || { inflows: 0, outflows: 0, net: 0 };
+
+    if (entry.transaction_type === "sale") {
+      grossRevenue += amount;
+      bucket.inflows += amount;
+    } else if (entry.transaction_type === "receipt") {
+      otherIncome += amount;
+      bucket.inflows += amount;
+    } else if (entry.transaction_type === "purchase") {
+      costOfGoods += amount;
+      bucket.outflows += amount;
+    } else if (entry.transaction_type === "payment") {
+      operatingExpenses += amount;
+      bucket.outflows += amount;
+    }
+
+    bucket.net = bucket.inflows - bucket.outflows;
+    monthlyBuckets.set(month, bucket);
+  });
+
+  return {
+    incomeStatement: {
+      grossRevenue,
+      otherIncome,
+      costOfGoods,
+      operatingExpenses,
+      netIncome: (grossRevenue + otherIncome) - (costOfGoods + operatingExpenses)
+    },
+    cashFlowByMonth: [...monthlyBuckets.entries()]
+      .sort(([monthA], [monthB]) => monthA.localeCompare(monthB))
+      .map(([month, values]) => ({
+        month,
+        inflows: values.inflows,
+        outflows: values.outflows,
+        net: values.net
+      })),
+    dateRange: { start, end },
+    currency,
+    entryCount: effective.length
+  };
 }
 
 function getDashboardMetrics(records, effectiveRecords) {
