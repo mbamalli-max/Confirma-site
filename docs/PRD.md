@@ -1,74 +1,525 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
+**Patent:** USPTO Provisional 63/987,858
+**Version:** 3.0
 **Date:** 2026-04-04
 
 ---
 
-## Global Availability
+## §1. Product Overview
 
-Konfirmata supports a global country selector at onboarding.
+Konfirmata is a mobile-first Progressive Web App (PWA) that converts informal business activity into cryptographically verifiable financial records. It is designed for small business operators, traders, and informal economy participants who need a bank-usable transaction history but have no access to traditional bookkeeping infrastructure.
 
-Users may select any country from the ISO 3166-1 alpha-2 list. Country selection does not imply full feature parity across all regions.
+### Core Thesis
 
-Country availability is separated into three independent dimensions:
+> Ledger formation is always free. Payment gates only verified PDF export.
 
-1. `phone_country`
-   - Derived from the phone number prefix at OTP verification.
-   - Governs phone number normalization only.
+The app captures daily transactions via voice, text, or visual selection. Every record is cryptographically signed using a device-bound keypair and linked into an append-only hash chain. The resulting ledger is server-synced, fork-detected, and — at the paid tier — converted into a signed PDF report that a lender can verify independently at a public URL.
 
-2. `operating_region`
-   - Selected by the user during onboarding.
-   - Defines business context, default currency, and availability of region-specific features such as payment integrations.
+### Value Proposition
 
-3. `language`
-   - Selected independently of country.
-   - Defines UI language and voice recognition configuration.
-
-At launch, Konfirmata supports a limited set of languages. All other users default to English.
-
-Example:
-- `phone_country = NG`
-- `operating_region = US`
-- `language = en`
-
-This is valid and supported.
+| For the user | For the lender |
+|---|---|
+| Free, structured record of every transaction | Cryptographically signed ledger they can verify |
+| No app store required (PWA) | Tamper-evidence via hash chain + ECDSA |
+| Works offline, syncs when connected | Immutable history with fork detection |
+| Voice-first capture in < 5 seconds | Server-attested PDF with QR verification |
 
 ---
 
-## UI / UX Requirements
+## §2. User Personas
 
-- Country dropdown shows all countries in the ISO 3166-1 alpha-2 list.
+### Primary: Informal Business Operator
+- **Context**: Market trader, food vendor, artisan, transport operator, online seller
+- **Region**: Nigeria (primary), United States, global expansion
+- **Device**: Android smartphone (primary), iOS
+- **Literacy**: Functional — can read labels and tap buttons
+- **Technical literacy**: Low — no prior bookkeeping experience
+- **Pain point**: Cannot prove income to access credit or formal financial services
+- **Goal**: Build a verifiable transaction history to qualify for a loan
+
+### Secondary: Lending Officer / Underwriter
+- **Context**: Microfinance institution, bank, BNPL provider
+- **Use case**: Receives a Konfirmata Verified Report PDF from a loan applicant
+- **Need**: Verify that the history is genuine, untampered, and attributable to a specific device
+- **Interaction**: Scans QR code on PDF → verification portal shows VALID/FORKED/REVOKED
+
+### Tertiary: Developer / Integration Partner
+- **Context**: Fintech building on top of Konfirmata's attestation API
+- **Need**: Programmatic access to verified ledger data for credit scoring
+
+---
+
+## §3. Global Availability Model
+
+Konfirmata supports a global country selector at onboarding. Users may select any country from the ISO 3166-1 alpha-2 list. Country selection does not imply full feature parity across all regions.
+
+Country handling is explicitly separated into three independent dimensions:
+
+### 3.1 Three Dimensions
+
+| Dimension | Field | Source | Governs |
+|---|---|---|---|
+| Phone country | `phone_country` (stored as `country`) | Derived from phone prefix at OTP | Phone number normalization only |
+| Operating region | `operating_region` | Selected by user at onboarding | Currency, capability flags, business context |
+| Language | `language` | Selected independently | UI language, voice recognition locale |
+
+**Example valid state:**
+```
+phone_country   = NG
+operating_region = US
+language        = en
+```
+
+This is valid and fully supported. A Nigerian phone number holder operating a US-based business uses USD and sees US capability flags.
+
+### 3.2 Capability Flags (derived from operating_region)
+
+| operating_region | Paystack tiers | Free text export | Paid PDF report |
+|---|---|---|---|
+| NG | ✅ Visible | ✅ Available | ✅ Available |
+| All others | ❌ Hidden | ✅ Available | ❌ "Coming soon" |
+
+Policy:
+```js
+if (operating_region !== "NG") {
+  hidePaystackTiers();
+  enableFreeExportOnly();
+}
+```
+
+### 3.3 Currency Derivation
+
+Currency is derived from `operating_region`, never from `phone_country`.
+
+| operating_region | Currency |
+|---|---|
+| NG | NGN (₦) |
+| US | USD ($) |
+| GB | GBP (£) |
+| GH | GHS (₵) |
+| KE | KES (KSh) |
+| ZA | ZAR (R) |
+| CA | CAD (CA$) |
+| AU | AUD (A$) |
+| DE, FR, EU | EUR (€) |
+| IN | INR (₹) |
+| All others | USD ($) |
+
+### 3.4 UI/UX Constraints
+
+- Country dropdown shows all 249 ISO 3166-1 alpha-2 countries.
 - No country is hidden because a feature is unsupported there.
-- Unsupported regions display: "Some features are not yet available in your region".
+- Unsupported regions display: "Some features are not yet available in your region."
 - Language selector is separate from country.
 - Default language is English.
-- The app must not auto-switch language based on country.
+- The app must not auto-switch language based on country selection.
+- Lack of a local language pack must never hide a country.
 
 ---
 
-## Constraints
+## §4. Screen Inventory
 
-- Do not restrict the country list based on SMS availability.
-- Do not tie language availability to country.
-- Do not infer currency from `phone_country`.
-- Do not block users from selecting any country.
+### 4.1 Onboarding (6 steps)
+
+**Trigger:** First launch with no existing profile.
+
+| Step | Screen element | Data collected |
+|---|---|---|
+| 1 | Phone country selector (full ISO list) | `profile.country`, `state.authPhoneCountry` |
+| 2 | Operating region selector ("Where does your business operate?") | `profile.operating_region` |
+| 3 | Sector grid (6 sectors) | `profile.sector_id` |
+| 4 | Business type grid (filtered by sector) | `profile.business_type_id` |
+| 5 | Preferred labels grid (visual quick-picks for this business type) | `profile.preferred_labels` |
+| 6 | Profile details (name, phone, email, region, birth year, gender) | `profile.display_name` and optional fields |
+
+**Validation:** `business_type_id` and `display_name` are required. All other fields are optional.
+
+**Post-onboarding:** Profile saved to IndexedDB. Device trust state loaded. If phone unverified, OTP screen available in Settings.
+
+**Re-entry:** "Change business profile" in Settings resets onboarding. Ledger is preserved.
+
+### 4.2 Transaction Capture
+
+**Purpose:** Primary recording interface. The app spends most time here.
+
+**Input methods (4):**
+
+1. **Voice** — Web Speech API. User speaks: "Sold rice for 15,000". NLP parser infers action, label, amount.
+2. **Text** — Natural language text field. "Paid transport 2000" → fills action, label, amount.
+3. **Visual quick-picks** — Labeled cards ranked by preference + usage history. Tap to select.
+4. **Label modal** — Full label browser with Search, Speak, Browse, Custom modes.
+
+**Form fields:**
+- Action (sale, purchase, payment, receipt, transfer_in, transfer_out)
+- Label (from quick-picks or search)
+- Amount (number, in major units, currency-aware step)
+- Counterparty (optional free text)
+- Source account / Destination account (transfer actions only)
+
+**Recent records panel:** Last 5 confirmed transactions displayed below the form.
+
+**Daily reminder:** Banner shown if 0 records today. Auto-dismissed on first record.
+
+### 4.3 Confirmation
+
+**Purpose:** Gate every ledger append with explicit user review.
+
+- Displays human-readable summary ("You sold Rice for ₦150.00")
+- Text-to-speech reads confirmation aloud
+- "Confirm and append" button — disabled during in-flight state
+- "Go back" button — returns to capture without appending
+- No bypass path exists. Every record must pass through this screen.
+
+### 4.4 Dashboard
+
+**Purpose:** Visual summary of business performance.
+
+**Metric cards:**
+- Today's sales
+- Monthly sales
+- Monthly expenses
+- Monthly cash flow (sales − expenses)
+
+**Chart (Chart.js):**
+- Toggle: 7 days / 30 days
+- Stacked bars: sales (green `#52b788`) and expenses (orange `#E8944A`)
+- Currency-formatted tooltips
+
+**Streak & tier row:**
+- 🥇 Gold: ≥ 180 consecutive days
+- 🥈 Silver: ≥ 90 consecutive days
+- 🥉 Bronze: ≥ 30 consecutive days
+- 🆕 New: < 30 days
+- Progress bar toward 180 days
+
+**Loan readiness banner:**
+- Bronze (≥ 30 days): "You're Bronze tier. Consider exporting a report."
+- Silver (≥ 90 days): "You're Silver tier. Your report covers 90 days."
+- Links to Export screen.
+
+**Privacy toggle:** Eye icon hides/reveals all monetary amounts.
+
+### 4.5 History
+
+**Purpose:** Full append-only ledger view.
+
+- Reverse-chronological list of all confirmed records
+- Each card: label, type, amount, timestamp, counterparty, reversal status
+- "Reverse" button on eligible records — creates a reversal entry (non-destructive)
+- Reversal records reference original via `reversed_entry_hash`
+- Reversed transactions excluded from operational metrics
+
+### 4.6 Settings
+
+**Sections:**
+
+- **Profile summary**: name, country, sector, business type
+- **Trust & device**: phone anchor status, device key status, fingerprint, sync status, queue count, recovery contact
+- **Preferences**: daily reminder toggle, privacy mode toggle
+- **App PIN**: enable/disable 4-digit lock
+- **Actions**: Set up phone verification, Change business profile, Open export
+
+### 4.7 Export
+
+**Free text export:**
+- Plain text file download
+- Contains: header metadata, all records as rows, evidence summary, ledger root hash, single-device scope disclaimer, verification statement
+
+**Paid PDF export (operating_region = NG):**
+- Server-generated via pdfkit
+- Contains: business cover page (masked PII), income statement, monthly cash flow, full entry ledger, evidence summary, QR code + verify URL, patent notice
+
+**Scope disclaimer** (both export types):
+> This report reflects records from a single device. Records from other devices linked to this account are not included.
+
+### 4.8 OTP / Phone Verification
+
+**Purpose:** Anchor device to a phone number. Gates device keypair generation and server sync.
+
+**Flow:**
+1. Enter phone number
+2. Request OTP → server sends email (or dev_code if `ALLOW_DEV_OTP=true`)
+3. Enter 6-digit code
+4. On success: JWT issued, device keypair generated, identity status → `verified_server`
+
+### 4.9 PIN Lock
+
+- Optional 4-digit lock on app open
+- Stored as hashed value in IndexedDB
+- Separate from phone OTP — local protection only
+- Remove PIN option available in settings
 
 ---
 
-## Acceptance Tests
+## §5. Transaction Record Model
 
-1. User selects any country such as Brazil, Germany, or Kenya and onboarding completes successfully.
-2. Unsupported region such as `US` hides Paystack, keeps free export available, and report generation does not crash.
-3. Language defaults to English when no local language pack exists.
-4. Phone prefix remains independent of `operating_region`.
-5. Currency follows `operating_region`, not `phone_country`.
+### 5.1 Fields
+
+| Field | Type | Source | Required |
+|---|---|---|---|
+| `transaction_type` | string | action selection | Yes |
+| `label` | string | label picker | Yes |
+| `normalized_label` | string | derived | Yes |
+| `amount_minor` | integer | amount input × 100 | Yes |
+| `currency` | string | from operating_region | Yes |
+| `counterparty` | string | free text | No |
+| `source_account` | string | transfer only | Conditional |
+| `destination_account` | string | transfer only | Conditional |
+| `reversed_entry_hash` | string | reversal only | Conditional |
+| `reversed_transaction_type` | string | reversal only | Conditional |
+| `input_mode` | string | voice/text/visual/reversal | Yes |
+| `business_type_id` | string | from profile | Yes |
+| `sector_id` | string | from profile | Yes |
+| `country` | string | from profile | Yes |
+| `confirmed_at` | integer | Unix seconds at confirmation | Yes |
+| `prev_entry_hash` | string | previous record's entry_hash | Yes |
+| `entry_hash` | string | SHA-256 of canonical string | Yes |
+| `signature` | string | ECDSA P-256, base64 | Yes (if key exists) |
+| `evidence_level` | string | assigned at creation/sync | Yes |
+| `public_key_fingerprint` | string | first 16 chars of key hash | No |
+
+### 5.2 Transaction Types
+
+| Type | Meaning | Effect on metrics |
+|---|---|---|
+| `sale` | Revenue from selling goods/services | + Sales |
+| `purchase` | Buying stock or goods | + Expenses |
+| `payment` | Paying for services or overhead | + Expenses |
+| `receipt` | Receiving money (non-sale) | Neutral |
+| `transfer_in` | Money moving into a wallet/account | Neutral |
+| `transfer_out` | Money moving out of a wallet/account | Neutral |
+| `reversal` | Reverses a prior entry | − of original |
+
+### 5.3 Amount Constraints
+
+| Currency | Minor unit | Max amount |
+|---|---|---|
+| NGN | Kobo (1/100 ₦) | ₦10,000,000 |
+| USD | Cent (1/100 $) | $100,000 |
+| Others | 1/100 of major | Equivalent of $100,000 |
 
 ---
 
-## Implementation Notes
+## §6. Evidence Hierarchy
 
-- Use a full ISO country list for the selector from static JSON or a maintained dataset.
-- Do not filter the list based on capability.
-- Store `operating_region` in the profile.
-- Store `language` independently.
-- Derive currency from `operating_region`.
+Every ledger entry carries an `evidence_level` field tracking its trust tier.
+
+| Level | Value | Meaning |
+|---|---|---|
+| 0 | `self_reported` | Entry created before phone verification or signing |
+| 1 | `device_signed` | Entry signed with device ECDSA key, not yet server-synced |
+| 2 | `server_attested` | Entry synced and verified by server (signature validated, hash chain intact) |
+| 3 | `corroborated` | Entry matched against an external data source (future) |
+
+**Assignment rules:**
+- New records: `device_signed` if keypair exists, otherwise `self_reported`
+- After successful sync: upgraded to `server_attested` (local + server)
+- Server always sets `server_attested` on INSERT (entries passed signature verification)
+- `corroborated` requires integration layer (Phase 2)
+
+**Report surfacing:**
+- Text export includes evidence summary block
+- PDF cover page includes evidence summary section
+- Example: "145 of 150 entries (97%) have server attestation."
+
+---
+
+## §7. Anomaly Detection
+
+### 7.1 Detected Anomaly Types
+
+| Type | Trigger | Threshold |
+|---|---|---|
+| `volume_spike` | Entries per hour > p95 × 3 | Minimum 50 entries |
+| `repeated_amount` | 8+ identical amounts within 5 minutes | 8 occurrences |
+| `future_timestamp` | confirmed_at > current time + 2 minutes | 2 minutes |
+| `hash_fork` | Duplicate prev_entry_hash detected locally | Any occurrence |
+
+### 7.2 Lifecycle
+
+- Detected on new entry creation
+- Stored in IndexedDB `anomaly_log` with `reviewed: false`
+- UI banner shown until user opens the review panel
+- Auto-marked reviewed after 5 seconds in the review panel
+- Anomalies are **informational only** — they do not block entry creation or sync
+
+---
+
+## §8. Label System
+
+### 8.1 Sectors (6)
+
+1. Trade & Retail
+2. Food & Hospitality
+3. Transport & Logistics
+4. Skilled Work & Construction
+5. Personal & Professional Services
+6. Digital & Online Business
+
+### 8.2 Business Types (16 across NG + US)
+
+**Nigeria (10):**
+Market Trader, Provision Shop, Food Vendor, Transport Operator, Artisan, Service Provider, Online Seller, Kiosk/Phone Business, Fashion Tailor, Okada/Keke Operator
+
+**United States (6):**
+Retail, Food Service, Logistics, Contractor, Beauty Services, Digital Business
+
+### 8.3 Label Ranking Algorithm
+
+Scoring factors (applied per query match):
+
+| Factor | Points |
+|---|---|
+| Exact normalized match | +40 |
+| Synonym match | +30 |
+| Partial/substring match | +16 |
+| Business type match | +12 |
+| Sector match | +8 |
+| Country match | +6 |
+| Usage history boost | +min(count, 8) |
+| Preferred label (selected at onboarding) | +18 |
+
+Results sorted by score descending, then alphabetically. Default limit: 12.
+
+---
+
+## §9. Business Model
+
+### 9.1 Free Tier (all regions)
+
+- Unlimited transaction recording
+- Unlimited free text exports
+- One free verified PDF report per account lifetime (or accounts < 60 days old)
+- Device signing and server sync
+
+### 9.2 Paid Tiers (operating_region = NG only)
+
+| Tier | Price | Transaction window |
+|---|---|---|
+| Bronze | ₦500 | 30 days |
+| Silver | ₦1,500 | 90 days |
+| Gold | ₦2,500 | Full history |
+
+Payment processed via Paystack. PDF generated and emailed on successful payment.
+
+Tier labels on the export screen dynamically reflect actual days of transaction history (e.g., "Gold — 347 days").
+
+### 9.3 Payment Gate Rule
+
+> Payment gates **verified PDF export only**. It never gates ledger formation. `confirmationTransition()` must never require payment.
+
+---
+
+## §10. Export & Attestation
+
+### 10.1 Free Text Export
+
+- Available to all users, all regions
+- Plain `.txt` file downloaded to device
+- Contains full record ledger, evidence summary, single-device disclaimer
+- Phone and email shown unmasked (user's own data)
+- Filename: `konfirmata-v3-export-{timestamp}.txt`
+
+### 10.2 Free Verified PDF
+
+- Available once per account (or accounts < 60 days old)
+- Server-generated PDF, same format as paid tier
+- Claimed via `POST /payment/generate-pdf` with `free_claim: true`
+- Race-condition protected: claim-first transaction with `COALESCE(free_report_used, FALSE) = FALSE`
+
+### 10.3 Paid Verified PDF
+
+- Generated after successful Paystack payment
+- Trigger: Paystack `charge.success` webhook → internal attestation → PDF → email
+- PDF contains: cover page (masked phone/email), income statement, cash flow, full ledger appendix, evidence summary, QR code, verify URL, patent notice
+
+### 10.4 Verification Portal
+
+- Static page at `/verify/:vt_id`
+- Calls `GET /verify/:vt_id` on load
+- Displays: validity badge (VALID / FORKED / REVOKED / UNKNOWN), attestation date, entry count, window range, key rotation events, fork status, device fingerprint (8 chars)
+- Returns **no PII** — phone number never exposed, device identity truncated
+- Fields: `attestation_scope: "single_device"`, `scope_description: "This report reflects records from a single device only."`
+
+---
+
+## §11. Security & Privacy Constraints
+
+1. **Append-only ledger**: No deletion. Amendment via reversal records only.
+2. **Confirmation gate**: Every record requires explicit user confirmation. No bypass.
+3. **Payment gate is post-confirmation only**: `confirmationTransition()` never gated by payment.
+4. **Country selection is global**: No country blocks onboarding.
+5. **Capability flags from operating_region only**: Never inferred from `phone_country`.
+6. **Language is independent**: Defaults to English when no local pack exists.
+7. **Device PII not leaked in reports**: `device_identity` truncated to 8 chars in verification portal.
+8. **Phone/email masked in lender PDF**: `maskPhone()` + `maskEmail()` applied to cover page.
+9. **User export unmasked**: User's own data export shows full contact details.
+10. **Free report server-enforced**: localStorage bypass mitigated by server-side `free_report_used` flag.
+11. **Rate limits**: OTP = 5/hr per phone, verify portal = 100/min per IP, OTP verify = 5 failures per 15 min.
+12. **CORS allowlist**: Only konfirmata.com and localhost in dev. No wildcard.
+13. **JWT secrets required**: Server refuses to boot in production without `JWT_SECRET` and `SERVER_RECEIPT_SECRET`.
+14. **Webhook HMAC verified first**: Paystack payloads rejected before any processing if HMAC invalid.
+15. **PDF server-side only**: Never client-side generated. No jsPDF.
+16. **vt_id is `crypto.randomBytes(16)`**: Never sequential, never `Math.random()`.
+
+---
+
+## §12. Acceptance Tests
+
+### Global Availability
+1. User selects Kenya → onboarding completes → amounts shown in KES
+2. User selects Germany → onboarding completes → Paystack hidden → free export available → no crash
+3. Language defaults to English for any country without a language pack
+4. Phone prefix independent of operating_region
+5. Currency follows operating_region, not phone_country
+
+### Ledger Integrity
+6. Two concurrent free-report claims → only one succeeds (race condition protection)
+7. Duplicate entry_hash INSERT fails at DB level (replay protection)
+8. Fork detected → device marked FORKED → sync blocked → rotation required to recover
+
+### Security
+9. User A cannot rotate User B's device (IDOR protection)
+10. Revoked device cannot re-register via sync
+11. OTP brute force blocked after 5 failures in 15 minutes
+12. Expired JWT rejected before API calls (client-side check + server validation)
+
+### Reports
+13. Paid PDF shows masked phone (`+234****5678`) and masked email (`j***e@domain.com`)
+14. Free text export shows unmasked contact with privacy note header
+15. Both exports include evidence summary and single-device scope disclaimer
+16. Verification portal shows VALID for untampered attestation, FORKED for compromised device
+
+### Payments (NG only)
+17. Paystack webhook with invalid HMAC returns 400 without processing
+18. Gold tier PDF covers full transaction history
+19. Dynamic tier button labels show actual days of history
+
+---
+
+## §13. Outstanding Work
+
+### Go-Live Blockers
+- [ ] Set `PAYSTACK_SECRET_KEY` + `PAYSTACK_PUBLIC_KEY` in Railway
+- [ ] Set `TERMII_API_KEY` in Railway (real SMS OTP)
+- [ ] Set `RESEND_API_KEY` in Railway (email delivery)
+- [ ] Set `ALLOW_DEV_OTP=false` in Railway for production
+- [ ] Run one live Paystack payment → verify PDF generated + email delivered
+- [ ] QR scan → verify portal shows VALID
+
+### UX (In Progress)
+- [ ] Phone normalization: NG `08099840666` → `+2348099840666`, US `2678867271` → `+12678867271`
+- [ ] Language selector in Settings
+- [ ] Country-aware state/region placeholder in onboarding step 6
+
+### Identity (Pending Decision)
+- [ ] Brand finalization (Konfirmata vs. Confirma)
+- [ ] Domain registration for new brand email
+
+### Phase 2 (Evidence-Gated)
+- [ ] Integration layer for corroboration (bank statement matching, mobile money data)
+- [ ] Android Native — triggered only when MFI pilot requires hardware-backed attestation
+- [ ] Multi-device reconciliation (current design: single-device attestation per report)
+- [ ] Anomaly scoring system tied to evidence hierarchy
+- [ ] Device compromise propagation (revocation impact on reports)
