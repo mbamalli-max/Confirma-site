@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Confirma turns everyday business activity into bank-verifiable financial history. Voice-first verification for markets that run on trust.">
+  <meta name="theme-color" content="#0A1810">
+  <title>Confirma — Every transaction is a promise kept</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <style>
+    /* ── Design tokens ───────────────────────────────── */
+    :root {
+      --night:          #0A1810;
+      --forest-deep:    #1A3C34;
+      --forest-mid:     #2D6A4F;
+      --forest-light:   #52B788;
+      --paper:          #F7F3EE;
+      --paper-deep:     #EDE4D8;
+      --card:           #FFFFFF;
+      --border:         #D9D0C7;
+      --warm-orange:    #F4A261;
+      --ink:            #1C1917;
+      --muted:          #6B625B;
+      --max-w:          1160px;
+      --r-xl:           24px;
+      --r-lg:           20px;
+      --r-md:           14px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1rem;
+      line-height: 1.6;
+      color: var(--ink);
+      background: var(--paper);
+    }
+
+    a { color: inherit; text-decoration: none; }
+    img { max-width: 100%; display: block; }
+    p { margin: 0; }
+
+    .shell {
+      width: min(var(--max-w), calc(100% - 2.5rem));
+      margin: 0 auto;
+    }
+
+    /* ── Header ──────────────────────────────────────── */
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(10, 24, 16, 0.96);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(82, 183, 136, 0.1);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.9rem 0;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .brand-mark {
+      width: 2.4rem;
+      height: 2.4rem;
+      border-radius: 0.7rem;
+      background: linear-gradient(135deg, var(--forest-mid), var(--forest-light));
+      display: grid;
+      place-items: center;
+      font-family: 'Calistoga', serif;
+      font-size: 1.1rem;
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(82, 183, 136, 0.3);
+      flex-shrink: 0;
+    }
+
+    .brand-name {
+      font-family: 'Calistoga', serif;
+      font-size: 1.25rem;
+      letter-spacing: 0.01em;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .nav a {
+      font-size: 0.9rem;
+      color: rgba(255, 255, 255, 0.6);
+      font-weight: 500;
+      transition: color 0.15s;
+    }
+
+    .nav a:hover, .nav a.active { color: #fff; }
+
+    .nav-cta {
+      padding: 0.45rem 1.1rem;
+      border-radius: 999px;
+      background: var(--warm-orange) !important;
+      color: var(--ink) !important;
+      font-weight: 700 !important;
+    }
+
+    /* ── Buttons ─────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 3.25rem;
+      padding: 0 1.6rem;
+      border-radius: 999px;
+      border: none;
+      font-weight: 700;
+      font-size: 0.95rem;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+      text-decoration: none;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+
+    .btn-orange {
+      background: var(--warm-orange);
+      color: var(--ink);
+      box-shadow: 0 8px 24px rgba(244, 162, 97, 0.32);
+    }
+
+    .btn-orange:hover { box-shadow: 0 12px 32px rgba(244, 162, 97, 0.44); }
+
+    .btn-forest {
+      background: linear-gradient(135deg, var(--forest-mid), var(--forest-deep));
+      color: #fff;
+      box-shadow: 0 8px 24px rgba(26, 60, 52, 0.24);
+    }
+
+    .btn-ghost {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-ghost:hover { background: rgba(255, 255, 255, 0.16); }
+
+    /* ── Hero (B — dark) ─────────────────────────────── */
+    .hero {
+      background:
+        radial-gradient(ellipse at 15% 70%, rgba(82, 183, 136, 0.1) 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 20%, rgba(82, 183, 136, 0.06) 0%, transparent 45%),
+        linear-gradient(170deg, var(--night) 0%, var(--forest-deep) 100%);
+      padding: 5.5rem 0 5rem;
+      color: #fff;
+    }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--forest-light);
+      margin-bottom: 1.75rem;
+    }
+
+    .hero-stats {
+      display: flex;
+      gap: 2.75rem;
+      margin-bottom: 2.25rem;
+      flex-wrap: wrap;
+    }
+
+    .hero-stat strong {
+      display: block;
+      font-family: 'Calistoga', serif;
+      font-size: 2.1rem;
+      line-height: 1;
+      color: #fff;
+      margin-bottom: 0.2rem;
+    }
+
+    .hero-stat span {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.48);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+
+    .hero h1 {
+      font-family: 'Calistoga', serif;
+      font-size: clamp(2.8rem, 6.5vw, 5.2rem);
+      line-height: 1.04;
+      max-width: 15ch;
+      margin-bottom: 1.2rem;
+      letter-spacing: -0.01em;
+    }
+
+    .hero-lede {
+      font-size: 1.15rem;
+      color: rgba(255, 255, 255, 0.6);
+      max-width: 46ch;
+      margin-bottom: 2.5rem;
+      line-height: 1.65;
+    }
+
+    .hero-cta-row {
+      display: flex;
+      gap: 0.9rem;
+      flex-wrap: wrap;
+    }
+
+    /* ── Section base ────────────────────────────────── */
+    .section {
+      padding: 5.5rem 0;
+    }
+
+    .section-warm { background: var(--paper); }
+
+    .section-dark {
+      background: linear-gradient(155deg, var(--forest-deep) 0%, var(--night) 100%);
+      color: #fff;
+    }
+
+    /* ── Labels ──────────────────────────────────────── */
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.35rem 0.8rem;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: rgba(82, 183, 136, 0.13);
+      color: var(--forest-mid);
+      margin-bottom: 1rem;
+    }
+
+    .section-dark .eyebrow {
+      background: rgba(82, 183, 136, 0.16);
+      color: var(--forest-light);
+    }
+
+    h2.display {
+      font-family: 'Calistoga', serif;
+      font-size: clamp(1.9rem, 4.2vw, 3.2rem);
+      line-height: 1.08;
+      margin-bottom: 1rem;
+    }
+
+    .section-dark h2.display { color: #fff; }
+
+    .body-text {
+      font-size: 1.02rem;
+      color: var(--muted);
+      line-height: 1.72;
+    }
+
+    .section-dark .body-text { color: rgba(255, 255, 255, 0.6); }
+
+    .section-lead {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 2rem;
+      margin-bottom: 2.75rem;
+      flex-wrap: wrap;
+    }
+
+    .section-lead .body-text { max-width: 50ch; }
+
+    /* ── Feature grid (A — warm) ─────────────────────── */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.2rem;
+    }
+
+    .feature-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 1.8rem;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 18px 44px rgba(26, 60, 52, 0.1);
+    }
+
+    .badge {
+      width: 2.6rem;
+      height: 2.6rem;
+      border-radius: 0.65rem;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 1rem;
+      background: rgba(82, 183, 136, 0.14);
+      color: var(--forest-deep);
+      margin-bottom: 1rem;
+      font-family: 'Inter', sans-serif;
+      flex-shrink: 0;
+    }
+
+    .feature-card h3 {
+      font-family: 'Calistoga', serif;
+      font-size: 1.2rem;
+      line-height: 1.2;
+      margin-bottom: 0.5rem;
+      color: var(--ink);
+    }
+
+    .feature-card p {
+      font-size: 0.93rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    /* ── Process (A — warm) ──────────────────────────── */
+    .process-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3rem;
+      align-items: start;
+    }
+
+    .step-list {
+      display: grid;
+      gap: 1.6rem;
+      counter-reset: step;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 2.2rem 1fr;
+      gap: 1.1rem;
+      align-items: start;
+      counter-increment: step;
+    }
+
+    .step-num {
+      width: 2.2rem;
+      height: 2.2rem;
+      border-radius: 50%;
+      background: var(--forest-deep);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 0.88rem;
+      flex-shrink: 0;
+      margin-top: 0.1rem;
+    }
+
+    .step h3 {
+      font-family: 'Calistoga', serif;
+      font-size: 1.1rem;
+      margin-bottom: 0.35rem;
+      color: var(--ink);
+    }
+
+    .step p {
+      font-size: 0.93rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .process-aside {
+      background: var(--forest-deep);
+      border-radius: var(--r-xl);
+      padding: 2.2rem;
+      color: #fff;
+    }
+
+    .process-aside h2 {
+      font-family: 'Calistoga', serif;
+      font-size: clamp(1.5rem, 2.8vw, 2.2rem);
+      line-height: 1.12;
+      margin-bottom: 0.9rem;
+    }
+
+    .process-aside p {
+      color: rgba(255, 255, 255, 0.65);
+      font-size: 0.95rem;
+      line-height: 1.7;
+      margin-bottom: 1.3rem;
+    }
+
+    .dot-list {
+      list-style: none;
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .dot-list li {
+      position: relative;
+      padding-left: 1.35rem;
+      font-size: 0.93rem;
+      color: rgba(255, 255, 255, 0.7);
+      line-height: 1.55;
+    }
+
+    .dot-list li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.58rem;
+      width: 0.48rem;
+      height: 0.48rem;
+      border-radius: 50%;
+      background: var(--warm-orange);
+    }
+
+    /* ── Trust tiers (A — warm) ──────────────────────── */
+    .tier-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1.2rem;
+      margin-bottom: 1.2rem;
+    }
+
+    .tier-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 1.6rem;
+    }
+
+    .tier-label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--forest-mid);
+      margin-bottom: 0.65rem;
+    }
+
+    .tier-card h3 {
+      font-family: 'Calistoga', serif;
+      font-size: 1.15rem;
+      margin-bottom: 0.5rem;
+      color: var(--ink);
+    }
+
+    .tier-card p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .tier-lower {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 1.2rem;
+    }
+
+    .tier-quote {
+      background: var(--card);
+      border-left: 4px solid var(--warm-orange);
+      border-radius: 0 var(--r-md) var(--r-md) 0;
+      padding: 1.6rem;
+    }
+
+    .tier-quote blockquote {
+      font-size: 1.02rem;
+      color: var(--ink);
+      font-style: italic;
+      line-height: 1.65;
+      margin-bottom: 0.8rem;
+    }
+
+    .tier-quote cite {
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: var(--forest-mid);
+      font-style: normal;
+    }
+
+    .tier-card.tier-gold {
+      background: linear-gradient(145deg, #fffbeb, #fff8e1);
+      border-color: rgba(244, 162, 97, 0.4);
+    }
+
+    .tier-card.tier-gold .tier-label { color: #92400e; }
+
+    /* ── Audience (A — warm) ─────────────────────────── */
+    .audience-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.2rem;
+    }
+
+    .audience-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-xl);
+      padding: 2.2rem;
+    }
+
+    .audience-card .eyebrow { margin-bottom: 0.85rem; }
+
+    .audience-card h2 {
+      font-family: 'Calistoga', serif;
+      font-size: clamp(1.45rem, 2.4vw, 1.95rem);
+      line-height: 1.12;
+      margin-bottom: 0.8rem;
+      color: var(--ink);
+    }
+
+    .audience-card p {
+      font-size: 0.95rem;
+      color: var(--muted);
+      line-height: 1.68;
+      margin-bottom: 1.6rem;
+    }
+
+    /* ── Patent strip ────────────────────────────────── */
+    .patent-strip {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-xl);
+      padding: 2rem 2.4rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3rem;
+      align-items: start;
+    }
+
+    .patent-strip h3 {
+      font-family: 'Calistoga', serif;
+      font-size: 1.35rem;
+      margin-bottom: 0.65rem;
+      color: var(--ink);
+    }
+
+    .patent-strip p {
+      font-size: 0.93rem;
+      color: var(--muted);
+      line-height: 1.65;
+      margin-bottom: 1rem;
+    }
+
+    .simple-list {
+      list-style: none;
+      display: grid;
+      gap: 0.5rem;
+    }
+
+    .simple-list li {
+      position: relative;
+      padding-left: 1.2rem;
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .simple-list li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.55rem;
+      width: 0.44rem;
+      height: 0.44rem;
+      border-radius: 50%;
+      background: var(--forest-light);
+    }
+
+    /* ── CTA close (B — dark) ────────────────────────── */
+    .cta-close { text-align: center; }
+
+    .cta-close .eyebrow { display: inline-flex; }
+
+    .cta-close h2 {
+      font-family: 'Calistoga', serif;
+      font-size: clamp(2.2rem, 5vw, 4rem);
+      line-height: 1.06;
+      color: #fff;
+      margin-bottom: 0.85rem;
+    }
+
+    .cta-close .body-text {
+      max-width: 52ch;
+      margin: 0 auto 2.5rem;
+      color: rgba(255, 255, 255, 0.58);
+    }
+
+    /* ── Footer ──────────────────────────────────────── */
+    .footer {
+      background: var(--paper);
+      border-top: 1px solid var(--border);
+      padding: 2.2rem 0 3rem;
+    }
+
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .footer-copy {
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .footer-links a {
+      font-size: 0.88rem;
+      color: var(--muted);
+      transition: color 0.15s;
+    }
+
+    .footer-links a:hover { color: var(--ink); }
+
+    /* ── Responsive ──────────────────────────────────── */
+    @media (max-width: 920px) {
+      .feature-grid,
+      .process-grid,
+      .audience-grid,
+      .patent-strip { grid-template-columns: 1fr; }
+
+      .tier-grid { grid-template-columns: 1fr 1fr; }
+      .tier-lower { grid-template-columns: 1fr; }
+      .section-lead { flex-direction: column; align-items: flex-start; }
+      .process-grid { gap: 2rem; }
+    }
+
+    @media (max-width: 640px) {
+      .topbar { flex-direction: column; align-items: flex-start; }
+      .nav { gap: 0.75rem; }
+      .hero { padding: 4rem 0 3.5rem; }
+      .hero-stats { gap: 1.5rem; }
+      .hero-cta-row { flex-direction: column; }
+      .hero-cta-row .btn { width: 100%; text-align: center; }
+      .section { padding: 3.75rem 0; }
+      .tier-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="shell topbar">
+      <a class="brand" href="index.html" aria-label="Confirma home">
+        <div class="brand-mark" aria-hidden="true">C</div>
+        <span class="brand-name">Confirma</span>
+      </a>
+      <nav class="nav" aria-label="Primary navigation">
+        <a href="index.html" class="active">Home</a>
+        <a href="entrepreneurs.html">Entrepreneurs</a>
+        <a href="banks.html">Banks</a>
+        <a href="how-it-works.html">How It Works</a>
+        <a href="about.html">About</a>
+        <a href="get-the-app.html" class="nav-cta">Get the App</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ① Hero — B (dark forest) -->
+    <section class="hero">
+      <div class="shell">
+        <p class="hero-eyebrow">Trust infrastructure for the informal economy</p>
+        <div class="hero-stats">
+          <div class="hero-stat">
+            <strong>99.7%</strong>
+            <span>Integrity</span>
+          </div>
+          <div class="hero-stat">
+            <strong>1.2M</strong>
+            <span>Entries</span>
+          </div>
+          <div class="hero-stat">
+            <strong>340+</strong>
+            <span>Cooperatives</span>
+          </div>
+        </div>
+        <h1>Every transaction is a promise kept.</h1>
+        <p class="hero-lede">Voice-first verification for markets that run on trust</p>
+        <div class="hero-cta-row">
+          <a class="btn btn-orange" href="get-the-app.html">Get started</a>
+          <a class="btn btn-ghost" href="how-it-works.html">See how it works</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ② Features — A (warm parchment) -->
+    <section class="section section-warm">
+      <div class="shell">
+        <div class="section-lead">
+          <div>
+            <span class="eyebrow">What makes it work</span>
+            <h2 class="display">Built for how trust<br>actually works</h2>
+          </div>
+          <p class="body-text">Confirma is designed for people whose businesses are real, active, and valuable — but whose financial lives are still invisible to formal lenders.</p>
+        </div>
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="badge">V</div>
+            <h3>Voice-first input</h3>
+            <p>Speak your ledger entry in any language. No typing required. Works offline on Android and Chrome.</p>
+          </div>
+          <div class="feature-card">
+            <div class="badge">#</div>
+            <h3>Hash chain integrity</h3>
+            <p>Append-only log with SHA-256 verification on every entry. Nothing can be edited or deleted after confirmation.</p>
+          </div>
+          <div class="feature-card">
+            <div class="badge">T</div>
+            <h3>Trust tiers</h3>
+            <p>Earned authority through consistent confirmation behaviour. NEW → BRONZE → SILVER → GOLD over time.</p>
+          </div>
+          <div class="feature-card">
+            <div class="badge">₦</div>
+            <h3>Kobo-denominated</h3>
+            <p>Native Nigerian currency precision from day one. US dollar support included for global use.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ③ Process — A (warm parchment) -->
+    <section class="section section-warm" style="padding-top: 0;">
+      <div class="shell">
+        <div class="process-grid">
+          <div>
+            <span class="eyebrow">How it works</span>
+            <h2 class="display" style="margin-bottom: 2.25rem;">Say it.<br>Confirm it.<br>Keep it.</h2>
+            <div class="step-list">
+              <div class="step">
+                <div class="step-num">1</div>
+                <div>
+                  <h3>Speak or type a transaction</h3>
+                  <p>"Sold rice for 15,000." Voice-first on Android and Chrome, with text fallback everywhere else.</p>
+                </div>
+              </div>
+              <div class="step">
+                <div class="step-num">2</div>
+                <div>
+                  <h3>Review the summary</h3>
+                  <p>The app reads it back in plain language so the user stays in control before anything becomes final.</p>
+                </div>
+              </div>
+              <div class="step">
+                <div class="step-num">3</div>
+                <div>
+                  <h3>Confirm to write permanently</h3>
+                  <p>Only explicit confirmation creates a ledger record. No edits, no deletes, no admin override path.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="process-aside">
+            <h2>Your activity is already a credit story.</h2>
+            <p>Confirma helps record that story in a way lenders can take seriously. Each confirmed entry builds a persistent financial trail that supports underwriting, reporting, and trust.</p>
+            <ul class="dot-list">
+              <li>Trust tiers move from NEW to BRONZE, SILVER, and GOLD based on sustained activity.</li>
+              <li>Exports include a ledger root hash and integrity code for offline verification.</li>
+              <li>Supports Nigeria and the United States with multiple languages and input modes.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ④ Trust tiers — A (warm parchment) -->
+    <section class="section section-warm">
+      <div class="shell">
+        <div class="section-lead">
+          <div>
+            <span class="eyebrow">Trust tiers</span>
+            <h2 class="display">Consistency becomes signal.</h2>
+          </div>
+          <p class="body-text">Confirma rewards continuity. The more consistently a business records real activity, the stronger its financial identity becomes.</p>
+        </div>
+        <div class="tier-grid">
+          <div class="tier-card">
+            <span class="tier-label">NEW</span>
+            <h3>Starting the record</h3>
+            <p>Every ledger begins with first use. The goal: a clear, trustworthy habit of confirmation-based recording.</p>
+          </div>
+          <div class="tier-card">
+            <span class="tier-label">BRONZE · 30 days</span>
+            <h3>Early continuity</h3>
+            <p>After a month of active history, the ledger starts showing usable persistence for first-level review.</p>
+          </div>
+          <div class="tier-card">
+            <span class="tier-label">SILVER · 90 days</span>
+            <h3>Bank-relevant history</h3>
+            <p>Ninety days resembles a meaningful operating picture for reporting and underwriting conversations.</p>
+          </div>
+        </div>
+        <div class="tier-lower">
+          <div class="tier-quote">
+            <blockquote>"Your business activity is your credit history, if it's recorded right." Confirma is built around that idea from the first transaction to the exported report.</blockquote>
+            <cite>Core product message</cite>
+          </div>
+          <div class="tier-card tier-gold">
+            <span class="tier-label">GOLD · 180 days</span>
+            <h3>Established financial identity</h3>
+            <p>Six months of consistent, append-only activity creates a record institutions can inspect with confidence.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ⑤ Audience — A (warm parchment) -->
+    <section class="section section-warm" style="padding-top: 0;">
+      <div class="shell">
+        <div class="audience-grid">
+          <div class="audience-card">
+            <span class="eyebrow">Entrepreneurs</span>
+            <h2>Build your financial history. Get access to credit.</h2>
+            <p>Designed for informal Nigerian entrepreneurs first, then extended for global use. Works with real-world business rhythms instead of demanding formal paperwork upfront.</p>
+            <a class="btn btn-forest" href="entrepreneurs.html">Explore entrepreneur view</a>
+          </div>
+          <div class="audience-card">
+            <span class="eyebrow">Banks &amp; institutions</span>
+            <h2>Verified, tamper-resistant SME records.</h2>
+            <p>Confirma gives lenders a clearer window into operating businesses that have revenue but lack conventional financial statements or bookkeeping history.</p>
+            <a class="btn btn-forest" href="banks.html">Explore institutional view</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ⑥ Patent + Install — A (warm parchment) -->
+    <section class="section section-warm" style="padding-top: 0;">
+      <div class="shell">
+        <div class="patent-strip">
+          <div>
+            <span class="eyebrow">Install</span>
+            <h3>Open the PWA on your phone.</h3>
+            <p>Confirma installs directly from the browser and works offline after setup. Designed to feel simple on the devices people already use for business.</p>
+            <a class="btn btn-forest" href="get-the-app.html">Install instructions</a>
+          </div>
+          <div>
+            <span class="eyebrow">Patent filed</span>
+            <h3>Protected architecture, practical mission.</h3>
+            <p>Confirma's core design is covered by USPTO Provisional Patent Application No. 63/987,858 for confirmation-gated authority architecture in constrained environments.</p>
+            <ul class="simple-list">
+              <li>Inventors: Muhammad Bamalli and Ahmed Yaradua</li>
+              <li>Phase 1 complete: offline ledger, voice input, exports, dashboard</li>
+              <li>Next: signatures, sync, verified reports, live verification portal</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ⑦ CTA close — B (dark forest) -->
+    <section class="section section-dark cta-close">
+      <div class="shell">
+        <span class="eyebrow">Join the network</span>
+        <h2>Ready to make trust computable?</h2>
+        <p class="body-text">Join the cooperatives already building verified transaction histories</p>
+        <a class="btn btn-orange" href="get-the-app.html">Request access</a>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <div class="shell footer-inner">
+      <p class="footer-copy">Confirma is building accessible financial records for every business, everywhere.</p>
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="entrepreneurs.html">Entrepreneurs</a>
+        <a href="banks.html">Banks</a>
+        <a href="how-it-works.html">How It Works</a>
+        <a href="about.html">About</a>
+        <a href="get-the-app.html">Get the App</a>
+      </nav>
+    </div>
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#1A3C34">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Confirma">
+  <meta name="description" content="Confirma is a confirmation-gated, append-only financial ledger built for entrepreneurs.">
+  <link rel="manifest" href="/app/manifest.json">
+  <link rel="apple-touch-icon" href="/app/icons/icon.svg">
+  <link rel="stylesheet" href="/app/app.css">
+  <title>Confirma App</title>
+</head>
+<body>
+  <div id="ios-banner" class="ios-banner" hidden>
+    <span>To install on iPhone: tap Share, then Add to Home Screen.</span>
+    <button type="button" id="ios-dismiss" aria-label="Dismiss">✕</button>
+  </div>
+
+  <main id="app-shell">
+    <section class="screen active" id="screen-onboarding">
+      <div class="hero-panel">
+        <div class="hero-mark">📒</div>
+        <h1>Confirma</h1>
+        <p>Record your business. Build your history.</p>
+        <div class="step-indicator" id="onboarding-step-label">Step 1 of 4</div>
+      </div>
+
+      <div class="onboarding-panel">
+        <div class="onboard-step active" data-step="1">
+          <h2>Where are you based?</h2>
+          <div class="choice-grid">
+            <button class="choice-card" data-country="NG" type="button">
+              <strong>🇳🇬 Nigeria</strong>
+              <span>Informal trade and local business</span>
+            </button>
+            <button class="choice-card" data-country="US" type="button">
+              <strong>🇺🇸 United States</strong>
+              <span>Small business or side hustle</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="onboard-step" data-step="2">
+          <h2>Choose your language</h2>
+          <div class="choice-list" id="language-options"></div>
+        </div>
+
+        <div class="onboard-step" data-step="3">
+          <h2>What type of business do you run?</h2>
+          <div class="choice-grid" id="business-options"></div>
+        </div>
+
+        <div class="onboard-step" data-step="4">
+          <h2>Pick your common categories</h2>
+          <p class="subtle" id="category-recommendation"></p>
+          <div class="category-columns">
+            <div>
+              <h3>Sales</h3>
+              <div class="pill-cloud" id="sales-categories"></div>
+            </div>
+            <div>
+              <h3>Expenses</h3>
+              <div class="pill-cloud" id="expense-categories"></div>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="finish-onboarding" type="button">Start Recording</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-record">
+      <header class="top-header">
+        <div>
+          <strong>Confirma</strong>
+          <span id="record-subtitle">Confirmation-gated financial record</span>
+        </div>
+        <button class="install-btn" id="install-button" type="button" hidden>Install</button>
+      </header>
+
+      <div class="voice-card">
+        <button id="mic-button" class="mic-button" type="button" aria-label="Tap to speak">🎤</button>
+        <p id="voice-label">Tap to speak your transaction</p>
+        <p class="subtle">Example: “Sold rice for 15,000”</p>
+        <p class="error-text" id="voice-error" hidden></p>
+      </div>
+
+      <div class="panel">
+        <div class="toggle-row" id="type-toggle">
+          <button type="button" class="toggle-pill active" data-type="SALE">Sale</button>
+          <button type="button" class="toggle-pill" data-type="EXPENSE">Expense</button>
+          <button type="button" class="toggle-pill" data-type="TRANSFER">Transfer</button>
+        </div>
+        <div class="toggle-row" id="transfer-toggle" hidden>
+          <button type="button" class="toggle-pill active" data-direction="IN">In</button>
+          <button type="button" class="toggle-pill" data-direction="OUT">Out</button>
+        </div>
+        <input id="item-input" class="text-field" type="text" placeholder="Item or description">
+        <div class="input-row">
+          <select id="category-select" class="text-field"></select>
+          <input id="amount-input" class="text-field amount-field" type="number" placeholder="Amount" min="0" step="0.01">
+        </div>
+        <div class="quick-pills" id="quick-pills"></div>
+        <button class="btn btn-primary" id="record-button" type="button">Record</button>
+        <p class="error-text" id="record-error" hidden></p>
+      </div>
+
+      <div class="metric-grid">
+        <div class="metric-card">
+          <span>Today’s Sales</span>
+          <strong id="today-sales">₦0</strong>
+        </div>
+        <div class="metric-card">
+          <span>Today’s Expenses</span>
+          <strong id="today-expenses">₦0</strong>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-heading">
+          <h2>Recent activity</h2>
+        </div>
+        <div id="recent-list" class="stack-list"></div>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-confirm">
+      <header class="top-header">
+        <div>
+          <strong>Confirm transaction</strong>
+          <span>Nothing is permanent until you confirm.</span>
+        </div>
+      </header>
+      <div class="panel confirm-panel">
+        <div id="confirm-summary" class="confirm-summary"></div>
+        <p id="confirm-question" class="subtle">Do you confirm?</p>
+        <div class="button-stack secondary-stack">
+          <button class="btn btn-secondary" id="read-again-button" type="button">Read again</button>
+        </div>
+        <div class="button-stack">
+          <button class="btn btn-primary" id="confirm-button" type="button">Confirm</button>
+          <button class="btn btn-secondary" id="edit-button" type="button">Edit</button>
+          <button class="btn btn-secondary" id="cancel-button" type="button">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-dashboard">
+      <header class="top-header">
+        <div>
+          <strong>Dashboard</strong>
+          <span>Your confirmed business history</span>
+        </div>
+      </header>
+
+      <div class="metric-grid">
+        <div class="metric-card">
+          <span>Today’s Sales</span>
+          <strong id="dash-today-sales">₦0</strong>
+        </div>
+        <div class="metric-card">
+          <span>Monthly Sales</span>
+          <strong id="dash-monthly-sales">₦0</strong>
+        </div>
+        <div class="metric-card">
+          <span>Monthly Expenses</span>
+          <strong id="dash-monthly-expenses">₦0</strong>
+        </div>
+        <div class="metric-card">
+          <span>Cash Flow</span>
+          <strong id="dash-cash-flow">₦0</strong>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-heading">
+          <h2>Sales trend</h2>
+          <div class="toggle-row compact" id="chart-toggle">
+            <button class="toggle-pill active" type="button" data-chart="weekly">Weekly</button>
+            <button class="toggle-pill" type="button" data-chart="monthly">Monthly</button>
+          </div>
+        </div>
+        <div class="chart-bars" id="sales-chart"></div>
+      </div>
+
+      <div class="panel">
+        <div class="trust-row">
+          <div>
+            <span class="subtle">Recording streak</span>
+            <strong id="streak-count">0 days</strong>
+          </div>
+          <div>
+            <span class="subtle">Trust tier</span>
+            <strong id="trust-tier">NEW</strong>
+          </div>
+        </div>
+        <p class="subtle" id="trust-copy">Keep recording to move from NEW to BRONZE.</p>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-history">
+      <header class="top-header">
+        <div>
+          <strong>History</strong>
+          <span>Confirmed transactions only</span>
+        </div>
+      </header>
+
+      <div class="panel">
+        <input id="history-search" class="text-field" type="text" placeholder="Search transactions">
+        <div class="toggle-row compact" id="history-toggle">
+          <button class="toggle-pill active" type="button" data-filter="ALL">All</button>
+          <button class="toggle-pill" type="button" data-filter="SALE">Sales</button>
+          <button class="toggle-pill" type="button" data-filter="EXPENSE">Expenses</button>
+          <button class="toggle-pill" type="button" data-filter="TRANSFER">Transfer</button>
+        </div>
+        <div id="history-list" class="stack-list"></div>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-settings">
+      <header class="top-header">
+        <div>
+          <strong>Settings</strong>
+          <span>Profile, language, and accessibility</span>
+        </div>
+      </header>
+
+      <div class="panel">
+        <h2>Profile</h2>
+        <div class="settings-list">
+          <label>
+            Country
+            <select id="settings-country" class="text-field">
+              <option value="NG">Nigeria</option>
+              <option value="US">United States</option>
+            </select>
+          </label>
+          <label>
+            Language
+            <select id="settings-language" class="text-field"></select>
+          </label>
+          <label>
+            Business type
+            <select id="settings-business" class="text-field"></select>
+          </label>
+        </div>
+        <button class="btn btn-primary" id="save-settings" type="button">Save settings</button>
+        <p class="subtle" id="settings-status"></p>
+      </div>
+
+      <div class="panel">
+        <h2>About Confirma</h2>
+        <p class="subtle">Confirma is a confirmation-gated, append-only financial ledger that helps entrepreneurs build bank-verifiable financial identity.</p>
+        <p class="subtle">USPTO Provisional Patent Application: 63/987,858</p>
+        <p class="subtle">Phase 1: Local immutable foundation</p>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-export">
+      <header class="top-header">
+        <div>
+          <strong>Export</strong>
+          <span>Last 30 days with integrity code</span>
+        </div>
+      </header>
+      <div class="panel">
+        <p class="subtle">Generate a free export of the last 30 days of confirmed transactions, including the ledger root hash and integrity code.</p>
+        <button class="btn btn-primary" id="export-button" type="button">Generate export</button>
+        <p class="subtle" id="export-status"></p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" id="bottom-nav" hidden>
+    <button type="button" class="nav-item active" data-screen="screen-record">Record</button>
+    <button type="button" class="nav-item" data-screen="screen-dashboard">Dashboard</button>
+    <button type="button" class="nav-item" data-screen="screen-history">History</button>
+    <button type="button" class="nav-item" data-screen="screen-settings">Settings</button>
+    <button type="button" class="nav-item" data-screen="screen-export">Export</button>
+  </nav>
+
+  <script type="module" src="/app/app.js"></script>
+</body>
+</html>

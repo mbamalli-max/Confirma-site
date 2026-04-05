@@ -1276,4 +1276,49 @@ h1, h2, h3, h4 {
     font-size: 10px;
   }
 }
-                                                                                                                                                                                                                                                                                    
+
+/* Country search selector */
+.country-search-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--forest, #2D6A4F);
+  border-radius: 8px;
+  font-size: 1rem;
+  box-sizing: border-box;
+  margin-bottom: 0.5rem;
+  background: var(--parchment, #FAF8F3);
+  outline-color: var(--forest, #2D6A4F);
+}
+
+.country-search-list {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.country-search-item {
+  display: block;
+  width: 100%;
+  padding: 0.65rem 1rem;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  font-size: 0.93rem;
+  color: inherit;
+}
+
+.country-search-item:last-child {
+  border-bottom: none;
+}
+
+.country-search-item:hover,
+.country-search-item:focus,
+.country-search-item.selected {
+  background: #e8f5ee;
+  font-weight: 600;
+  outline: none;
+}

@@ -1,0 +1,23 @@
+{
+  "name": "Confirma",
+  "short_name": "Confirma",
+  "description": "Accessible financial records for every business, everywhere.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F7F3EE",
+  "theme_color": "#1A3C34",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-mask.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
