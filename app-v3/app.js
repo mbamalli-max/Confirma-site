@@ -1876,9 +1876,9 @@ function renderSettingsRow(label, value) {
 }
 
 function getRecordConfirmedAtMs(record) {
-  const confirmedAt = Number(record?.confirmed_at || 0);
-  if (!Number.isFinite(confirmedAt) || confirmedAt <= 0) return 0;
-  return confirmedAt > 1e12 ? confirmedAt : confirmedAt * 1000;
+  const raw = Number(record?.confirmed_at || record?.created_at || 0);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return raw > 1e12 ? raw : raw * 1000;
 }
 
 function getAnomalyStore(mode = "readonly") {
