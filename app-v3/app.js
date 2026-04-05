@@ -1238,51 +1238,38 @@ function renderCountryGrid(dimension = "phone_country") {
   if (!container) return;
   container.innerHTML = "";
 
-  const selectedCountry = dimension === "operating_region"
+  const searchInput = document.createElement("input");
+  searchInput.type = "search";
+  searchInput.placeholder = dimension === "operating_region"
+    ? "Search region..."
+    : "Search phone country...";
+  searchInput.className = "country-search-input";
+  container.appendChild(searchInput);
+
+  const list = document.createElement("div");
+  list.className = "country-search-list";
+  container.appendChild(list);
+
+  let selectedCode = dimension === "operating_region"
     ? getRecognizedCountryId(state.profile?.operating_region || state.profile?.country || state.profile?.phone_country)
     : getRecognizedCountryId(state.profile?.country || state.profile?.phone_country || state.authPhoneCountry);
 
-  COUNTRIES.forEach((country) => {
-    container.appendChild(buildVisualCard(country.icon, country.name, "Country", () => {
-      if (dimension === "phone_country") {
-        state.authPhoneCountry = country.id;
-        state.profile = {
-          ...(state.profile || {}),
-          plan: normalizePlan(state.profile?.plan),
-          country: country.id,
-          phone_country: country.id,
-          operating_region: getRecognizedCountryId(state.profile?.operating_region) || country.id,
-          language: normalizeLanguageId(state.profile?.language || "en"),
-          last_action: state.profile?.last_action || "sale",
-          preferred_labels: state.profile?.preferred_labels || [],
-          display_name: state.profile?.display_name || "",
-          phone_number: state.profile?.phone_number || "",
-          email: state.profile?.email || "",
-          region: state.profile?.region || "",
-          birth_year: state.profile?.birth_year || "",
-          gender: state.profile?.gender || ""
-        };
-        void persistAuthPhoneCountry(country.id);
-        renderCountryGrid("phone_country");
-        renderCountryGrid("operating_region");
-        syncCountryAwareInputs();
-        syncOnboardingRegionNote();
-        renderOnboardingProfileStep();
-        updateOnboardingStep(2);
-        return;
-      }
+  function selectCountry(code) {
+    const country = COUNTRIES.find((item) => item.id === code);
+    if (!country) return;
 
+    selectedCode = code;
+    if (dimension === "phone_country") {
+      state.authPhoneCountry = code;
       state.profile = {
         ...(state.profile || {}),
         plan: normalizePlan(state.profile?.plan),
-        country: getRecognizedCountryId(state.profile?.country) || getPhoneInputCountry() || country.id,
-        phone_country: getRecognizedCountryId(state.profile?.phone_country) || getPhoneInputCountry() || "",
-        operating_region: country.id,
+        country: code,
+        phone_country: code,
+        operating_region: getRecognizedCountryId(state.profile?.operating_region) || code,
         language: normalizeLanguageId(state.profile?.language || "en"),
-        sector_id: null,
-        business_type_id: null,
         last_action: state.profile?.last_action || "sale",
-        preferred_labels: [],
+        preferred_labels: state.profile?.preferred_labels || [],
         display_name: state.profile?.display_name || "",
         phone_number: state.profile?.phone_number || "",
         email: state.profile?.email || "",
@@ -1290,13 +1277,93 @@ function renderCountryGrid(dimension = "phone_country") {
         birth_year: state.profile?.birth_year || "",
         gender: state.profile?.gender || ""
       };
+      void persistAuthPhoneCountry(code);
+      renderCountryGrid("phone_country");
       renderCountryGrid("operating_region");
-      renderSectorGrid();
-      renderBusinessGrid();
+      syncCountryAwareInputs();
+      syncOnboardingRegionNote();
       renderOnboardingProfileStep();
-      updateOnboardingStep(3);
-    }, selectedCountry === country.id));
+      updateOnboardingStep(2);
+      return;
+    }
+
+    state.profile = {
+      ...(state.profile || {}),
+      plan: normalizePlan(state.profile?.plan),
+      country: getRecognizedCountryId(state.profile?.country) || getPhoneInputCountry() || code,
+      phone_country: getRecognizedCountryId(state.profile?.phone_country) || getPhoneInputCountry() || "",
+      operating_region: code,
+      language: normalizeLanguageId(state.profile?.language || "en"),
+      sector_id: null,
+      business_type_id: null,
+      last_action: state.profile?.last_action || "sale",
+      preferred_labels: [],
+      display_name: state.profile?.display_name || "",
+      phone_number: state.profile?.phone_number || "",
+      email: state.profile?.email || "",
+      region: state.profile?.region || "",
+      birth_year: state.profile?.birth_year || "",
+      gender: state.profile?.gender || ""
+    };
+    renderCountryGrid("operating_region");
+    renderSectorGrid();
+    renderBusinessGrid();
+    renderOnboardingProfileStep();
+    updateOnboardingStep(3);
+  }
+
+  function renderList(query) {
+    const q = String(query || "").trim().toLowerCase();
+    list.innerHTML = "";
+    const filtered = q
+      ? COUNTRIES.filter((country) => {
+        const code = String(country.id || "").toLowerCase();
+        const name = String(country.name || "").toLowerCase();
+        return name.includes(q) || code.includes(q);
+      })
+      : COUNTRIES;
+
+    filtered.forEach((country) => {
+      const code = country.id || "";
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "country-search-item";
+      item.textContent = `${country.name}${code ? ` (${code})` : ""}`;
+      item.dataset.code = code;
+      if (code === selectedCode) {
+        item.classList.add("selected");
+      }
+      item.addEventListener("click", () => {
+        selectCountry(code);
+      });
+      list.appendChild(item);
+    });
+  }
+
+  renderList("");
+  searchInput.addEventListener("input", () => {
+    renderList(searchInput.value);
   });
+
+  if (dimension === "phone_country" && !selectedCode) {
+    try {
+      const locale = Intl.DateTimeFormat().resolvedOptions().locale;
+      const regionCode = (locale.split("-")[1] || "").toUpperCase();
+      const match = COUNTRIES.find((country) => country.id === regionCode);
+      if (match) {
+        selectedCode = match.id;
+        setTimeout(() => {
+          const el = list.querySelector(`[data-code="${match.id}"]`);
+          if (el) {
+            el.classList.add("selected");
+            el.scrollIntoView({ block: "nearest" });
+          }
+        }, 50);
+      }
+    } catch (error) {
+      // Ignore locale detection errors; the selector remains fully manual.
+    }
+  }
 }
 
 function renderSectorGrid() {
