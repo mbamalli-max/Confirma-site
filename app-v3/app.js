@@ -13,6 +13,8 @@ const PAYSTACK_PUBLIC_KEY = "pk_test_placeholder";
 const MONTHLY_FREE_EXPORT_LIMIT = 3;
 const PASSCODE_KDF_VERSION = "pbkdf2-sha256-v1";
 const PASSCODE_PBKDF2_ITERATIONS = 210000;
+const ONBOARDING_TOTAL_STEPS = 6;
+const ONBOARDING_PROFILE_STEP = 6;
 
 const HOUSE_ADS = {
   interstitial: [
@@ -87,10 +89,310 @@ const SECTORS = [
   { id: "digital_online", name: "Digital & Online Business", icon: "💻" }
 ];
 
-const COUNTRIES = [
-  { id: "US", name: "United States", icon: "🇺🇸" },
-  { id: "NG", name: "Nigeria", icon: "🇳🇬" }
+const SUPPORTED_LANGUAGES = [
+  { id: "en", name: "English" }
 ];
+
+const PHONE_COUNTRY_RULES = {
+  GH: {
+    dialCode: "+233",
+    dialingDigits: "233",
+    onboardingPlaceholder: "e.g. 0241234567",
+    otpPlaceholder: "0241234567",
+    validationMessage: "Enter a valid Ghanaian phone number."
+  },
+  KE: {
+    dialCode: "+254",
+    dialingDigits: "254",
+    onboardingPlaceholder: "e.g. 0712345678",
+    otpPlaceholder: "0712345678",
+    validationMessage: "Enter a valid Kenyan phone number."
+  },
+  NG: {
+    dialCode: "+234",
+    dialingDigits: "234",
+    onboardingPlaceholder: "e.g. 08031234567",
+    otpPlaceholder: "08031234567",
+    validationMessage: "Enter a valid Nigerian phone number."
+  },
+  US: {
+    dialCode: "+1",
+    dialingDigits: "1",
+    onboardingPlaceholder: "e.g. 2125551234",
+    otpPlaceholder: "2125551234",
+    validationMessage: "Enter a valid US phone number."
+  },
+  ZA: {
+    dialCode: "+27",
+    dialingDigits: "27",
+    onboardingPlaceholder: "e.g. 0821234567",
+    otpPlaceholder: "0821234567",
+    validationMessage: "Enter a valid South African phone number."
+  }
+};
+
+const COUNTRIES = [
+  { id: "AF", name: "Afghanistan" },
+  { id: "AX", name: "Åland Islands" },
+  { id: "AL", name: "Albania" },
+  { id: "DZ", name: "Algeria" },
+  { id: "AS", name: "American Samoa" },
+  { id: "AD", name: "Andorra" },
+  { id: "AO", name: "Angola" },
+  { id: "AI", name: "Anguilla" },
+  { id: "AQ", name: "Antarctica" },
+  { id: "AG", name: "Antigua & Barbuda" },
+  { id: "AR", name: "Argentina" },
+  { id: "AM", name: "Armenia" },
+  { id: "AW", name: "Aruba" },
+  { id: "AU", name: "Australia" },
+  { id: "AT", name: "Austria" },
+  { id: "AZ", name: "Azerbaijan" },
+  { id: "BS", name: "Bahamas" },
+  { id: "BH", name: "Bahrain" },
+  { id: "BD", name: "Bangladesh" },
+  { id: "BB", name: "Barbados" },
+  { id: "BY", name: "Belarus" },
+  { id: "BE", name: "Belgium" },
+  { id: "BZ", name: "Belize" },
+  { id: "BJ", name: "Benin" },
+  { id: "BM", name: "Bermuda" },
+  { id: "BT", name: "Bhutan" },
+  { id: "BO", name: "Bolivia" },
+  { id: "BA", name: "Bosnia & Herzegovina" },
+  { id: "BW", name: "Botswana" },
+  { id: "BV", name: "Bouvet Island" },
+  { id: "BR", name: "Brazil" },
+  { id: "IO", name: "British Indian Ocean Territory" },
+  { id: "VG", name: "British Virgin Islands" },
+  { id: "BN", name: "Brunei" },
+  { id: "BG", name: "Bulgaria" },
+  { id: "BF", name: "Burkina Faso" },
+  { id: "BI", name: "Burundi" },
+  { id: "KH", name: "Cambodia" },
+  { id: "CM", name: "Cameroon" },
+  { id: "CA", name: "Canada" },
+  { id: "CV", name: "Cape Verde" },
+  { id: "BQ", name: "Caribbean Netherlands" },
+  { id: "KY", name: "Cayman Islands" },
+  { id: "CF", name: "Central African Republic" },
+  { id: "TD", name: "Chad" },
+  { id: "CL", name: "Chile" },
+  { id: "CN", name: "China" },
+  { id: "CX", name: "Christmas Island" },
+  { id: "CC", name: "Cocos (Keeling) Islands" },
+  { id: "CO", name: "Colombia" },
+  { id: "KM", name: "Comoros" },
+  { id: "CG", name: "Congo - Brazzaville" },
+  { id: "CD", name: "Congo - Kinshasa" },
+  { id: "CK", name: "Cook Islands" },
+  { id: "CR", name: "Costa Rica" },
+  { id: "CI", name: "Côte d’Ivoire" },
+  { id: "HR", name: "Croatia" },
+  { id: "CU", name: "Cuba" },
+  { id: "CW", name: "Curaçao" },
+  { id: "CY", name: "Cyprus" },
+  { id: "CZ", name: "Czechia" },
+  { id: "DK", name: "Denmark" },
+  { id: "DJ", name: "Djibouti" },
+  { id: "DM", name: "Dominica" },
+  { id: "DO", name: "Dominican Republic" },
+  { id: "EC", name: "Ecuador" },
+  { id: "EG", name: "Egypt" },
+  { id: "SV", name: "El Salvador" },
+  { id: "GQ", name: "Equatorial Guinea" },
+  { id: "ER", name: "Eritrea" },
+  { id: "EE", name: "Estonia" },
+  { id: "SZ", name: "Eswatini" },
+  { id: "ET", name: "Ethiopia" },
+  { id: "FK", name: "Falkland Islands" },
+  { id: "FO", name: "Faroe Islands" },
+  { id: "FJ", name: "Fiji" },
+  { id: "FI", name: "Finland" },
+  { id: "FR", name: "France" },
+  { id: "GF", name: "French Guiana" },
+  { id: "PF", name: "French Polynesia" },
+  { id: "TF", name: "French Southern Territories" },
+  { id: "GA", name: "Gabon" },
+  { id: "GM", name: "Gambia" },
+  { id: "GE", name: "Georgia" },
+  { id: "DE", name: "Germany" },
+  { id: "GH", name: "Ghana" },
+  { id: "GI", name: "Gibraltar" },
+  { id: "GR", name: "Greece" },
+  { id: "GL", name: "Greenland" },
+  { id: "GD", name: "Grenada" },
+  { id: "GP", name: "Guadeloupe" },
+  { id: "GU", name: "Guam" },
+  { id: "GT", name: "Guatemala" },
+  { id: "GG", name: "Guernsey" },
+  { id: "GN", name: "Guinea" },
+  { id: "GW", name: "Guinea-Bissau" },
+  { id: "GY", name: "Guyana" },
+  { id: "HT", name: "Haiti" },
+  { id: "HM", name: "Heard & McDonald Islands" },
+  { id: "HN", name: "Honduras" },
+  { id: "HK", name: "Hong Kong SAR China" },
+  { id: "HU", name: "Hungary" },
+  { id: "IS", name: "Iceland" },
+  { id: "IN", name: "India" },
+  { id: "ID", name: "Indonesia" },
+  { id: "IR", name: "Iran" },
+  { id: "IQ", name: "Iraq" },
+  { id: "IE", name: "Ireland" },
+  { id: "IM", name: "Isle of Man" },
+  { id: "IL", name: "Israel" },
+  { id: "IT", name: "Italy" },
+  { id: "JM", name: "Jamaica" },
+  { id: "JP", name: "Japan" },
+  { id: "JE", name: "Jersey" },
+  { id: "JO", name: "Jordan" },
+  { id: "KZ", name: "Kazakhstan" },
+  { id: "KE", name: "Kenya" },
+  { id: "KI", name: "Kiribati" },
+  { id: "KW", name: "Kuwait" },
+  { id: "KG", name: "Kyrgyzstan" },
+  { id: "LA", name: "Laos" },
+  { id: "LV", name: "Latvia" },
+  { id: "LB", name: "Lebanon" },
+  { id: "LS", name: "Lesotho" },
+  { id: "LR", name: "Liberia" },
+  { id: "LY", name: "Libya" },
+  { id: "LI", name: "Liechtenstein" },
+  { id: "LT", name: "Lithuania" },
+  { id: "LU", name: "Luxembourg" },
+  { id: "MO", name: "Macao SAR China" },
+  { id: "MG", name: "Madagascar" },
+  { id: "MW", name: "Malawi" },
+  { id: "MY", name: "Malaysia" },
+  { id: "MV", name: "Maldives" },
+  { id: "ML", name: "Mali" },
+  { id: "MT", name: "Malta" },
+  { id: "MH", name: "Marshall Islands" },
+  { id: "MQ", name: "Martinique" },
+  { id: "MR", name: "Mauritania" },
+  { id: "MU", name: "Mauritius" },
+  { id: "YT", name: "Mayotte" },
+  { id: "MX", name: "Mexico" },
+  { id: "FM", name: "Micronesia" },
+  { id: "MD", name: "Moldova" },
+  { id: "MC", name: "Monaco" },
+  { id: "MN", name: "Mongolia" },
+  { id: "ME", name: "Montenegro" },
+  { id: "MS", name: "Montserrat" },
+  { id: "MA", name: "Morocco" },
+  { id: "MZ", name: "Mozambique" },
+  { id: "MM", name: "Myanmar (Burma)" },
+  { id: "NA", name: "Namibia" },
+  { id: "NR", name: "Nauru" },
+  { id: "NP", name: "Nepal" },
+  { id: "NL", name: "Netherlands" },
+  { id: "NC", name: "New Caledonia" },
+  { id: "NZ", name: "New Zealand" },
+  { id: "NI", name: "Nicaragua" },
+  { id: "NE", name: "Niger" },
+  { id: "NG", name: "Nigeria" },
+  { id: "NU", name: "Niue" },
+  { id: "NF", name: "Norfolk Island" },
+  { id: "KP", name: "North Korea" },
+  { id: "MK", name: "North Macedonia" },
+  { id: "MP", name: "Northern Mariana Islands" },
+  { id: "NO", name: "Norway" },
+  { id: "OM", name: "Oman" },
+  { id: "PK", name: "Pakistan" },
+  { id: "PW", name: "Palau" },
+  { id: "PS", name: "Palestinian Territories" },
+  { id: "PA", name: "Panama" },
+  { id: "PG", name: "Papua New Guinea" },
+  { id: "PY", name: "Paraguay" },
+  { id: "PE", name: "Peru" },
+  { id: "PH", name: "Philippines" },
+  { id: "PN", name: "Pitcairn Islands" },
+  { id: "PL", name: "Poland" },
+  { id: "PT", name: "Portugal" },
+  { id: "PR", name: "Puerto Rico" },
+  { id: "QA", name: "Qatar" },
+  { id: "RE", name: "Réunion" },
+  { id: "RO", name: "Romania" },
+  { id: "RU", name: "Russia" },
+  { id: "RW", name: "Rwanda" },
+  { id: "WS", name: "Samoa" },
+  { id: "SM", name: "San Marino" },
+  { id: "ST", name: "São Tomé & Príncipe" },
+  { id: "SA", name: "Saudi Arabia" },
+  { id: "SN", name: "Senegal" },
+  { id: "RS", name: "Serbia" },
+  { id: "SC", name: "Seychelles" },
+  { id: "SL", name: "Sierra Leone" },
+  { id: "SG", name: "Singapore" },
+  { id: "SX", name: "Sint Maarten" },
+  { id: "SK", name: "Slovakia" },
+  { id: "SI", name: "Slovenia" },
+  { id: "SB", name: "Solomon Islands" },
+  { id: "SO", name: "Somalia" },
+  { id: "ZA", name: "South Africa" },
+  { id: "GS", name: "South Georgia & South Sandwich Islands" },
+  { id: "KR", name: "South Korea" },
+  { id: "SS", name: "South Sudan" },
+  { id: "ES", name: "Spain" },
+  { id: "LK", name: "Sri Lanka" },
+  { id: "BL", name: "St. Barthélemy" },
+  { id: "SH", name: "St. Helena" },
+  { id: "KN", name: "St. Kitts & Nevis" },
+  { id: "LC", name: "St. Lucia" },
+  { id: "MF", name: "St. Martin" },
+  { id: "PM", name: "St. Pierre & Miquelon" },
+  { id: "VC", name: "St. Vincent & Grenadines" },
+  { id: "SD", name: "Sudan" },
+  { id: "SR", name: "Suriname" },
+  { id: "SJ", name: "Svalbard & Jan Mayen" },
+  { id: "SE", name: "Sweden" },
+  { id: "CH", name: "Switzerland" },
+  { id: "SY", name: "Syria" },
+  { id: "TW", name: "Taiwan" },
+  { id: "TJ", name: "Tajikistan" },
+  { id: "TZ", name: "Tanzania" },
+  { id: "TH", name: "Thailand" },
+  { id: "TL", name: "Timor-Leste" },
+  { id: "TG", name: "Togo" },
+  { id: "TK", name: "Tokelau" },
+  { id: "TO", name: "Tonga" },
+  { id: "TT", name: "Trinidad & Tobago" },
+  { id: "TN", name: "Tunisia" },
+  { id: "TR", name: "Türkiye" },
+  { id: "TM", name: "Turkmenistan" },
+  { id: "TC", name: "Turks & Caicos Islands" },
+  { id: "TV", name: "Tuvalu" },
+  { id: "UM", name: "U.S. Outlying Islands" },
+  { id: "VI", name: "U.S. Virgin Islands" },
+  { id: "UG", name: "Uganda" },
+  { id: "UA", name: "Ukraine" },
+  { id: "AE", name: "United Arab Emirates" },
+  { id: "GB", name: "United Kingdom" },
+  { id: "US", name: "United States" },
+  { id: "UY", name: "Uruguay" },
+  { id: "UZ", name: "Uzbekistan" },
+  { id: "VU", name: "Vanuatu" },
+  { id: "VA", name: "Vatican City" },
+  { id: "VE", name: "Venezuela" },
+  { id: "VN", name: "Vietnam" },
+  { id: "WF", name: "Wallis & Futuna" },
+  { id: "EH", name: "Western Sahara" },
+  { id: "YE", name: "Yemen" },
+  { id: "ZM", name: "Zambia" },
+  { id: "ZW", name: "Zimbabwe" }
+];
+
+COUNTRIES.forEach((country) => {
+  country.icon = "🌍";
+});
+
+const REGION_CURRENCY_MAP = {
+  NG: "NGN", US: "USD", GB: "GBP", GH: "GHS", KE: "KES", ZA: "ZAR",
+  CA: "CAD", AU: "AUD", EU: "EUR", DE: "EUR", FR: "EUR", IN: "INR"
+};
+
+const PAID_REPORT_REGIONS = new Set(["NG"]);
 
 const CAPTURE_EXAMPLES = {
   NG: [
@@ -106,6 +408,13 @@ const CAPTURE_EXAMPLES = {
     "Received payment 2,500",
     "Bought supplies for 89",
     "Client paid 450"
+  ],
+  DEFAULT: [
+    "Sold 12 items for 450",
+    "Paid supplier 120",
+    "Received customer payment 250",
+    "Bought stock for 80",
+    "Client paid 600"
   ]
 };
 
@@ -126,7 +435,13 @@ const BUSINESS_TYPES = [
   { id: "us_contractor", country: "US", sector_id: "skilled_construction", name: "Contractor", icon: "🔨" },
   { id: "us_beauty_services", country: "US", sector_id: "personal_professional", name: "Beauty Services", icon: "💇" },
   { id: "us_digital_business", country: "US", sector_id: "digital_online", name: "Digital Business", icon: "🧑‍💻" },
-  { id: "us_personal_services_side_hustle", country: "US", sector_id: "personal_professional", name: "Personal Services / Side Hustle", icon: "🧹" }
+  { id: "us_personal_services_side_hustle", country: "US", sector_id: "personal_professional", name: "Personal Services / Side Hustle", icon: "🧹" },
+  { id: "global_trade_retail", country: "GLOBAL", sector_id: "trade_retail", name: "Retail / Trading", icon: "🛍️" },
+  { id: "global_food_hospitality", country: "GLOBAL", sector_id: "food_hospitality", name: "Food & Hospitality", icon: "🍽️" },
+  { id: "global_transport_logistics", country: "GLOBAL", sector_id: "transport_logistics", name: "Transport & Logistics", icon: "🚚" },
+  { id: "global_skilled_construction", country: "GLOBAL", sector_id: "skilled_construction", name: "Skilled Work / Construction", icon: "🛠️" },
+  { id: "global_personal_professional", country: "GLOBAL", sector_id: "personal_professional", name: "Personal / Professional Services", icon: "💼" },
+  { id: "global_digital_online", country: "GLOBAL", sector_id: "digital_online", name: "Digital / Online Business", icon: "💻" }
 ];
 
 const QUICK_PICKS = {
@@ -231,6 +546,42 @@ const QUICK_PICKS = {
     purchase: ["Cleaning Supplies", "Equipment"],
     payment: ["Gas", "App Fee", "Equipment", "Background Check", "Cleaning Supplies"],
     receipt: ["Client Payment", "Tip", "Reimbursement", "App Payout"]
+  },
+  global_trade_retail: {
+    sell: ["Products", "Merchandise", "Accessories", "Online Sale", "Wholesale Order"],
+    purchase: ["Inventory", "Supplies", "Packaging", "Labels", "General Restock"],
+    payment: ["Rent", "Transport", "Utilities", "Staff Pay", "Platform Fee"],
+    receipt: ["Customer Payment", "Deposit", "Transfer Received", "Supplier Refund"]
+  },
+  global_food_hospitality: {
+    sell: ["Meals", "Drinks", "Snacks", "Catering", "Delivery Order"],
+    purchase: ["Ingredients", "Packaging", "Produce", "Cooking Fuel", "Beverage Stock"],
+    payment: ["Rent", "Transport", "Helper Pay", "Utilities", "Cleaning Supplies"],
+    receipt: ["Customer Payment", "Catering Deposit", "Bulk Order Payment", "Refund Received"]
+  },
+  global_transport_logistics: {
+    sell: ["Trip Fare", "Delivery Fee", "Charter", "Route Pay", "Moving Job"],
+    purchase: ["Fuel", "Spare Parts", "Tyres", "Safety Gear", "Vehicle Supplies"],
+    payment: ["Fuel", "Repairs", "Parking", "Tolls", "Driver Pay"],
+    receipt: ["Client Payment", "Delivery Payment", "Charter Payment", "Reimbursement"]
+  },
+  global_skilled_construction: {
+    sell: ["Labour", "Project Fee", "Installation", "Repair Job", "Inspection"],
+    purchase: ["Materials", "Tools", "Equipment Rental", "Safety Gear", "Supplies"],
+    payment: ["Transport", "Helper Pay", "Permits", "Fuel", "Equipment Repair"],
+    receipt: ["Client Payment", "Deposit", "Progress Payment", "Final Balance"]
+  },
+  global_personal_professional: {
+    sell: ["Service Fee", "Consultation", "Project Fee", "Treatment", "Training"],
+    purchase: ["Materials", "Supplies", "Products", "Equipment", "Office Supplies"],
+    payment: ["Rent", "Transport", "Utilities", "Staff Pay", "Marketing"],
+    receipt: ["Client Payment", "Deposit", "Tip", "Referral Payment"]
+  },
+  global_digital_online: {
+    sell: ["Project Fee", "Consultation", "Digital Product", "Subscription", "Online Sale"],
+    purchase: ["Software", "Equipment", "Domain/Hosting", "Packaging", "Product Photos"],
+    payment: ["Internet", "Platform Fee", "Ads", "Contractor Pay", "Shipping Cost"],
+    receipt: ["Client Payment", "Platform Payout", "Affiliate Payout", "Transfer Received"]
   }
 };
 
@@ -377,7 +728,7 @@ const state = {
   emailVerified: false,
   phoneVerified: false,
   smsSupported: false,
-  authPhoneCountry: "NG",
+  authPhoneCountry: "",
   devicePrivateKey: null,
   devicePublicKey: "",
   deviceIdentity: "",
@@ -389,7 +740,10 @@ const state = {
   syncInFlight: false,
   syncQueueCount: 0,
   lastSyncAt: "",
-  lastSyncReceipt: ""
+  lastSyncReceipt: "",
+  swRegistration: null,
+  swRefreshInFlight: false,
+  anomalyAutoReviewTimer: null
 };
 
 let dashChart = null;
@@ -400,23 +754,15 @@ const els = {};
 
 document.addEventListener("DOMContentLoaded", init);
 
-function syncGlobalDeviceIdentity() {
-  if (state.deviceIdentity) {
-    window.CONFIRMA_DEVICE_IDENTITY = state.deviceIdentity;
-  } else {
-    delete window.CONFIRMA_DEVICE_IDENTITY;
-  }
-}
-
 async function init() {
   cacheElements();
   state.db = await openDb();
   await loadCustomLabelsIntoCatalog();
   try {
     const savedAuthPhoneCountry = await getSetting("auth_phone_country");
-    state.authPhoneCountry = getRecognizedCountryId(savedAuthPhoneCountry) || "NG";
+    state.authPhoneCountry = getRecognizedCountryId(savedAuthPhoneCountry) || "";
   } catch (error) {
-    state.authPhoneCountry = "NG";
+    state.authPhoneCountry = "";
   }
   try {
     state.profile = await getProfile();
@@ -430,6 +776,14 @@ async function init() {
       await saveProfile(state.profile, { skipPush: true });
     } catch (error) {
       console.warn("Unable to persist migrated local passcode reminder.", error);
+    }
+  }
+  if (state.profile?._needsDimensionMigration) {
+    delete state.profile._needsDimensionMigration;
+    try {
+      await saveProfile(state.profile, { skipPush: true });
+    } catch (error) {
+      console.warn("Unable to persist migrated country/language profile fields.", error);
     }
   }
   initializeAuthPhoneCountry();
@@ -455,7 +809,7 @@ async function init() {
       state.profile.preferred_labels = [];
     }
     if (!state.profile.display_name) {
-      state.onboardingStep = 5;
+      state.onboardingStep = ONBOARDING_PROFILE_STEP;
       renderOnboarding();
       showScreen("screen-onboarding");
       return;
@@ -525,7 +879,7 @@ function cacheElements() {
 
 function wireEvents() {
   document.getElementById("finish-onboarding").addEventListener("click", finishOnboarding);
-  document.getElementById("onboarding-next").addEventListener("click", () => updateOnboardingStep(5));
+  document.getElementById("onboarding-next").addEventListener("click", () => updateOnboardingStep(ONBOARDING_PROFILE_STEP));
   document.getElementById("restore-account-link").addEventListener("click", () => {
     restoreAccountFlow();
   });
@@ -640,7 +994,15 @@ function wireEvents() {
   });
   document.getElementById("onboarding-name").addEventListener("input", updateFinishOnboardingState);
   document.getElementById("onboarding-phone").addEventListener("change", () => {
-    void persistAuthPhoneCountry(getSelectedCountryId());
+    const normalizedPhone = normalizePhoneNumber(
+      document.getElementById("onboarding-phone")?.value.trim() || "",
+      getPhoneInputCountry()
+    );
+    const detectedPhoneCountry = detectPhoneCountryFromPhoneNumber(normalizedPhone);
+    if (detectedPhoneCountry) {
+      void persistAuthPhoneCountry(detectedPhoneCountry);
+    }
+    syncCountryAwareInputs();
   });
   document.getElementById("onboarding-phone").addEventListener("input", clearOnboardingProfileError);
   document.getElementById("onboarding-email").addEventListener("input", clearOnboardingProfileError);
@@ -703,12 +1065,48 @@ function wirePaymentTierButtons() {
 
 function registerPwa() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/app/sw.js");
-    navigator.serviceWorker.addEventListener("message", (event) => {
-      if (event.data?.type === "SW_UPDATED") {
+    const syncWaitingServiceWorker = (registration) => {
+      if (!registration) return;
+      state.swRegistration = registration;
+      if (registration.waiting) {
         showUpdateBanner();
       }
+    };
+
+    const watchInstallingServiceWorker = (registration, worker) => {
+      if (!worker) return;
+      worker.addEventListener("statechange", () => {
+        if (worker.state === "installed") {
+          syncWaitingServiceWorker(registration);
+        }
+      });
+    };
+
+    navigator.serviceWorker.register("/app/sw.js").then((registration) => {
+      syncWaitingServiceWorker(registration);
+      watchInstallingServiceWorker(registration, registration.installing);
+      registration.addEventListener("updatefound", () => {
+        watchInstallingServiceWorker(registration, registration.installing);
+      });
+    }).catch((error) => {
+      console.warn("Service worker registration failed.", error);
     });
+
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      if (event.data?.type === "SW_UPDATED") {
+        navigator.serviceWorker.getRegistration("/app/").then((registration) => {
+          syncWaitingServiceWorker(registration || state.swRegistration);
+        }).catch(() => {
+          syncWaitingServiceWorker(state.swRegistration);
+        });
+      }
+    });
+
+    const refreshButton = document.querySelector("#sw-update-banner button");
+    if (refreshButton) {
+      refreshButton.onclick = null;
+      refreshButton.addEventListener("click", applyWaitingServiceWorkerUpdate);
+    }
   }
 
   // PWA install prompt (Chrome/Android/Edge)
@@ -764,8 +1162,28 @@ function showUpdateBanner() {
   }
 }
 
+function applyWaitingServiceWorkerUpdate() {
+  const waitingWorker = state.swRegistration?.waiting;
+  if (!waitingWorker) {
+    window.location.reload();
+    return;
+  }
+
+  if (state.swRefreshInFlight) {
+    return;
+  }
+
+  state.swRefreshInFlight = true;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    window.location.reload();
+  }, { once: true });
+  waitingWorker.postMessage({ type: "SKIP_WAITING" });
+}
+
 function renderOnboarding() {
-  renderCountryGrid();
+  ensureOnboardingCountrySteps();
+  renderCountryGrid("phone_country");
+  renderCountryGrid("operating_region");
   renderSectorGrid();
   renderBusinessGrid();
   renderCommonLabelGrid();
@@ -773,17 +1191,97 @@ function renderOnboarding() {
   updateOnboardingStep(state.onboardingStep || 1);
 }
 
-function renderCountryGrid() {
-  els["country-grid"].innerHTML = "";
+function ensureOnboardingCountrySteps() {
+  const stepper = els["onboarding-step-copy"];
+  if (stepper) {
+    stepper.textContent = `Step 1 of ${ONBOARDING_TOTAL_STEPS}`;
+  }
+
+  const onboardingScreen = document.getElementById("screen-onboarding");
+  if (!onboardingScreen) return;
+
+  const phoneCountryStep = onboardingScreen.querySelector('.step[data-step="1"]');
+  if (!phoneCountryStep) return;
+
+  const phoneCountryHeading = phoneCountryStep.querySelector("h2");
+  if (phoneCountryHeading) {
+    phoneCountryHeading.textContent = "Choose your phone country";
+  }
+
+  if (document.getElementById("operating-region-step")) {
+    return;
+  }
+
+  onboardingScreen.querySelectorAll(".step[data-step]").forEach((stepNode) => {
+    const currentStep = Number(stepNode.dataset.step || 0);
+    if (currentStep >= 2) {
+      stepNode.dataset.step = String(currentStep + 1);
+    }
+  });
+
+  const operatingRegionStep = document.createElement("div");
+  operatingRegionStep.className = "step";
+  operatingRegionStep.dataset.step = "2";
+  operatingRegionStep.id = "operating-region-step";
+  operatingRegionStep.innerHTML = `
+    <h2>Where does your business primarily operate?</h2>
+    <p class="subtle">This sets your business context, default currency, and region-specific features.</p>
+    <div class="visual-grid" id="operating-region-grid"></div>
+    <p class="subtle" id="operating-region-note" hidden></p>
+  `;
+  phoneCountryStep.insertAdjacentElement("afterend", operatingRegionStep);
+}
+
+function renderCountryGrid(dimension = "phone_country") {
+  const gridId = dimension === "operating_region" ? "operating-region-grid" : "country-grid";
+  const container = document.getElementById(gridId);
+  if (!container) return;
+  container.innerHTML = "";
+
+  const selectedCountry = dimension === "operating_region"
+    ? getRecognizedCountryId(state.profile?.operating_region || state.profile?.country || state.profile?.phone_country)
+    : getRecognizedCountryId(state.profile?.country || state.profile?.phone_country || state.authPhoneCountry);
+
   COUNTRIES.forEach((country) => {
-    els["country-grid"].appendChild(buildVisualCard(country.icon, country.name, "Country", () => {
+    container.appendChild(buildVisualCard(country.icon, country.name, "Country", () => {
+      if (dimension === "phone_country") {
+        state.authPhoneCountry = country.id;
+        state.profile = {
+          ...(state.profile || {}),
+          plan: normalizePlan(state.profile?.plan),
+          country: country.id,
+          phone_country: country.id,
+          operating_region: getRecognizedCountryId(state.profile?.operating_region) || country.id,
+          language: normalizeLanguageId(state.profile?.language || "en"),
+          last_action: state.profile?.last_action || "sale",
+          preferred_labels: state.profile?.preferred_labels || [],
+          display_name: state.profile?.display_name || "",
+          phone_number: state.profile?.phone_number || "",
+          email: state.profile?.email || "",
+          region: state.profile?.region || "",
+          birth_year: state.profile?.birth_year || "",
+          gender: state.profile?.gender || ""
+        };
+        void persistAuthPhoneCountry(country.id);
+        renderCountryGrid("phone_country");
+        renderCountryGrid("operating_region");
+        syncCountryAwareInputs();
+        syncOnboardingRegionNote();
+        renderOnboardingProfileStep();
+        updateOnboardingStep(2);
+        return;
+      }
+
       state.profile = {
         ...(state.profile || {}),
         plan: normalizePlan(state.profile?.plan),
-        country: country.id,
+        country: getRecognizedCountryId(state.profile?.country) || getPhoneInputCountry() || country.id,
+        phone_country: getRecognizedCountryId(state.profile?.phone_country) || getPhoneInputCountry() || "",
+        operating_region: country.id,
+        language: normalizeLanguageId(state.profile?.language || "en"),
         sector_id: null,
         business_type_id: null,
-        last_action: "sale",
+        last_action: state.profile?.last_action || "sale",
         preferred_labels: [],
         display_name: state.profile?.display_name || "",
         phone_number: state.profile?.phone_number || "",
@@ -792,12 +1290,12 @@ function renderCountryGrid() {
         birth_year: state.profile?.birth_year || "",
         gender: state.profile?.gender || ""
       };
-      void persistAuthPhoneCountry(country.id);
+      renderCountryGrid("operating_region");
       renderSectorGrid();
       renderBusinessGrid();
       renderOnboardingProfileStep();
-      updateOnboardingStep(2);
-    }, state.profile && state.profile.country === country.id));
+      updateOnboardingStep(3);
+    }, selectedCountry === country.id));
   });
 }
 
@@ -813,7 +1311,7 @@ function renderSectorGrid() {
       };
       renderBusinessGrid();
       renderOnboardingProfileStep();
-      updateOnboardingStep(3);
+      updateOnboardingStep(4);
     }, state.profile && state.profile.sector_id === sector.id));
   });
 }
@@ -824,8 +1322,8 @@ function renderBusinessGrid() {
   const sectorName = state.profile && state.profile.sector_id
     ? SECTORS.find((item) => item.id === state.profile.sector_id)?.name
     : "your selected sector";
-  els["business-helper"].textContent = state.profile && state.profile.country
-    ? `Showing business types for ${countryName(state.profile.country)} in ${sectorName}.`
+  els["business-helper"].textContent = state.profile && state.profile.operating_region
+    ? `Showing business types for ${countryName(state.profile.operating_region)} in ${sectorName}.`
     : "Pick a country and sector first.";
 
   items.forEach((item) => {
@@ -838,7 +1336,7 @@ function renderBusinessGrid() {
       renderBusinessGrid();
       renderCommonLabelGrid();
       renderOnboardingProfileStep();
-      updateOnboardingStep(4);
+      updateOnboardingStep(5);
     }, state.profile && state.profile.business_type_id === item.id));
   });
 }
@@ -881,9 +1379,9 @@ function updateOnboardingStep(step) {
   document.querySelectorAll(".step").forEach((node) => node.classList.remove("active"));
   const activeStep = document.querySelector(`.step[data-step="${state.onboardingStep}"]`);
   activeStep?.classList.add("active");
-  els["onboarding-step-copy"].textContent = `Step ${state.onboardingStep} of 5`;
+  els["onboarding-step-copy"].textContent = `Step ${state.onboardingStep} of ${ONBOARDING_TOTAL_STEPS}`;
   els["onboarding-back"].hidden = state.onboardingStep === 1;
-  els["finish-onboarding"].hidden = state.onboardingStep !== 5;
+  els["finish-onboarding"].hidden = state.onboardingStep !== ONBOARDING_PROFILE_STEP;
   updateFinishOnboardingState();
   focusFirstInteractive(activeStep);
 }
@@ -892,7 +1390,16 @@ function goToPreviousOnboardingStep() {
   if (state.onboardingStep <= 1) return;
   const targetStep = state.onboardingStep - 1;
   if (targetStep === 2) {
+    renderCountryGrid("operating_region");
+  }
+  if (targetStep === 3) {
     renderSectorGrid();
+  }
+  if (targetStep === 4) {
+    renderBusinessGrid();
+  }
+  if (targetStep === 5) {
+    renderCommonLabelGrid();
   }
   updateOnboardingStep(targetStep);
 }
@@ -906,16 +1413,41 @@ function buildVisualCard(icon, title, description, onClick, active) {
   return button;
 }
 
+function renderLanguageSelectOptions(selectedLanguage = getProfileLanguage()) {
+  return SUPPORTED_LANGUAGES.map((item) => {
+    const selected = item.id === normalizeLanguageId(selectedLanguage) ? " selected" : "";
+    return `<option value="${item.id}"${selected}>${item.name}</option>`;
+  }).join("");
+}
+
+function ensureOnboardingLanguageField() {
+  document.getElementById("onboarding-language-wrap")?.remove();
+}
+
+function syncOnboardingRegionNote() {
+  const note = document.getElementById("operating-region-note");
+  if (!note) return;
+  const operatingRegion = getRecognizedCountryId(
+    state.profile?.operating_region || state.profile?.country || state.profile?.phone_country || ""
+  );
+  const showNote = Boolean(operatingRegion) && !supportsPaidReports(operatingRegion);
+  note.hidden = !showNote;
+  note.textContent = showNote ? getUnsupportedRegionMessage() : "";
+}
+
 async function finishOnboarding() {
   clearOnboardingProfileError();
-  const country = getSelectedCountryId();
+  const operatingRegion = getOperatingRegionId();
+  const phoneCountry = getPhoneInputCountry();
   const displayName = document.getElementById("onboarding-name")?.value.trim() || "";
   const rawPhoneNumber = document.getElementById("onboarding-phone")?.value.trim() || "";
-  const normalizedPhoneNumber = rawPhoneNumber ? normalizePhoneNumber(rawPhoneNumber, country) : "";
+  const normalizedPhoneNumber = rawPhoneNumber ? normalizePhoneNumber(rawPhoneNumber, phoneCountry) : "";
   const email = normalizeEmailAddress(document.getElementById("onboarding-email")?.value.trim() || "");
   const region = document.getElementById("onboarding-state")?.value.trim() || "";
   const birthYear = document.getElementById("onboarding-birth-year")?.value.trim() || "";
   const gender = document.getElementById("onboarding-gender")?.value || "";
+  const language = normalizeLanguageId(state.profile?.language || "en");
+  const detectedPhoneCountry = detectPhoneCountryFromPhoneNumber(normalizedPhoneNumber) || getRecognizedCountryId(state.profile?.phone_country) || "";
 
   if (!displayName) {
     updateFinishOnboardingState();
@@ -923,7 +1455,7 @@ async function finishOnboarding() {
   }
 
   if (rawPhoneNumber && !normalizedPhoneNumber) {
-    showOnboardingProfileError(getPhoneValidationMessage(country));
+    showOnboardingProfileError(getPhoneValidationMessage(phoneCountry));
     return;
   }
 
@@ -937,6 +1469,10 @@ async function finishOnboarding() {
     plan: normalizePlan(state.profile?.plan),
     preferred_labels: state.profile?.preferred_labels || [],
     created_at: state.profile?.created_at || new Date().toISOString(),
+    operating_region: operatingRegion,
+    language,
+    country: getRecognizedCountryId(state.profile?.country) || detectedPhoneCountry || phoneCountry || "",
+    phone_country: detectedPhoneCountry,
     display_name: displayName,
     phone_number: normalizedPhoneNumber,
     email,
@@ -946,8 +1482,8 @@ async function finishOnboarding() {
   };
 
   await saveProfile(state.profile);
-  if (normalizedPhoneNumber) {
-    await persistAuthPhoneCountry(country);
+  if (normalizedPhoneNumber && detectedPhoneCountry) {
+    await persistAuthPhoneCountry(detectedPhoneCountry);
   }
   hydrateProfileUi();
   await showCapture();
@@ -959,7 +1495,7 @@ function hydrateProfileUi() {
   const nameDisplay = state.profile.display_name
     ? `${state.profile.display_name} · `
     : "";
-  els["profile-summary"].textContent = `${nameDisplay}${countryName(state.profile.country)} · ${sector?.name || ""} · ${businessType?.name || ""}`;
+  els["profile-summary"].textContent = `${nameDisplay}${countryName(state.profile.operating_region)} · ${sector?.name || ""} · ${businessType?.name || ""}`;
   updateAmountInputStep();
 }
 
@@ -977,8 +1513,8 @@ async function showCapture() {
 }
 
 async function renderChart(records, mode) {
-  const currency = state.profile?.country === "US" ? "USD" : "NGN";
-  const symbol = currency === "USD" ? "$" : "₦";
+  const currency = getProfileCurrency();
+  const symbol = getCurrencySymbol(currency);
   const now = new Date();
   const effectiveRecords = getOperationalRecords(records);
   let labels, salesData, expenseData;
@@ -1108,7 +1644,7 @@ function wireChartToggle() {
 async function renderDashboard() {
   const records = await getRecords();
   const effectiveRecords = getOperationalRecords(records);
-  const currency = state.profile?.country === "US" ? "USD" : "NGN";
+  const currency = getProfileCurrency();
   const metrics = getDashboardMetrics(records, effectiveRecords);
 
   els["dash-today-sales-v2"].textContent = formatMoney(metrics.todaySales, currency);
@@ -1143,7 +1679,7 @@ async function renderDashboard() {
   if (streakEl) streakEl.textContent = streak;
 
   const banner = document.getElementById("loan-readiness-banner");
-  if (banner && state.authToken && state.deviceIdentity) {
+  if (banner && isAuthTokenValid() && state.deviceIdentity) {
     if (streak >= 90) {
       document.getElementById("banner-tier-icon").textContent = "🥈";
       document.getElementById("banner-headline").textContent = "You have " + streak + " days of verified history.";
@@ -1216,7 +1752,7 @@ async function renderSettings() {
   const sector = SECTORS.find((item) => item.id === state.profile.sector_id);
   const preferred = normalizePreferredLabels(state.profile.preferred_labels, state.profile.business_type_id);
   state.profile.preferred_labels = preferred;
-  const currency = state.profile.country === "US" ? "USD" : "NGN";
+  const currency = getProfileCurrency();
   const latestRecord = records.length ? records[records.length - 1] : null;
   const totalSales = effectiveRecords
     .filter((record) => record.transaction_type === "sale")
@@ -1226,7 +1762,9 @@ async function renderSettings() {
     .reduce((sum, record) => sum + Number(record.amount_minor || 0), 0);
 
   els["settings-profile-v2"].innerHTML = `
-    ${renderSettingsRow("Country", countryName(state.profile.country))}
+    ${renderSettingsRow("Operating region", countryName(state.profile.operating_region))}
+    ${renderSettingsRow("Phone country", countryName(state.profile.phone_country) || "Not detected yet")}
+    ${renderSettingsRow("Language", getLanguageName(state.profile.language))}
     ${renderSettingsRow("Sector", sector?.name || "Not selected")}
     ${renderSettingsRow("Business type", businessType?.name || "Not selected")}
     ${state.profile.display_name ? renderSettingsRow("Name", state.profile.display_name) : ""}
@@ -1235,7 +1773,24 @@ async function renderSettings() {
     ${state.profile.region ? renderSettingsRow("Region", state.profile.region) : ""}
     ${renderSettingsRow("Last action", friendlyActionLabel(state.profile.last_action || "sale"))}
     ${renderSettingsRow("Plan", getPlanLabel(state.profile.plan))}
+    <label class="field" style="margin-bottom:0">
+      Language
+      <select id="settings-language-select" style="width:100%;min-height:48px;border-radius:12px;border:1px solid var(--border);background:white;margin-top:6px;padding:0 12px;color:var(--text)">
+        ${renderLanguageSelectOptions()}
+      </select>
+    </label>
+    <p class="record-meta" id="settings-region-note" ${supportsPaidReports() ? "hidden" : ""}>${supportsPaidReports() ? "" : getUnsupportedRegionMessage()}</p>
   `;
+  const settingsLanguageSelect = document.getElementById("settings-language-select");
+  if (settingsLanguageSelect) {
+    settingsLanguageSelect.value = getProfileLanguage();
+    settingsLanguageSelect.addEventListener("change", async () => {
+      if (!state.profile) return;
+      state.profile.language = normalizeLanguageId(settingsLanguageSelect.value);
+      await saveProfile(state.profile);
+      await renderSettings();
+    });
+  }
 
   const upgradePlanPanel = document.getElementById("upgrade-plan-panel");
   if (upgradePlanPanel) {
@@ -1373,7 +1928,14 @@ async function computeUserP95HourlyCount() {
 
 async function getAnomalyThreshold() {
   const p95 = await computeUserP95HourlyCount();
-  return Math.max(20, p95 * 3);
+  return Math.max(50, p95 * 3);
+}
+
+function clearAnomalyAutoReviewTimer() {
+  if (state.anomalyAutoReviewTimer) {
+    window.clearTimeout(state.anomalyAutoReviewTimer);
+    state.anomalyAutoReviewTimer = null;
+  }
 }
 
 async function logAnomaly(type, detail, entry_id) {
@@ -1399,10 +1961,10 @@ async function checkForAnomalies(newEntry) {
   if (newEntry?.importedFromServer) return;
   try {
     const threshold = await getAnomalyThreshold();
-    const recentRecords = await getRecords();
     const oneHourAgoMs = Date.now() - 3600000;
     const fiveMinAgoMs = Date.now() - 300000;
-    const thisHourCount = recentRecords.filter((record) => getRecordConfirmedAtMs(record) >= oneHourAgoMs).length;
+    const recentRecords = (await getRecords()).filter((record) => getRecordConfirmedAtMs(record) >= oneHourAgoMs);
+    const thisHourCount = recentRecords.length;
 
     if (thisHourCount > threshold) {
       await logAnomaly(
@@ -1417,7 +1979,7 @@ async function checkForAnomalies(newEntry) {
         && record.amount_minor === newEntry.amount_minor;
     });
 
-    if (sameAmountRecent.length >= 5) {
+    if (sameAmountRecent.length >= 8) {
       await logAnomaly(
         "repeated_amount",
         `Amount ${newEntry.amount_minor} recorded ${sameAmountRecent.length} times in 5 min`,
@@ -1497,6 +2059,10 @@ async function renderAnomalyPanel() {
   const entries = await getAnomalyEntries();
   const unreviewedCount = entries.filter((entry) => !entry.reviewed).length;
 
+  if (unreviewedCount <= 0) {
+    clearAnomalyAutoReviewTimer();
+  }
+
   if (els["anomaly-badge"]) {
     els["anomaly-badge"].hidden = unreviewedCount <= 0;
     els["anomaly-badge"].textContent = unreviewedCount > 0 ? String(unreviewedCount) : "";
@@ -1513,6 +2079,8 @@ async function renderAnomalyPanel() {
   entries.forEach((entry) => {
     const row = document.createElement("div");
     row.className = "settings-row";
+    row.dataset.anomalyId = String(entry.id || "");
+    row.dataset.reviewed = entry.reviewed ? "true" : "false";
     row.style.alignItems = "flex-start";
     row.style.gap = "12px";
     row.style.borderLeft = entry.reviewed ? "3px solid transparent" : "3px solid #ffc107";
@@ -1542,16 +2110,39 @@ async function renderAnomalyPanel() {
   els["mark-anomalies-reviewed"].hidden = unreviewedCount <= 0;
 }
 
-async function markAllAnomaliesReviewed() {
+function getVisibleUnreviewedAnomalyIds() {
+  if (!els["anomaly-list"]) return [];
+  return [...els["anomaly-list"].querySelectorAll("[data-anomaly-id][data-reviewed='false']")]
+    .map((row) => Number(row.dataset.anomalyId))
+    .filter((id) => Number.isFinite(id));
+}
+
+function scheduleAnomalyAutoReview() {
+  clearAnomalyAutoReviewTimer();
+  const visibleIds = getVisibleUnreviewedAnomalyIds();
+  if (!visibleIds.length) return;
+
+  state.anomalyAutoReviewTimer = window.setTimeout(() => {
+    state.anomalyAutoReviewTimer = null;
+    void markAnomaliesReviewed(visibleIds);
+  }, 5000);
+}
+
+async function markAnomaliesReviewed(entryIds = null) {
   const store = getAnomalyStore("readwrite");
   if (!store) return;
+  clearAnomalyAutoReviewTimer();
+
+  const idsToMark = Array.isArray(entryIds)
+    ? new Set(entryIds.map((id) => Number(id)).filter((id) => Number.isFinite(id)))
+    : null;
 
   await new Promise((resolve, reject) => {
     const request = store.getAll();
     request.onsuccess = () => {
       const entries = Array.isArray(request.result) ? request.result : [];
       entries.forEach((entry) => {
-        if (!entry.reviewed) {
+        if (!entry.reviewed && (!idsToMark || idsToMark.has(Number(entry.id)))) {
           store.put({ ...entry, reviewed: true });
         }
       });
@@ -1565,11 +2156,16 @@ async function markAllAnomaliesReviewed() {
   await notifyAnomaly();
 }
 
+async function markAllAnomaliesReviewed() {
+  await markAnomaliesReviewed();
+}
+
 async function openAnomalyReview() {
   await renderSettings();
   showScreen("screen-settings");
   window.requestAnimationFrame(() => {
     els["anomaly-panel"]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    scheduleAnomalyAutoReview();
   });
 }
 
@@ -2256,23 +2852,40 @@ function getPasscodeReminder(profile = state.profile) {
   return clonePasscodeReminder(reminder);
 }
 
-function normalizeLocalProfile(profile, { trackReminderMigration = false } = {}) {
+function normalizeLocalProfile(profile, { trackReminderMigration = false, trackDimensionMigration = false } = {}) {
   if (!profile) return null;
   const { reminder, migrated } = normalizePasscodeReminder(profile.passcodeReminder, profile.passcode_hint);
+  const normalizedOperatingRegion = getRecognizedCountryId(profile.operating_region || profile.country) || "NG";
+  const normalizedPhoneCountry = getRecognizedCountryId(profile.phone_country) || detectPhoneCountryFromPhoneNumber(profile.phone_number) || "";
+  const normalizedLanguage = normalizeLanguageId(profile.language || "en");
+  const needsDimensionMigration = Boolean(
+    profile.country
+    || !profile.operating_region
+    || !profile.language
+    || (profile.phone_number && !profile.phone_country && normalizedPhoneCountry)
+  );
   const normalizedProfile = {
     ...profile,
     plan: normalizePlan(profile.plan),
-    preferred_labels: normalizePreferredLabels(profile.preferred_labels, profile.business_type_id)
+    preferred_labels: normalizePreferredLabels(profile.preferred_labels, profile.business_type_id),
+    operating_region: normalizedOperatingRegion,
+    phone_country: normalizedPhoneCountry,
+    language: normalizedLanguage
   };
   if (reminder) {
     normalizedProfile.passcodeReminder = clonePasscodeReminder(reminder);
   } else {
     delete normalizedProfile.passcodeReminder;
   }
+  delete normalizedProfile.country;
   delete normalizedProfile.passcode_hint;
   delete normalizedProfile._needsReminderMigration;
+  delete normalizedProfile._needsDimensionMigration;
   if (trackReminderMigration && migrated) {
     normalizedProfile._needsReminderMigration = true;
+  }
+  if (trackDimensionMigration && needsDimensionMigration) {
+    normalizedProfile._needsDimensionMigration = true;
   }
   return normalizedProfile;
 }
@@ -2746,7 +3359,7 @@ async function refreshTierButtonLabels() {
     const totalDays = distinctDays.size;
     if (!totalDays || !earliestDate || !latestDate) return;
 
-    const currencyPrefix = state.profile?.country === "US" ? "$" : "₦";
+    const currencyPrefix = getCurrencySymbol();
     const paymentTierButtons = els["payment-tiers"]?.querySelectorAll(".tier-btn") || [];
 
     paymentTierButtons.forEach((button) => {
@@ -2781,11 +3394,26 @@ async function refreshTierButtonLabels() {
 }
 
 function canClaimFreeReport() {
-  return localStorage.getItem("freeReportUsed") !== "1"
+  return !(
+    state.profile?.free_report_used
+    || localStorage.getItem("freeReportUsed") === "1"
+  )
     && (
       !state.profile?.created_at
       || Date.now() - new Date(state.profile.created_at).getTime() < 60 * 24 * 60 * 60 * 1000
     );
+}
+
+async function rememberFreeReportClaimedUiHint() {
+  localStorage.setItem("freeReportUsed", "1");
+  if (state.profile) {
+    state.profile.free_report_used = true;
+    try {
+      await saveProfile(state.profile, { skipPush: true });
+    } catch (error) {
+      console.warn("Unable to persist free report UI hint locally.", error);
+    }
+  }
 }
 
 function ensureFreeReportOfferElements() {
@@ -2824,8 +3452,6 @@ function syncFreeReportOffer() {
   const shouldShow = Boolean(
     els["verified-report-section"]
     && !els["verified-report-section"].hidden
-    && els["payment-tiers"]
-    && !els["payment-tiers"].hidden
     && canClaimFreeReport()
   );
 
@@ -2845,19 +3471,22 @@ function syncFreeReportOffer() {
 
 function renderExportScreen() {
   refreshTrustSetupButtons();
-  const verifiedReportsAvailable = supportsVerifiedReports(state.profile?.country);
+  const paidReportsAvailable = supportsPaidReports();
   els["export-status-v2"].textContent = "";
   if (els["payment-status"]) {
     els["payment-status"].textContent = "";
   }
   if (els["verified-report-section"]) {
-    els["verified-report-section"].hidden = !(state.authToken && state.deviceIdentity);
+    els["verified-report-section"].hidden = !(isAuthTokenValid() && state.deviceIdentity);
   }
   if (els["payment-tiers"]) {
-    els["payment-tiers"].hidden = !verifiedReportsAvailable;
+    els["payment-tiers"].hidden = !paidReportsAvailable;
   }
   if (els["verified-report-region-note"]) {
-    els["verified-report-region-note"].hidden = verifiedReportsAvailable;
+    els["verified-report-region-note"].hidden = paidReportsAvailable;
+    els["verified-report-region-note"].textContent = paidReportsAvailable
+      ? ""
+      : `${getPaidReportsUnavailableMessage()} ${getUnsupportedRegionMessage()}`;
   }
   if (els["export-trust-status-v3"]) {
     els["export-trust-status-v3"].innerHTML = `
@@ -2872,6 +3501,18 @@ function renderExportScreen() {
       ${renderSettingsRow("Queued sync entries", String(state.syncQueueCount))}
       ${renderSettingsRow("Recovery contact", maskContact(state.profile?.email || state.profile?.phone_number || "Not set"))}
     `;
+  }
+  const exportScopeNoteId = "export-scope-note";
+  let scopeNote = document.getElementById(exportScopeNoteId);
+  if (!scopeNote) {
+    scopeNote = document.createElement("p");
+    scopeNote.id = exportScopeNoteId;
+    scopeNote.style.cssText = "font-size: 0.85rem; color: #6B7C6B; margin: 0.5rem 0 1rem; font-style: italic;";
+    scopeNote.textContent = "This report reflects records from a single device. Records from other devices linked to this account are not included.";
+  }
+  const exportActionAnchor = els["rewarded-export-wrap"] || els["export-open-trust-v3"];
+  if (exportActionAnchor?.parentElement) {
+    exportActionAnchor.parentElement.insertBefore(scopeNote, exportActionAnchor);
   }
   syncFreeReportOffer();
   void refreshTierButtonLabels();
@@ -2893,7 +3534,7 @@ async function generateExport() {
     return;
   }
 
-  const currency = state.profile?.country === "US" ? "USD" : "NGN";
+  const currency = getProfileCurrency();
   const ledgerRootHash = records[records.length - 1].entry_hash;
   const financialStatements = buildFinancialStatements(records, currency);
   const lines = records.map((record) => {
@@ -2907,17 +3548,35 @@ async function generateExport() {
       record.signature ? "signed: true" : "unsigned: true"
     ].join(" | ");
   });
+  const evidenceCounts = { self_reported: 0, device_signed: 0, server_attested: 0, corroborated: 0 };
+  records.forEach((record) => {
+    const level = record.evidence_level || "self_reported";
+    if (evidenceCounts[level] !== undefined) evidenceCounts[level] += 1;
+  });
+  const total = records.length;
+  const attested = evidenceCounts.server_attested + evidenceCounts.corroborated;
+  const attestedPercent = total ? Math.round((attested / total) * 100) : 0;
+
+  lines.push("");
+  lines.push("=== Evidence Summary ===");
+  lines.push("Total entries: " + total);
+  lines.push("  Server-attested: " + evidenceCounts.server_attested);
+  lines.push("  Device-signed: " + evidenceCounts.device_signed);
+  lines.push("  Self-reported: " + evidenceCounts.self_reported);
+  lines.push(attested + " of " + total + " entries (" + attestedPercent + "%) have server attestation.");
   const signedCount = records.filter((record) => Boolean(record.signature)).length;
   const unsignedCount = records.length - signedCount;
   let attestation = null;
   let qrDataUrl = null;
 
-  if (state.authToken && state.deviceIdentity) {
+  if (isAuthTokenValid() && state.deviceIdentity) {
     try {
       const response = await postJson(state.syncApiBaseUrl, "/attest", {
         device_identity: state.deviceIdentity,
         window_days: 90
-      }, state.authToken);
+      }, state.authToken, {
+        deviceIdentity: state.deviceIdentity
+      });
 
       if (response?.vt_id && response?.verify_url) {
         attestation = response;
@@ -2959,8 +3618,8 @@ async function generateExport() {
   };
   const statementDivider = `${"".padEnd(29)}${"-".repeat(16)}`;
   const formatStatementRow = (label, amountMinor) => `${String(label).padEnd(29)}${formatAmount(amountMinor, currency)}`;
-  const formatCashFlowValue = (value) => String(value).includes("$") || String(value).includes("₦")
-    ? String(value)
+  const formatCashFlowValue = (value) => typeof value === "string"
+    ? value
     : formatAmount(value, currency);
   const formatCashFlowRow = (monthLabel, inflows, outflows, net) => [
     String(monthLabel).padEnd(11),
@@ -2999,17 +3658,21 @@ async function generateExport() {
 
   const output = [
     "KONFIRMATA V3 EXPORT",
+    "Note: This report reflects records from a single device only.",
     `Generated: ${new Date().toLocaleString()}`,
-    `Profile: ${countryName(state.profile.country)} / ${BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id)?.name || "Unknown"}`,
+    `Profile: ${countryName(state.profile.operating_region)} / ${BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id)?.name || "Unknown"}`,
     state.profile.display_name ? `Name: ${state.profile.display_name}` : null,
     state.profile.region ? `Region: ${state.profile.region}` : null,
+    `Language: ${getLanguageName(state.profile.language)}`,
     `Verification Anchor: ${getPhoneAnchorStatusLabel()}`,
     `Device Key: ${getDeviceKeyStatusLabel()}`,
     state.publicKeyFingerprint ? `Public Key Fingerprint: ${state.publicKeyFingerprint}` : null,
     `Sync Server: ${state.syncApiBaseUrl || "Not configured"}`,
     `Sync Status: ${state.syncStatus || "Idle"}`,
     `Queued Sync Entries: ${state.syncQueueCount}`,
-    `Recovery Contact: ${state.profile.email || state.profile.phone_number || "Not set"}`,
+    "Note: This export contains your private account data. Do not share unless intended.",
+    `Phone: ${state.profile.phone_number || "Not set"}`,
+    `Email: ${state.profile.email || "Not set"}`,
     `Entries: ${records.length}`,
     `Signed entries: ${signedCount}`,
     `Unsigned legacy entries: ${unsignedCount}`,
@@ -3083,13 +3746,13 @@ function downloadVerifiedReportPayload(response) {
 }
 
 async function claimFreeReport() {
-  if (!state.authToken || !state.deviceIdentity) {
-    setPaymentStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before purchasing a verified report.`);
+  if (!isAuthTokenValid()) {
+    setPaymentStatus(getExpiredAuthTokenMessage());
     return;
   }
 
-  if (!supportsVerifiedReports(state.profile?.country)) {
-    setPaymentStatus("Verified Reports are coming soon for your region.");
+  if (!state.deviceIdentity) {
+    setPaymentStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before purchasing a verified report.`);
     return;
   }
 
@@ -3103,19 +3766,20 @@ async function claimFreeReport() {
   try {
     const response = await postJson(state.syncApiBaseUrl, "/payment/generate-pdf", {
       free_claim: true
-    }, state.authToken);
+    }, state.authToken, {
+      deviceIdentity: state.deviceIdentity
+    });
     getVerifiedReportDownloadPayload(response);
-    localStorage.setItem("freeReportUsed", "1");
-    if (state.profile) {
-      state.profile.free_report_used = true;
-    }
+    await rememberFreeReportClaimedUiHint();
     syncFreeReportOffer();
     downloadVerifiedReportPayload(response);
   } catch (error) {
     console.error("Free verified report generation failed.", error);
     if (error?.statusCode === 403 && String(error.message || "").trim() === "Free report already claimed.") {
-      localStorage.setItem("freeReportUsed", "1");
+      await rememberFreeReportClaimedUiHint();
       syncFreeReportOffer();
+      setPaymentStatus("Free report already claimed.");
+      return;
     }
     setPaymentStatus(error.message || "Unable to generate your free verified report right now.");
   } finally {
@@ -3133,13 +3797,18 @@ async function initPaystackPayment(tier, amountKobo, windowDays) {
     return;
   }
 
-  if (!state.authToken || !state.deviceIdentity) {
+  if (!isAuthTokenValid()) {
+    setPaymentStatus(getExpiredAuthTokenMessage());
+    return;
+  }
+
+  if (!state.deviceIdentity) {
     setPaymentStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before purchasing a verified report.`);
     return;
   }
 
-  if (!supportsVerifiedReports(state.profile?.country)) {
-    setPaymentStatus("Verified Reports are coming soon for your region.");
+  if (!supportsPaidReports()) {
+    setPaymentStatus(getPaidReportsUnavailableMessage());
     return;
   }
 
@@ -3187,7 +3856,9 @@ async function handlePaymentSuccess(transaction, windowDays) {
     const response = await postJson(state.syncApiBaseUrl, "/payment/generate-pdf", {
       reference,
       window_days: windowDays
-    }, state.authToken);
+    }, state.authToken, {
+      deviceIdentity: state.deviceIdentity
+    });
 
     downloadVerifiedReportPayload(response);
   } catch (error) {
@@ -3314,13 +3985,11 @@ function formatVoiceCorrectionAmount(value) {
   if (!normalized) return "";
   const amount = Number(normalized);
   if (!Number.isFinite(amount) || amount <= 0) return "";
-  if (state.profile?.country === "US") {
-    return amount.toLocaleString("en-US", {
-      minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-      maximumFractionDigits: 2
-    });
-  }
-  return Math.round(amount).toLocaleString("en-NG", { maximumFractionDigits: 0 });
+  const currency = getProfileCurrency();
+  return amount.toLocaleString(getCurrencyLocale(currency), {
+    minimumFractionDigits: currency === "NGN" ? 0 : (Number.isInteger(amount) ? 0 : 2),
+    maximumFractionDigits: currency === "NGN" ? 0 : 2
+  });
 }
 
 function buildVoiceCorrectionCandidate() {
@@ -3363,7 +4032,7 @@ function announceVoiceCapture(parsed, labelDisplayName) {
     payment: "paid",
     receipt: "received"
   }[parsed.action] || "captured";
-  const currency = state.profile?.country === "US" ? "USD" : "NGN";
+  const currency = getProfileCurrency();
   const label = String(labelDisplayName || parsed.labelQuery || "transaction").toLowerCase();
   const amount = formatMoney(parsed.amountMinor || 0, currency);
   const message = `Captured: ${actionCopy} ${label}, ${amount}`;
@@ -3450,8 +4119,7 @@ async function startVoiceRecordShortcut() {
   state.activeRecognition = recognition;
   setRecordingState(true);
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-  recognition.lang = isSafari ? "en-US"
-    : (state.profile?.country === "US" ? "en-US" : "en-NG");
+  recognition.lang = isSafari ? "en-US" : getVoiceLocale();
   recognition.continuous = false;
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
@@ -3507,6 +4175,7 @@ async function startVoiceRecordShortcut() {
 }
 
 function getCatalogForProfileAction(actionContext) {
+  const operatingRegion = getOperatingRegionId();
   const exactBusinessMatches = LABEL_CATALOG.filter((item) => {
     return item.transaction_contexts.includes(actionContext)
       && item.business_types.includes(state.profile.business_type_id);
@@ -3515,12 +4184,12 @@ function getCatalogForProfileAction(actionContext) {
   if (exactBusinessMatches.length) return exactBusinessMatches;
 
   const sectorBusinessIds = BUSINESS_TYPES
-    .filter((item) => item.country === state.profile.country && item.sector_id === state.profile.sector_id)
+    .filter((item) => (item.country === operatingRegion || item.country === "GLOBAL") && item.sector_id === state.profile.sector_id)
     .map((item) => item.id);
 
   const sectorMatches = LABEL_CATALOG.filter((item) => {
     return item.transaction_contexts.includes(actionContext)
-      && item.countries.includes(state.profile.country)
+      && labelSupportsRegion(item, operatingRegion)
       && item.business_types.some((businessId) => sectorBusinessIds.includes(businessId));
   });
 
@@ -3528,7 +4197,7 @@ function getCatalogForProfileAction(actionContext) {
 
   return LABEL_CATALOG.filter((item) => {
     return item.transaction_contexts.includes(actionContext)
-      && item.countries.includes(state.profile.country);
+      && labelSupportsRegion(item, operatingRegion);
   });
 }
 
@@ -3669,7 +4338,7 @@ function setSelectorMode(mode) {
 async function handleSearch() {
   const query = els["label-search-input"].value.trim();
   const results = query
-    ? searchLayerBLabels(query, state.profile.country, state.profile.business_type_id, getCurrentActionContext())
+    ? searchLayerBLabels(query, getOperatingRegionId(), state.profile.business_type_id, getCurrentActionContext())
     : await rankLabels("", { limit: 12 });
   state.searchResults = results;
   els["search-results"].innerHTML = results.length
@@ -3679,7 +4348,7 @@ async function handleSearch() {
 }
 
 async function renderBrowseResults() {
-  const results = getBrowseAllLabels(state.profile.country, state.profile.business_type_id, getCurrentActionContext());
+  const results = getBrowseAllLabels(getOperatingRegionId(), state.profile.business_type_id, getCurrentActionContext());
   state.browseResults = results;
   els["browse-results"].innerHTML = results.map(renderRankedItemHtml).join("");
   wireRankedButtons("browse-results", results);
@@ -3713,8 +4382,7 @@ async function startSpeechMatch() {
   state.activeRecognition = recognition;
   setRecordingState(true);
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-  recognition.lang = isSafari ? "en-US"
-    : (state.profile?.country === "US" ? "en-US" : "en-NG");
+  recognition.lang = isSafari ? "en-US" : getVoiceLocale();
   recognition.continuous = false;
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
@@ -3801,15 +4469,15 @@ function prepareConfirmation() {
   if (!state.selectedLabel) {
     return showError("Pick a label first.");
   }
-  const currency = state.profile.country === "US" ? "USD" : "NGN";
-  const maxAmount = currency === "USD" ? 100000 * 100 : 10000000 * 100;
+  const currency = getProfileCurrency();
+  const maxAmount = currency === "NGN" ? 10000000 * 100 : 100000 * 100;
   if (!amount || amount <= 0) {
     return showError("Enter a valid amount before confirming.");
   }
   if (amount > maxAmount) {
-    return showError(currency === "USD"
-      ? "Amount looks too large. Konfirmata accepts up to $100,000 per entry."
-      : "Amount looks too large. Konfirmata accepts up to ₦10,000,000 per entry.");
+    return showError(currency === "NGN"
+      ? "Amount looks too large. Konfirmata accepts up to ₦10,000,000 per entry."
+      : `Amount looks too large. Konfirmata accepts up to ${getCurrencySymbol(currency)}100,000 per entry.`);
   }
 
   const transactionType = state.currentAction === "transfer" ? "transfer" : state.currentAction;
@@ -3826,7 +4494,8 @@ function prepareConfirmation() {
     confirmation_state: "pending",
     business_type_id: state.profile.business_type_id,
     sector_id: state.profile.sector_id,
-    country: state.profile.country
+    country: getOperatingRegionId(),
+    operating_region: getOperatingRegionId()
   };
 
   state.candidateRecord = record;
@@ -3958,7 +4627,7 @@ function rankLabels(query, options = {}) {
       const partial = normalizedQuery && (normalizeText(item.display_name).includes(normalizedQuery) || item.synonyms.some((synonym) => normalizeText(synonym).includes(normalizedQuery))) ? 1 : 0;
       const businessMatch = item.business_types.includes(state.profile.business_type_id) ? 1 : 0;
       const sectorMatch = businessSectorMatch(item) ? 1 : 0;
-      const countryMatch = item.countries.includes(state.profile.country) ? 1 : 0;
+      const countryMatch = labelSupportsRegion(item) ? 1 : 0;
       const historyBoost = usageMap.get(item.normalized_label) || 0;
       const preferredBoost = (state.profile?.preferred_labels || []).includes(item.display_name) ? 18 : 0;
       const score = (exact * 40) + (synonym * 30) + (partial * 16) + (businessMatch * 12) + (sectorMatch * 8) + (countryMatch * 6) + Math.min(historyBoost, 8) + preferredBoost;
@@ -3991,7 +4660,7 @@ function findPreferredCatalogItem(displayName) {
   if (!(state.profile && state.profile.business_type_id)) return null;
   const actionContext = getCurrentActionContext();
   const candidates = LABEL_CATALOG
-    .filter((item) => item.display_name === displayName && item.countries.includes(state.profile.country))
+    .filter((item) => item.display_name === displayName && labelSupportsRegion(item))
     .filter((item) => item.business_types.includes(state.profile.business_type_id)
       || businessSectorMatch(item));
 
@@ -4024,8 +4693,10 @@ function getCatalogForCurrentProfile(options = {}) {
 }
 
 function getAvailableBusinessTypes() {
-  if (!state.profile || !state.profile.country || !state.profile.sector_id) return [];
-  return BUSINESS_TYPES.filter((item) => item.country === state.profile.country && item.sector_id === state.profile.sector_id);
+  if (!state.profile || !state.profile.operating_region || !state.profile.sector_id) return [];
+  const exactMatches = BUSINESS_TYPES.filter((item) => item.country === state.profile.operating_region && item.sector_id === state.profile.sector_id);
+  if (exactMatches.length) return exactMatches;
+  return BUSINESS_TYPES.filter((item) => item.country === "GLOBAL" && item.sector_id === state.profile.sector_id);
 }
 
 function buildLabel(id, displayName, icon, synonyms, contexts, countries, businessTypes) {
@@ -4040,6 +4711,12 @@ function buildLabel(id, displayName, icon, synonyms, contexts, countries, busine
     countries,
     business_types: businessTypes
   };
+}
+
+function labelSupportsRegion(item, region = getOperatingRegionId()) {
+  const countries = Array.isArray(item?.countries) ? item.countries : [];
+  if (!countries.length) return true;
+  return countries.includes(region) || countries.includes("GLOBAL");
 }
 
 function buildCatalogFromQuickPicks() {
@@ -4203,6 +4880,7 @@ function searchLayerBLabels(query, country, businessTypeId, currentAction) {
   });
 
   LABEL_CATALOG.forEach((item) => {
+    if (!labelSupportsRegion(item, country)) return;
     const normalizedLabel = normalizeText(item.display_name);
     if (!normalizedLabel.includes(q)) return;
     const context = item.transaction_contexts[0] || "";
@@ -4541,6 +5219,9 @@ function showScreen(id) {
   if (previousScreen === "screen-settings" && id !== "screen-settings" && state.passcodeReminderEditorOpen) {
     state.passcodeReminderEditorOpen = false;
     syncPasscodeReminderEditor();
+  }
+  if (previousScreen === "screen-settings" && id !== "screen-settings") {
+    clearAnomalyAutoReviewTimer();
   }
   if (id !== "screen-confirm") {
     cancelConfirmationSpeech();
@@ -4900,40 +5581,145 @@ function normalizeText(value) {
 }
 
 function countryName(countryId) {
-  return COUNTRIES.find((item) => item.id === normalizeCountryId(countryId))?.name || countryId;
+  return COUNTRIES.find((item) => item.id === getRecognizedCountryId(countryId))?.name || countryId;
 }
 
-function normalizeCountryId(country) {
-  if (country === "Nigeria" || country === "NG") return "NG";
-  if (country === "United States" || country === "US" || country === "USA" || country === "United States of America") return "US";
-  return country || "NG";
+function getCountryAliases() {
+  return {
+    "COTE DIVOIRE": "CI",
+    "COTE D'IVOIRE": "CI",
+    CURACAO: "CW",
+    MACAO: "MO",
+    NIGERIA: "NG",
+    "REUNION": "RE",
+    "SAO TOME AND PRINCIPE": "ST",
+    "SAO TOME & PRINCIPE": "ST",
+    TURKEY: "TR",
+    USA: "US",
+    "UNITED STATES": "US",
+    "UNITED STATES OF AMERICA": "US"
+  };
+}
+
+function normalizeCountryLookupValue(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/['’]/g, "'")
+    .replace(/\s+/g, " ");
 }
 
 function getRecognizedCountryId(country) {
-  if (country === "Nigeria" || country === "NG") return "NG";
-  if (country === "United States" || country === "US" || country === "USA" || country === "United States of America") return "US";
-  return "";
+  const value = normalizeCountryLookupValue(country);
+  if (!value) return "";
+
+  const directMatch = COUNTRIES.find((item) => item.id === value);
+  if (directMatch) return directMatch.id;
+
+  const countryByName = COUNTRIES.find((item) => normalizeCountryLookupValue(item.name) === value);
+  if (countryByName) return countryByName.id;
+
+  return getCountryAliases()[value] || "";
+}
+
+function normalizeCountryId(country, fallback = "NG") {
+  return getRecognizedCountryId(country) || fallback;
+}
+
+function normalizeLanguageId(language) {
+  const value = String(language || "").trim().toLowerCase();
+  return SUPPORTED_LANGUAGES.some((item) => item.id === value) ? value : "en";
+}
+
+function getLanguageName(language) {
+  return SUPPORTED_LANGUAGES.find((item) => item.id === normalizeLanguageId(language))?.name || "English";
+}
+
+function getOperatingRegionId(country = state.profile?.operating_region || state.profile?.country) {
+  return normalizeCountryId(country);
 }
 
 function getSelectedCountryId() {
-  return normalizeCountryId(state.profile?.country);
+  return getOperatingRegionId();
+}
+
+function getProfileLanguage() {
+  return normalizeLanguageId(state.profile?.language || "en");
+}
+
+function getCurrencyForRegion(region) {
+  return REGION_CURRENCY_MAP[region] || "USD";
+}
+
+function getActiveCurrency() {
+  return getCurrencyForRegion(state.profile?.operating_region || state.profile?.country);
+}
+
+function getProfileCurrency(region = getOperatingRegionId()) {
+  return region ? getCurrencyForRegion(getOperatingRegionId(region)) : getActiveCurrency();
+}
+
+function getCurrencySymbol(currency = getProfileCurrency()) {
+  const symbols = { NGN: "₦", USD: "$", GBP: "£", GHS: "₵", KES: "KSh", ZAR: "R", CAD: "CA$", AUD: "A$", EUR: "€", INR: "₹" };
+  return symbols[String(currency || "").toUpperCase()] || `${currency} `;
+}
+
+function getCurrencyLocale() {
+  return "en-US";
+}
+
+function getVoiceLocale() {
+  return getProfileLanguage() === "en" && getOperatingRegionId() === "NG" ? "en-NG" : "en-US";
+}
+
+function supportsPaidReports(region) {
+  return PAID_REPORT_REGIONS.has(region || state.profile?.operating_region || state.profile?.country || "");
+}
+
+function getUnsupportedRegionMessage() {
+  return "Some features are not yet available in your region";
+}
+
+function getPaidReportsUnavailableMessage() {
+  return "Paid reports are not yet available in your region";
+}
+
+function detectPhoneCountryFromPhoneNumber(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith(PHONE_COUNTRY_RULES.NG.dialingDigits)) return "NG";
+  if (digits.startsWith(PHONE_COUNTRY_RULES.GH.dialingDigits)) return "GH";
+  if (digits.startsWith(PHONE_COUNTRY_RULES.KE.dialingDigits)) return "KE";
+  if (digits.startsWith(PHONE_COUNTRY_RULES.ZA.dialingDigits)) return "ZA";
+  if (digits.length === 11 && digits.startsWith(PHONE_COUNTRY_RULES.US.dialingDigits)) return "US";
+  return "";
 }
 
 function getPhoneInputCountry() {
   return getRecognizedCountryId(state.authPhoneCountry)
-    || getRecognizedCountryId(state.profile?.country)
-    || "NG";
+    || getRecognizedCountryId(state.profile?.phone_country)
+    || detectPhoneCountryFromPhoneNumber(state.profile?.phone_number)
+    || "";
 }
 
 function initializeAuthPhoneCountry() {
   state.authPhoneCountry = getRecognizedCountryId(state.authPhoneCountry)
-    || getRecognizedCountryId(state.profile?.country)
-    || "NG";
+    || getRecognizedCountryId(state.profile?.phone_country)
+    || detectPhoneCountryFromPhoneNumber(state.profile?.phone_number)
+    || "";
+  if (state.profile) {
+    state.profile.phone_country = state.authPhoneCountry || state.profile.phone_country || "";
+  }
 }
 
 async function persistAuthPhoneCountry(country) {
   const nextCountry = getRecognizedCountryId(country) || getPhoneInputCountry();
   state.authPhoneCountry = nextCountry;
+  if (state.profile) {
+    state.profile.phone_country = nextCountry || "";
+  }
   try {
     await saveSetting("auth_phone_country", nextCountry);
   } catch (error) {
@@ -4944,18 +5730,20 @@ async function persistAuthPhoneCountry(country) {
 
 function getCountryDialCode(country) {
   const countryId = getRecognizedCountryId(country);
-  if (countryId === "US") return "+1";
-  if (countryId === "NG") return "+234";
-  return "";
+  return PHONE_COUNTRY_RULES[countryId]?.dialCode || "";
+}
+
+function getExamplesForCountry() {
+  return CAPTURE_EXAMPLES[state.profile?.operating_region] || CAPTURE_EXAMPLES[state.profile?.country] || CAPTURE_EXAMPLES.US;
 }
 
 function getCaptureExamples(country) {
   const countryId = getRecognizedCountryId(country);
-  return countryId === "US" ? CAPTURE_EXAMPLES.US : CAPTURE_EXAMPLES.NG;
+  return CAPTURE_EXAMPLES[countryId] || CAPTURE_EXAMPLES.US;
 }
 
-function getCurrentCaptureExample(country = state.profile?.country) {
-  const examples = getCaptureExamples(country);
+function getCurrentCaptureExample(country = state.profile?.operating_region || state.profile?.country) {
+  const examples = country ? getCaptureExamples(country) : getExamplesForCountry();
   const index = state.captureExampleIndex % examples.length;
   return examples[index] || examples[0] || "";
 }
@@ -4986,7 +5774,7 @@ function startCaptureExampleRotation() {
   renderCaptureExample();
   if (!els["voice-example-v2"] && !els["quick-text-input-v2"]) return;
   state.captureExampleInterval = window.setInterval(() => {
-    const examples = getCaptureExamples(state.profile?.country);
+    const examples = getCaptureExamples(getOperatingRegionId());
     state.captureExampleIndex = (state.captureExampleIndex + 1) % examples.length;
     renderCaptureExample();
   }, 3000);
@@ -4994,16 +5782,12 @@ function startCaptureExampleRotation() {
 
 function getOnboardingPhonePlaceholder(country) {
   const countryId = getRecognizedCountryId(country);
-  if (countryId === "US") return "e.g. 2125551234";
-  if (countryId === "NG") return "e.g. 08031234567";
-  return "Phone number";
+  return PHONE_COUNTRY_RULES[countryId]?.onboardingPlaceholder || "Phone number (use +country code if needed)";
 }
 
 function getOtpPhonePlaceholder(country) {
   const countryId = getRecognizedCountryId(country);
-  if (countryId === "US") return "2125551234";
-  if (countryId === "NG") return "08031234567";
-  return "Phone number";
+  return PHONE_COUNTRY_RULES[countryId]?.otpPlaceholder || "Phone number";
 }
 
 function isLocalDevelopmentOtpFallbackAllowed() {
@@ -5093,7 +5877,7 @@ function isChannelVerified(channel) {
 }
 
 function hasVerifiedSessionForChannel(channel = getPreferredOtpChannel()) {
-  return Boolean(state.authToken && isChannelVerified(channel));
+  return Boolean(isAuthTokenValid() && isChannelVerified(channel));
 }
 
 function hasVerifiedIdentityAnchor() {
@@ -5104,7 +5888,10 @@ function hasVerifiedIdentityAnchor() {
 }
 
 function syncDevQaSnapshot(reason = "") {
-  if (!isLocalQaMode()) return;
+  if (window.location.hostname !== "localhost") {
+    delete window.CONFIRMA_DEV_QA;
+    return;
+  }
   window.CONFIRMA_DEV_QA = {
     reason,
     at: new Date().toISOString(),
@@ -5115,7 +5902,7 @@ function syncDevQaSnapshot(reason = "") {
     phone_verified: Boolean(state.profile?.phone_verified),
     phone_anchor: hasPhoneAnchor() ? "present" : "missing",
     auth_phone_country: state.authPhoneCountry || "",
-    auth_session: Boolean(state.authToken),
+    auth_session: Boolean(isAuthTokenValid()),
     device_identity: Boolean(state.deviceIdentity),
     sms_supported: Boolean(state.smsSupported),
     local_passcode_reminder: Boolean(getPasscodeReminder()),
@@ -5136,15 +5923,18 @@ function getRegionPlaceholder(country) {
 
 function getPhoneValidationMessage(country) {
   const countryId = getRecognizedCountryId(country);
-  if (countryId === "US") return "Enter a valid US phone number";
-  if (countryId === "NG") return "Enter a valid Nigerian phone number";
-  return "Enter a valid phone number";
+  return PHONE_COUNTRY_RULES[countryId]?.validationMessage || "Enter a valid phone number in international format.";
 }
 
 function normalizePhoneNumber(value, country) {
+  const raw = String(value || "").trim();
   const countryId = getRecognizedCountryId(country);
-  const digits = String(value || "").replace(/\D/g, "");
+  const digits = raw.replace(/\D/g, "");
   if (!digits) return "";
+
+  if (raw.startsWith("+") && /^\+\d{7,15}$/.test(raw.replace(/[^\d+]/g, ""))) {
+    return `+${digits}`;
+  }
 
   if (countryId === "US") {
     if (digits.length === 10) return `+1${digits}`;
@@ -5152,9 +5942,32 @@ function normalizePhoneNumber(value, country) {
     return "";
   }
 
-  if (digits.length === 13 && digits.startsWith("234")) return `+${digits}`;
-  if (digits.length === 11 && digits.startsWith("0")) return `+234${digits.slice(1)}`;
-  if (digits.length === 10) return `+234${digits}`;
+  if (countryId === "GH") {
+    if (digits.length === 12 && digits.startsWith("233")) return `+${digits}`;
+    if (digits.length === 10 && digits.startsWith("0")) return `+233${digits.slice(1)}`;
+    if (digits.length === 9) return `+233${digits}`;
+    return "";
+  }
+
+  if (countryId === "KE") {
+    if (digits.length === 12 && digits.startsWith("254")) return `+${digits}`;
+    if (digits.length === 10 && digits.startsWith("0")) return `+254${digits.slice(1)}`;
+    if (digits.length === 9) return `+254${digits}`;
+    return "";
+  }
+
+  if (countryId === "ZA") {
+    if (digits.length === 11 && digits.startsWith("27")) return `+${digits}`;
+    if (digits.length === 10 && digits.startsWith("0")) return `+27${digits.slice(1)}`;
+    if (digits.length === 9) return `+27${digits}`;
+    return "";
+  }
+
+  if (countryId === "NG") {
+    if (digits.length === 13 && digits.startsWith("234")) return `+${digits}`;
+    if (digits.length === 11 && digits.startsWith("0")) return `+234${digits.slice(1)}`;
+    if (digits.length === 10) return `+234${digits}`;
+  }
   return "";
 }
 
@@ -5173,21 +5986,44 @@ function formatPhoneForInput(value, country) {
     return String(value || "");
   }
 
-  if (digits.length === 13 && digits.startsWith("234")) return `0${digits.slice(3)}`;
-  if (digits.length === 11 && digits.startsWith("0")) return digits;
-  if (digits.length === 10) return `0${digits}`;
+  if (countryId === "GH") {
+    if (digits.length === 12 && digits.startsWith("233")) return `0${digits.slice(3)}`;
+    if (digits.length === 10 && digits.startsWith("0")) return digits;
+    if (digits.length === 9) return `0${digits}`;
+    return String(value || "");
+  }
+
+  if (countryId === "KE") {
+    if (digits.length === 12 && digits.startsWith("254")) return `0${digits.slice(3)}`;
+    if (digits.length === 10 && digits.startsWith("0")) return digits;
+    if (digits.length === 9) return `0${digits}`;
+    return String(value || "");
+  }
+
+  if (countryId === "ZA") {
+    if (digits.length === 11 && digits.startsWith("27")) return `0${digits.slice(2)}`;
+    if (digits.length === 10 && digits.startsWith("0")) return digits;
+    if (digits.length === 9) return `0${digits}`;
+    return String(value || "");
+  }
+
+  if (countryId === "NG") {
+    if (digits.length === 13 && digits.startsWith("234")) return `0${digits.slice(3)}`;
+    if (digits.length === 11 && digits.startsWith("0")) return digits;
+    if (digits.length === 10) return `0${digits}`;
+  }
   return String(value || "");
 }
 
 function syncCountryAwareInputs() {
-  const profileCountry = state.profile?.country;
+  const operatingRegion = getOperatingRegionId();
   const phoneCountry = getPhoneInputCountry();
   const otpChannel = getPreferredOtpChannel();
   if (els["onboarding-phone"]) {
-    els["onboarding-phone"].placeholder = getOnboardingPhonePlaceholder(profileCountry);
+    els["onboarding-phone"].placeholder = getOnboardingPhonePlaceholder(phoneCountry);
   }
   if (els["onboarding-state"]) {
-    els["onboarding-state"].placeholder = getRegionPlaceholder(profileCountry);
+    els["onboarding-state"].placeholder = getRegionPlaceholder(operatingRegion);
   }
   if (els["otp-email-field"]) {
     els["otp-email-field"].hidden = otpChannel !== "email";
@@ -5221,10 +6057,6 @@ function syncCountryAwareInputs() {
   }
 }
 
-function supportsVerifiedReports(country) {
-  return normalizeCountryId(country) === "NG";
-}
-
 function parseMinor(value) {
   const number = parseFloat(String(value || "").replace(/,/g, ""));
   return Number.isFinite(number) ? Math.round(number * 100) : 0;
@@ -5232,11 +6064,12 @@ function parseMinor(value) {
 
 function updateAmountInputStep() {
   if (!els["amount-input-v2"]) return;
-  const isUS = state.profile?.country === "US";
-  els["amount-input-v2"].step = isUS ? "0.01" : "1";
+  const currency = getProfileCurrency();
+  const allowsDecimals = currency !== "NGN";
+  els["amount-input-v2"].step = allowsDecimals ? "0.01" : "1";
   if (els["amount-helper-v2"]) {
-    els["amount-helper-v2"].textContent = isUS
-      ? "Enter amount in USD. Decimals are allowed."
+    els["amount-helper-v2"].textContent = allowsDecimals
+      ? `Enter amount in ${currency}. Decimals are allowed.`
       : "Enter amount in Naira. Whole amounts work best.";
   }
 }
@@ -5431,7 +6264,6 @@ async function verifyActiveOtpChallenge(
     if (response.device_identity) {
       state.deviceIdentity = response.device_identity;
       await saveSetting("device_identity", state.deviceIdentity);
-      syncGlobalDeviceIdentity();
     }
     state.profile.identity_anchor = challengeChannel;
     state.profile.identity_status = "verified_server";
@@ -5451,11 +6283,15 @@ async function verifyActiveOtpChallenge(
     }
     state.profile.email_verified = Boolean(response.email_verified ?? state.profile.email_verified);
     state.profile.phone_verified = Boolean(response.phone_verified ?? state.profile.phone_verified);
+    state.profile.phone_country = detectPhoneCountryFromPhoneNumber(state.profile.phone_number) || state.profile.phone_country || "";
     await Promise.all([
       saveProfile(state.profile, { skipPush: !persistProfileRemotely }),
       saveSetting("auth_token", state.authToken),
       saveSetting("auth_token_expires_at", state.authTokenExpiresAt)
     ]);
+    if (state.profile.phone_country) {
+      await persistAuthPhoneCountry(state.profile.phone_country);
+    }
     state.syncStatus = `${getVerificationChannelLabel(challengeChannel)} completed with sync server.`;
   } else if (enteredCode !== activeChallenge.code) {
     throw new Error("Incorrect code. Please try again.");
@@ -5467,10 +6303,14 @@ async function verifyActiveOtpChallenge(
       state.profile.phone_number = normalizedChallengeIdentifier;
       state.profile.phone_verified = true;
     }
+    state.profile.phone_country = detectPhoneCountryFromPhoneNumber(state.profile.phone_number) || state.profile.phone_country || "";
     state.profile.identity_anchor = challengeChannel;
     state.profile.identity_status = "verified_local";
     state.profile.identity_verified_at = Date.now();
     await saveProfile(state.profile, { skipPush: !persistProfileRemotely });
+    if (state.profile.phone_country) {
+      await persistAuthPhoneCountry(state.profile.phone_country);
+    }
     state.syncStatus = `${getVerificationChannelLabel(challengeChannel)} completed locally. Server sign-in is still pending.`;
   }
 
@@ -5507,6 +6347,7 @@ async function requestLocalOtpCode() {
     state.profile.email = identifier;
   } else {
     state.profile.phone_number = identifier;
+    state.profile.phone_country = detectPhoneCountryFromPhoneNumber(identifier) || state.profile.phone_country || "";
   }
   await saveProfile(state.profile);
   try {
@@ -5548,7 +6389,7 @@ async function verifyLocalOtpCode() {
 
 function getVerificationStatusLabel(channel = getPreferredOtpChannel()) {
   const channelName = channel === "sms" ? "Phone" : "Email";
-  if (state.profile?.identity_status === "verified_server" && isChannelVerified(channel)) {
+  if (state.profile?.identity_status === "verified_server" && isChannelVerified(channel) && isAuthTokenValid()) {
     return `${channelName} verified with sync server`;
   }
   if (state.profile?.identity_status === "verified_local" && isChannelVerified(channel)) {
@@ -5606,7 +6447,25 @@ function clearOtpError() {
   showOtpError("");
 }
 
+function isAuthTokenValid() {
+  if (!state.authToken || !state.authTokenExpiresAt) return false;
+  const expiresAtMs = new Date(state.authTokenExpiresAt).getTime();
+  return Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
+}
+
+function getExpiredAuthTokenMessage() {
+  return `Your server session expired. Re-open ${getVerificationChannelLabel().toLowerCase()} to continue.`;
+}
+
 async function fetchAuthenticatedJson(path, options = {}) {
+  if (!isAuthTokenValid()) {
+    const error = new Error(getExpiredAuthTokenMessage());
+    error.statusCode = 401;
+    error.payload = { error: "auth_expired" };
+    state.syncStatus = error.message;
+    throw error;
+  }
+
   const normalizedBaseUrl = String(state.syncApiBaseUrl || "").trim().replace(/\/+$/, "");
   if (!normalizedBaseUrl) {
     const error = new Error("Sync server URL is not configured.");
@@ -5662,11 +6521,14 @@ async function logoutFromServerSession() {
 function buildProfileSyncPayload(profile = state.profile) {
   if (!profile) return null;
   const displayName = String(profile.display_name || "").trim();
-  const country = getRecognizedCountryId(profile.country);
+  const operatingRegion = getOperatingRegionId(profile.operating_region || profile.country);
+  const language = normalizeLanguageId(profile.language || "en");
   return {
     name: displayName || null,
     business_name: displayName || null,
-    country: country || null,
+    country: operatingRegion || null,
+    operating_region: operatingRegion || null,
+    language,
     business_type_id: String(profile.business_type_id || "").trim() || null,
     sector_id: String(profile.sector_id || "").trim() || null,
     preferred_labels: normalizePreferredLabels(profile.preferred_labels, profile.business_type_id),
@@ -5675,11 +6537,13 @@ function buildProfileSyncPayload(profile = state.profile) {
 }
 
 async function pushProfile() {
-  if (!(state.profile && state.authToken && state.syncApiBaseUrl)) return;
+  if (!(state.profile && isAuthTokenValid() && state.syncApiBaseUrl)) return;
   const payload = buildProfileSyncPayload();
   if (!payload) return;
   try {
-    await postJson(state.syncApiBaseUrl, "/profile", payload, state.authToken);
+    await postJson(state.syncApiBaseUrl, "/profile", payload, state.authToken, {
+      deviceIdentity: state.deviceIdentity
+    });
   } catch (error) {
     console.warn("Profile push skipped.", error);
   }
@@ -5694,7 +6558,9 @@ function mergeServerProfile(serverProfile, fallbackCountry = getSelectedCountryI
     display_name: displayName || state.profile?.display_name || "",
     phone_number: String(serverProfile.phone || state.profile?.phone_number || "").trim(),
     email: normalizeEmailAddress(serverProfile.email || state.profile?.email || ""),
-    country: normalizeCountryId(serverProfile.country || fallbackCountry || state.profile?.country),
+    operating_region: normalizeCountryId(serverProfile.operating_region || serverProfile.country || fallbackCountry || state.profile?.operating_region),
+    phone_country: getRecognizedCountryId(serverProfile.phone_country) || detectPhoneCountryFromPhoneNumber(serverProfile.phone || state.profile?.phone_number) || state.profile?.phone_country || "",
+    language: normalizeLanguageId(serverProfile.language || state.profile?.language || "en"),
     business_type_id: String(serverProfile.business_type_id || state.profile?.business_type_id || "").trim() || null,
     sector_id: String(serverProfile.sector_id || state.profile?.sector_id || "").trim() || null,
     preferred_labels: normalizePreferredLabels(
@@ -5741,6 +6607,7 @@ function normalizeServerTransactionType(value) {
 function normalizeImportedRecord(record, index) {
   const transactionType = normalizeServerTransactionType(record.transaction_type || record.action);
   const confirmedAt = Number(record.confirmed_at || 0);
+  const operatingRegion = getRecognizedCountryId(record.operating_region || record.country) || state.profile?.operating_region || getOperatingRegionId();
   return {
     id: 1000000000 + index + 1,
     server_entry_id: Number(record.entry_id || 0),
@@ -5750,7 +6617,7 @@ function normalizeImportedRecord(record, index) {
     label: String(record.label || "").trim() || "Imported record",
     normalized_label: String(record.normalized_label || "").trim() || normalizeText(record.label || transactionType),
     amount_minor: Number(record.amount_minor || 0),
-    currency: record.currency || (state.profile?.country === "US" ? "USD" : "NGN"),
+    currency: record.currency || getProfileCurrency(operatingRegion),
     counterparty: record.counterparty ?? null,
     source_account: record.source_account ?? null,
     destination_account: record.destination_account ?? null,
@@ -5758,7 +6625,8 @@ function normalizeImportedRecord(record, index) {
     confirmation_state: "confirmed",
     business_type_id: record.business_type_id || state.profile?.business_type_id || null,
     sector_id: record.sector_id || state.profile?.sector_id || null,
-    country: record.country || state.profile?.country || getSelectedCountryId(),
+    country: operatingRegion,
+    operating_region: operatingRegion,
     reversed_entry_hash: record.reversed_entry_hash ?? null,
     reversed_transaction_type: record.reversed_transaction_type ?? null,
     confirmed_at: confirmedAt,
@@ -5853,7 +6721,9 @@ function openRestoreModal() {
     state.profile = {
       ...(state.profile || {}),
       plan: normalizePlan(state.profile?.plan),
-      country: getSelectedCountryId()
+      operating_region: getOperatingRegionId(),
+      language: "en",
+      phone_country: getPhoneInputCountry()
     };
   }
   initializeAuthPhoneCountry();
@@ -5894,13 +6764,19 @@ async function sendRestoreCode() {
   }
 
   if (!state.profile) {
-    state.profile = { plan: "free", country };
+    state.profile = {
+      plan: "free",
+      operating_region: getOperatingRegionId(),
+      language: "en",
+      phone_country: country
+    };
   }
 
   if (channel === "email") {
     state.profile.email = identifier;
   } else {
     state.profile.phone_number = identifier;
+    state.profile.phone_country = detectPhoneCountryFromPhoneNumber(identifier) || country || state.profile.phone_country || "";
   }
   clearRestoreError();
   try {
@@ -5932,7 +6808,9 @@ function buildFallbackRecoveredProfile(country, phoneNumber) {
     display_name: state.profile?.display_name || "",
     phone_number: phoneNumber,
     email: normalizeEmailAddress(state.profile?.email || ""),
-    country: normalizeCountryId(country || state.profile?.country),
+    operating_region: normalizeCountryId(state.profile?.operating_region || getOperatingRegionId()),
+    phone_country: getRecognizedCountryId(country) || detectPhoneCountryFromPhoneNumber(phoneNumber) || state.profile?.phone_country || "",
+    language: normalizeLanguageId(state.profile?.language || "en"),
     preferred_labels: normalizePreferredLabels(state.profile?.preferred_labels, state.profile?.business_type_id),
     last_action: state.profile?.last_action || "sale",
     identity_anchor: getPreferredOtpChannel(),
@@ -5998,15 +6876,20 @@ function renderDeviceRows(container, devices, onRevoke, emptyMessage) {
 
 async function revokeDevice(deviceIdentity) {
   if (!deviceIdentity) return;
+  if (!isAuthTokenValid()) {
+    throw new Error(getExpiredAuthTokenMessage());
+  }
   await postJson(state.syncApiBaseUrl, "/identity/revoke", {
     device_identity: deviceIdentity
-  }, state.authToken);
+  }, state.authToken, {
+    deviceIdentity: state.deviceIdentity
+  });
 }
 
 async function renderTrustedDevicesSettings() {
   if (!els["settings-devices-v2"]) return;
-  if (!state.authToken) {
-    els["settings-devices-v2"].innerHTML = `<div class="record-meta">${getVerificationActionLabel()} on this device to manage trusted devices.</div>`;
+  if (!isAuthTokenValid()) {
+    els["settings-devices-v2"].innerHTML = `<div class="record-meta">${getExpiredAuthTokenMessage()}</div>`;
     return;
   }
 
@@ -6028,6 +6911,10 @@ async function renderTrustedDevicesSettings() {
 
 async function maybePromptToRevokeOldDevices() {
   if (!els["revoke-old-devices-modal"]) return;
+  if (!isAuthTokenValid()) {
+    closeRevocationPrompt();
+    return;
+  }
 
   try {
     const devices = await getTrustedDevices();
@@ -6056,7 +6943,7 @@ async function maybePromptToRevokeOldDevices() {
 
 async function finishRestoreFlow(country, phoneNumber) {
   try {
-    await pullProfile(country);
+    await pullProfile(state.profile?.operating_region || getOperatingRegionId());
   } catch (error) {
     if (error.statusCode) {
       console.warn("Profile pull skipped.", error);
@@ -6108,7 +6995,7 @@ async function verifyRestoreCode() {
 
 function renderFirstRecordGuide(records) {
   if (!els["first-record-guide"]) return;
-  const examples = getCaptureExamples(state.profile?.country);
+  const examples = getCaptureExamples(getOperatingRegionId());
   const voiceExample = examples[0] || "Sold 3 bags of rice for 75,000";
   const secondVoiceExample = examples[1] || "Paid supplier 45,000";
   const textExample = examples[2] || voiceExample;
@@ -6137,13 +7024,18 @@ function renderFirstRecordGuide(records) {
 
 function renderOnboardingProfileStep() {
   if (!els["onboarding-name"]) return;
+  ensureOnboardingLanguageField();
+  if (state.profile && !state.profile.language) {
+    state.profile.language = "en";
+  }
   syncCountryAwareInputs();
   els["onboarding-name"].value = state.profile?.display_name || "";
-  els["onboarding-phone"].value = formatPhoneForInput(state.profile?.phone_number || "", getSelectedCountryId());
+  els["onboarding-phone"].value = formatPhoneForInput(state.profile?.phone_number || "", getPhoneInputCountry());
   els["onboarding-email"].value = state.profile?.email || "";
   els["onboarding-state"].value = state.profile?.region || "";
   els["onboarding-birth-year"].value = state.profile?.birth_year || "";
   els["onboarding-gender"].value = state.profile?.gender || "";
+  syncOnboardingRegionNote();
   clearOnboardingProfileError();
   updateFinishOnboardingState();
 }
@@ -6169,7 +7061,7 @@ function speakConfirmationCopy(text) {
   if (!("speechSynthesis" in window) || !text) return;
   cancelConfirmationSpeech();
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = state.profile?.country === "US" ? "en-US" : "en-NG";
+  utterance.lang = getVoiceLocale();
   utterance.rate = 0.95;
   window.speechSynthesis.speak(utterance);
 }
@@ -6182,10 +7074,14 @@ function cancelConfirmationSpeech() {
 
 function formatMoney(amountMinor, currency) {
   const amount = amountMinor / 100;
-  if (currency === "USD") {
-    return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-  return `₦${amount.toLocaleString("en-NG", { maximumFractionDigits: 0 })}`;
+  const normalizedCurrency = String(currency || getProfileCurrency()).toUpperCase();
+  const allowsDecimals = normalizedCurrency !== "NGN";
+  return new Intl.NumberFormat(getCurrencyLocale(normalizedCurrency), {
+    style: "currency",
+    currency: normalizedCurrency,
+    minimumFractionDigits: allowsDecimals ? 2 : 0,
+    maximumFractionDigits: allowsDecimals ? 2 : 0
+  }).format(amount);
 }
 
 function formatAmount(amountMinor, currency) {
@@ -6287,7 +7183,7 @@ function buildFinancialStatements(entries, currency) {
 }
 
 function getDashboardMetrics(records, effectiveRecords) {
-  const cacheKey = `${records.length}:${state.profile?.country || ""}`;
+  const cacheKey = `${records.length}:${state.profile?.operating_region || ""}:${getProfileCurrency()}`;
   if (state.dashboardMetricsCache?.key === cacheKey) {
     return state.dashboardMetricsCache.value;
   }
@@ -6375,7 +7271,8 @@ function prepareReversalRecord(record) {
     confirmation_state: "pending",
     business_type_id: record.business_type_id,
     sector_id: record.sector_id,
-    country: record.country
+    country: record.country,
+    operating_region: record.operating_region || record.country
   };
   els["confirm-copy-v2"].textContent = confirmationCopy(state.candidateRecord);
   els["confirm-meta-v2"].innerHTML = `
@@ -6432,7 +7329,10 @@ function getProfile() {
         resolve(null);
         return;
       }
-      resolve(normalizeLocalProfile(request.result, { trackReminderMigration: true }));
+      resolve(normalizeLocalProfile(request.result, {
+        trackReminderMigration: true,
+        trackDimensionMigration: true
+      }));
     };
     request.onerror = () => reject(request.error);
   });
@@ -6529,6 +7429,29 @@ function removeSyncQueueEntries(queueIds) {
   });
 }
 
+function markRecordsEvidenceLevel(recordIds, evidenceLevel) {
+  return new Promise((resolve, reject) => {
+    if (!recordIds.length) {
+      resolve();
+      return;
+    }
+
+    const tx = state.db.transaction("records", "readwrite");
+    const store = tx.objectStore("records");
+    recordIds.forEach((recordId) => {
+      const request = store.get(recordId);
+      request.onsuccess = () => {
+        const record = request.result;
+        if (!record) return;
+        record.evidence_level = evidenceLevel;
+        store.put(record);
+      };
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 function getRecords() {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("records", "readonly");
@@ -6556,6 +7479,7 @@ async function appendLedgerRecord(record) {
     prev_entry_hash: prevHash,
     entry_hash: entryHash,
     signature,
+    evidence_level: signature ? "device_signed" : "self_reported",
     public_key_fingerprint: state.publicKeyFingerprint || null
   };
 
@@ -6599,7 +7523,6 @@ async function loadDeviceTrustState() {
   state.devicePublicKey = devicePublicKey || "";
   state.deviceIdentity = deviceIdentity || "";
   state.publicKeyFingerprint = publicKeyFingerprint || "";
-  syncGlobalDeviceIdentity();
 }
 
 async function loadSyncState() {
@@ -6620,9 +7543,11 @@ async function loadSyncState() {
     await saveSetting("sync_api_base_url", state.syncApiBaseUrl);
   }
   await refreshSyncQueueCount();
-  state.syncStatus = state.authToken
+  state.syncStatus = isAuthTokenValid()
     ? "Ready to sync queued entries."
-    : "Waiting for server OTP verification.";
+    : (state.authToken
+      ? getExpiredAuthTokenMessage()
+      : "Waiting for server OTP verification.");
 }
 
 async function createAndStoreDeviceKeyMaterial() {
@@ -6655,7 +7580,6 @@ async function createAndStoreDeviceKeyMaterial() {
   state.devicePublicKey = publicKeyString;
   state.deviceIdentity = deviceIdentity;
   state.publicKeyFingerprint = publicKeyFingerprint;
-  syncGlobalDeviceIdentity();
 }
 
 async function ensureDeviceKeyMaterial() {
@@ -6692,7 +7616,7 @@ async function queueSyncRecord(record) {
     entry_payload: record
   });
   await refreshSyncQueueCount();
-  state.syncStatus = state.authToken
+  state.syncStatus = isAuthTokenValid()
     ? "Entry queued for server sync."
     : "Entry signed locally and queued. Complete server OTP to sync.";
 }
@@ -6701,12 +7625,17 @@ async function flushSyncQueue() {
   if (state.syncInFlight || !state.db) return;
   const queuedEntries = await getSyncQueueEntries(25);
   if (!queuedEntries.length) {
-    state.syncStatus = state.authToken ? "All queued entries synced." : state.syncStatus;
+    state.syncStatus = isAuthTokenValid() ? "All queued entries synced." : state.syncStatus;
     await refreshSyncQueueCount();
     return;
   }
   if (!state.authToken) {
     state.syncStatus = "Queued entries are waiting for server OTP verification.";
+    await refreshSyncQueueCount();
+    return;
+  }
+  if (!isAuthTokenValid()) {
+    state.syncStatus = getExpiredAuthTokenMessage();
     await refreshSyncQueueCount();
     return;
   }
@@ -6727,7 +7656,11 @@ async function flushSyncQueue() {
       device_identity: state.deviceIdentity,
       public_key: state.devicePublicKey,
       entries: queuedEntries.map((item) => item.entry_payload)
-    });
+    }, state.deviceIdentity);
+    await markRecordsEvidenceLevel(
+      queuedEntries.map((item) => Number(item.entry_payload?.id || 0)).filter(Boolean),
+      "server_attested"
+    );
     await removeSyncQueueEntries(queuedEntries.map((item) => item.queue_id));
     state.lastSyncAt = new Date().toISOString();
     state.lastSyncReceipt = response.server_receipt || "";
@@ -6790,7 +7723,7 @@ async function createUserCustomLabel(value) {
     icon: "⭐",
     image_url: null,
     transaction_contexts: [customLabelContextForLearnedFrom(learnedFrom)],
-    countries: [state.profile.country],
+    countries: ["GLOBAL"],
     business_types: [state.profile.business_type_id]
   };
 
@@ -6829,7 +7762,7 @@ function loadCustomLabelsIntoCatalog() {
           icon: "⭐",
           image_url: null,
           transaction_contexts: [customLabelContextForLearnedFrom(item.learned_from)],
-          countries: [state.profile?.country || "NG", "US"].filter((value, index, array) => array.indexOf(value) === index),
+          countries: ["GLOBAL"],
           business_types: [item.business_type_id]
         });
       });
@@ -6885,10 +7818,14 @@ function getDeviceKeyStatusLabel() {
 }
 
 function getAuthSessionStatusLabel() {
+  if (state.authToken && !isAuthTokenValid()) {
+    return state.authTokenExpiresAt
+      ? `Expired at ${new Date(state.authTokenExpiresAt).toLocaleString()}`
+      : "Session needs re-authentication";
+  }
   if (state.authToken && state.authTokenExpiresAt) {
     return `Active until ${new Date(state.authTokenExpiresAt).toLocaleString()}`;
   }
-  if (state.authToken) return "Active";
   return "No server session yet";
 }
 

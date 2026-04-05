@@ -19,8 +19,13 @@ self.addEventListener("install", (event) => {
         console.warn("[Konfirmata SW] Failed to cache", file, error);
       }
     }));
-    await self.skipWaiting();
   })());
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("activate", (event) => {

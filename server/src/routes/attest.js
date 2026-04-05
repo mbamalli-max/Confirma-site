@@ -90,7 +90,9 @@ export async function registerAttestRoutes(app) {
       window_end: windowEnd.toISOString(),
       entry_count: entryCount,
       issued_at: issuedAt.toISOString(),
-      verify_url: verifyUrl
+      verify_url: verifyUrl,
+      attestation_scope: "single_device",
+      scope_description: "This report reflects records from a single device only."
     };
   });
 
@@ -156,7 +158,9 @@ export async function registerAttestRoutes(app) {
       window_end: new Date(attestation.window_end).toISOString(),
       entry_count: attestation.entry_count,
       key_rotation_events: rotationResult.rows[0]?.rotation_count || 0,
-      fork_status: forkStatus
+      fork_status: forkStatus,
+      attestation_scope: "single_device",
+      scope_description: "This report reflects records from a single device only."
     };
   });
 }

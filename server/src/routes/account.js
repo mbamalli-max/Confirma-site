@@ -8,6 +8,11 @@ function normalizeCountry(value) {
   return country ? country.slice(0, 2) : null;
 }
 
+function normalizeLanguage(value) {
+  const language = String(value || "").trim().toLowerCase();
+  return language ? language.slice(0, 10) : "en";
+}
+
 function normalizePreferredLabels(value) {
   if (!Array.isArray(value)) return [];
   return value
@@ -46,6 +51,8 @@ async function ensureAccountRecoverySchema() {
   await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan TEXT`);
   await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan_activated_at TIMESTAMPTZ`);
   await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS passcode_hint TEXT`);
+  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS operating_region CHAR(2)`);
+  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS language VARCHAR(10) DEFAULT 'en'`);
   await query(
     `
       UPDATE profiles p
@@ -55,6 +62,8 @@ async function ensureAccountRecoverySchema() {
         AND (p.phone_number IS NULL OR p.phone_number <> u.phone_number)
     `
   );
+  await query(`UPDATE profiles SET operating_region = country WHERE operating_region IS NULL AND country IS NOT NULL`);
+  await query(`UPDATE profiles SET language = 'en' WHERE language IS NULL OR language = ''`);
   await query(`UPDATE profiles SET passcode_hint = NULL WHERE passcode_hint IS NOT NULL`);
 }
 
@@ -91,6 +100,8 @@ function buildProfileResponse(row, fallbackPhoneNumber) {
       name: row.name || "",
       business_name: row.business_name || "",
       country: row.country || "",
+      operating_region: row.operating_region || row.country || "",
+      language: row.language || "en",
       business_type_id: row.business_type_id || "",
       sector_id: row.sector_id || "",
       preferred_labels: normalizePreferredLabels(row.preferred_labels),
@@ -183,6 +194,8 @@ export async function registerAccountRoutes(app) {
           p.name,
           p.business_name,
           p.country,
+          p.operating_region,
+          p.language,
           p.business_type_id,
           p.sector_id,
           p.preferred_labels,
@@ -239,18 +252,22 @@ export async function registerAccountRoutes(app) {
           business_name,
           phone_number,
           country,
+          operating_region,
+          language,
           business_type_id,
           sector_id,
           preferred_labels,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NOW())
         ON CONFLICT (user_id)
         DO UPDATE SET
           name = EXCLUDED.name,
           business_name = EXCLUDED.business_name,
           phone_number = EXCLUDED.phone_number,
           country = EXCLUDED.country,
+          operating_region = EXCLUDED.operating_region,
+          language = EXCLUDED.language,
           business_type_id = EXCLUDED.business_type_id,
           sector_id = EXCLUDED.sector_id,
           preferred_labels = EXCLUDED.preferred_labels,
@@ -262,6 +279,8 @@ export async function registerAccountRoutes(app) {
         String(body.business_name || "").trim() || null,
         user.phone_number,
         normalizeCountry(body.country),
+        normalizeCountry(body.operating_region || body.country),
+        normalizeLanguage(body.language),
         String(body.business_type_id || "").trim() || null,
         String(body.sector_id || "").trim() || null,
         JSON.stringify(normalizePreferredLabels(body.preferred_labels))

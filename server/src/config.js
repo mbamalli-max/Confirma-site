@@ -26,8 +26,8 @@ export const config = {
   port: Number(process.env.PORT || 8080),
   databaseUrl: normalizeDatabaseUrl(process.env.DATABASE_URL),
   databaseSsl: String(process.env.DATABASE_SSL || "false") === "true",
-  jwtSecret: process.env.JWT_SECRET || "konfirmata-dev-jwt-secret",
-  serverReceiptSecret: process.env.SERVER_RECEIPT_SECRET || process.env.JWT_SECRET || "konfirmata-dev-receipt-secret",
+  jwtSecret: process.env.JWT_SECRET || "",
+  serverReceiptSecret: process.env.SERVER_RECEIPT_SECRET || "",
   jwtExpiry: process.env.JWT_EXPIRY || "30d",
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES || 10),
   otpRateLimitPerHour: Number(process.env.OTP_RATE_LIMIT_PER_HOUR || 50),
@@ -53,24 +53,15 @@ export function validateRuntimeConfig() {
   const errors = [];
   const warnings = [];
   const strictMode = config.nodeEnv === "production";
+  const jwtSecretMissing = !config.jwtSecret;
+  const receiptSecretMissing = !config.serverReceiptSecret;
 
-  const jwtPlaceholder = isPlaceholderSecret(config.jwtSecret, [
-    "konfirmata-dev-jwt-secret",
-    "confirma-dev-jwt-secret",
-    "replace-this-with-a-long-random-secret"
-  ]);
-  const receiptPlaceholder = isPlaceholderSecret(config.serverReceiptSecret, [
-    "konfirmata-dev-receipt-secret",
-    "confirma-dev-receipt-secret",
-    "replace-this-with-a-second-long-random-secret"
-  ]);
-
-  if (jwtPlaceholder) {
-    (strictMode ? errors : warnings).push("JWT_SECRET is still using a development placeholder.");
+  if (!config.jwtSecret) {
+    errors.push("JWT_SECRET environment variable is required");
   }
 
-  if (receiptPlaceholder) {
-    (strictMode ? errors : warnings).push("SERVER_RECEIPT_SECRET is still using a development placeholder.");
+  if (!config.serverReceiptSecret) {
+    errors.push("SERVER_RECEIPT_SECRET environment variable is required");
   }
 
   if (config.smsProviderEnabled) {
@@ -95,6 +86,8 @@ export function validateRuntimeConfig() {
   }
 
   if (errors.length) {
-    throw new Error(`Config validation failed:\n- ${errors.join("\n- ")}`);
+    const error = new Error(`Config validation failed:\n- ${errors.join("\n- ")}`);
+    error.fatal = jwtSecretMissing || receiptSecretMissing || strictMode;
+    throw error;
   }
 }

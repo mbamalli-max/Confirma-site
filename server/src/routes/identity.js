@@ -15,6 +15,20 @@ export async function registerIdentityRoutes(app) {
     }
 
     try {
+      const existingDeviceResult = await query(
+        `
+          SELECT 1
+          FROM device_identities
+          WHERE device_identity = $1 AND phone_number = $2
+          LIMIT 1
+        `,
+        [oldDeviceIdentity, auth.phone_number]
+      );
+
+      if (existingDeviceResult.rowCount === 0) {
+        return reply.code(403).send({ error: "Device not found for this account." });
+      }
+
       const result = await withTransaction(async (client) => {
         await client.query(
           `

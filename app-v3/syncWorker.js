@@ -2,8 +2,9 @@ function normalizeApiBaseUrl(rawUrl) {
   return String(rawUrl || "").trim().replace(/\/+$/, "");
 }
 
-export async function postJson(baseUrl, path, body, authToken) {
+export async function postJson(baseUrl, path, body, authToken, options = {}) {
   const normalizedBaseUrl = normalizeApiBaseUrl(baseUrl);
+  const deviceIdentity = String(options.deviceIdentity || "").trim();
   if (!normalizedBaseUrl) {
     const error = new Error("Sync server URL is not configured.");
     error.statusCode = 0;
@@ -14,7 +15,7 @@ export async function postJson(baseUrl, path, body, authToken) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(window.CONFIRMA_DEVICE_IDENTITY ? { "X-Device-Identity": window.CONFIRMA_DEVICE_IDENTITY } : {}),
+      ...(deviceIdentity ? { "X-Device-Identity": deviceIdentity } : {}),
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
     },
     body: JSON.stringify(body)
@@ -56,6 +57,8 @@ export async function requestOtpCode(baseUrl, identifier, extra = {}) {
   }
   return postJson(baseUrl, "/auth/otp/request", {
     ...payload
+  }, "", {
+    deviceIdentity: extra.device_identity || ""
   });
 }
 
@@ -70,15 +73,21 @@ export async function verifyOtpCode(baseUrl, identifier, code, extra = {}) {
   }
   return postJson(baseUrl, "/auth/otp/verify", {
     ...payload
+  }, "", {
+    deviceIdentity: extra.device_identity || ""
   });
 }
 
-export async function syncQueuedEntries(baseUrl, authToken, payload) {
-  return postJson(baseUrl, "/sync/entries", payload, authToken);
+export async function syncQueuedEntries(baseUrl, authToken, payload, deviceIdentity = "") {
+  return postJson(baseUrl, "/sync/entries", payload, authToken, {
+    deviceIdentity
+  });
 }
 
-export async function rotateDeviceIdentity(baseUrl, authToken, payload) {
-  return postJson(baseUrl, "/identity/rotate", payload, authToken);
+export async function rotateDeviceIdentity(baseUrl, authToken, payload, deviceIdentity = "") {
+  return postJson(baseUrl, "/identity/rotate", payload, authToken, {
+    deviceIdentity
+  });
 }
 
 export { normalizeApiBaseUrl };

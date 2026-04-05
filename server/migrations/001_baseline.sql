@@ -1,0 +1,1 @@
+-- Baseline: matches current schema.sql as of 2026-04-04

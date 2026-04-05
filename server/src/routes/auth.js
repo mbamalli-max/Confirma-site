@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { config } from "../config.js";
 import { query } from "../db.js";
 import {
@@ -65,6 +66,7 @@ async function ensureAuthSchema() {
   await query(`ALTER TABLE otp_challenges ALTER COLUMN phone_number DROP NOT NULL`);
   await query(`ALTER TABLE otp_challenges ADD COLUMN IF NOT EXISTS identifier TEXT`);
   await query(`ALTER TABLE otp_challenges ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'sms'`);
+  await query(`ALTER TABLE otp_challenges ADD COLUMN IF NOT EXISTS failed_at TIMESTAMPTZ`);
   await query(`UPDATE otp_challenges SET identifier = COALESCE(identifier, phone_number) WHERE identifier IS NULL`);
   await query(`UPDATE otp_challenges SET channel = COALESCE(NULLIF(channel, ''), 'sms')`);
   await query(
@@ -338,8 +340,37 @@ export async function registerAuthRoutes(app) {
       });
     }
 
+    const failedAttemptsResult = await query(
+      `
+        SELECT COUNT(*)::int AS failed_count
+        FROM otp_challenges
+        WHERE identifier = $1
+          AND channel = $2
+          AND created_at > NOW() - INTERVAL '15 minutes'
+          AND verified_at IS NULL
+          AND failed_at IS NOT NULL
+      `,
+      [identifier, channel]
+    );
+
+    if ((failedAttemptsResult.rows[0]?.failed_count || 0) >= 5) {
+      return reply.code(429).send({ error: "Too many failed attempts. Try again in 15 minutes." });
+    }
+
+    const computedHash = hashOtp(identifier, code, channel);
+    const computedBuf = Buffer.from(computedHash, "hex");
+    const storedBuf = Buffer.from(challenge.otp_hash, "hex");
+    const matches = computedBuf.length === storedBuf.length && crypto.timingSafeEqual(computedBuf, storedBuf);
     const challengeExpired = new Date(challenge.expires_at).getTime() < Date.now();
-    if (challenge.verified_at || challengeExpired || hashOtp(identifier, code, channel) !== challenge.otp_hash) {
+    if (challenge.verified_at || challengeExpired || !matches) {
+      await query(
+        `
+          UPDATE otp_challenges
+          SET failed_at = NOW()
+          WHERE id = $1
+        `,
+        [challenge.id]
+      );
       return reply.code(401).send({ error: "OTP verification failed." });
     }
 

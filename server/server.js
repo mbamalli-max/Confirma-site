@@ -19,11 +19,23 @@ async function registerRouteGroup(app, name, registerFn) {
 
 async function main() {
   const app = Fastify({ logger: true });
+  const allowedOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)
+    : ["https://konfirmata.com", "https://www.konfirmata.com"];
+
+  if (process.env.NODE_ENV !== "production") {
+    allowedOrigins.push(
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "http://localhost:5500",
+      "http://127.0.0.1:5500"
+    );
+  }
 
   try {
     validateRuntimeConfig();
   } catch (err) {
-    if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEV_OTP !== "true") {
+    if (err?.fatal || (process.env.NODE_ENV === "production" && process.env.ALLOW_DEV_OTP !== "true")) {
       console.error("Fatal config error:", err.message);
       process.exit(1);
     } else {
@@ -34,7 +46,7 @@ async function main() {
   app.log.info(getAuthDeliverySummary(), "Auth delivery config");
 
   await app.register(cors, {
-    origin: true,
+    origin: allowedOrigins,
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Device-Identity"]
   });

@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
 import { authenticateRequest, buildReceiptSignature } from "../auth-utils.js";
-import { query } from "../db.js";
+import { query, withTransaction } from "../db.js";
+import { maskPhone, maskEmail } from "../utils/mask.js";
 
 const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL || "https://konfirmata.com";
 const PATENT_NOTICE = "Protected under USPTO Provisional Application 63/987,858. Konfirmata Temporal Attestation System (TAS). Unauthorized reproduction of this attestation mechanism is prohibited.";
@@ -38,7 +39,7 @@ async function getQrCodeModule() {
 function parseWindowDays(value, fallback = 30) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
-  return Math.floor(parsed);
+  return Math.min(365, Math.floor(parsed));
 }
 
 function getMetadataFields(metadata) {
@@ -215,11 +216,12 @@ async function getDeviceRecord(deviceIdentity) {
   return result.rows[0] || null;
 }
 
-async function getLedgerEntries(deviceIdentity, windowDays) {
+async function getLedgerEntries(deviceIdentity, windowDays, db = null) {
+  const runner = db || { query };
   if (windowDays === 0) {
-    const result = await query(
+    const result = await runner.query(
       `
-        SELECT entry_id, entry_hash, confirmed_at, payload
+        SELECT entry_id, entry_hash, confirmed_at, evidence_level, payload
         FROM ledger_entries
         WHERE device_identity = $1
         ORDER BY entry_id ASC
@@ -229,9 +231,9 @@ async function getLedgerEntries(deviceIdentity, windowDays) {
     return result.rows;
   }
 
-  const result = await query(
+  const result = await runner.query(
     `
-      SELECT entry_id, entry_hash, confirmed_at, payload
+      SELECT entry_id, entry_hash, confirmed_at, evidence_level, payload
       FROM ledger_entries
       WHERE device_identity = $1
         AND confirmed_at >= NOW() - ($2 || ' days')::interval
@@ -242,8 +244,9 @@ async function getLedgerEntries(deviceIdentity, windowDays) {
   return result.rows;
 }
 
-async function createAttestation(phoneNumber, deviceIdentity, windowDays) {
-  const entries = await getLedgerEntries(deviceIdentity, windowDays);
+async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = null) {
+  const runner = db || { query };
+  const entries = await getLedgerEntries(deviceIdentity, windowDays, runner);
 
   if (!entries.length) {
     const error = new Error("No entries in this window.");
@@ -265,7 +268,7 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays) {
   ]);
   const issuedAt = new Date();
 
-  await query(
+  await runner.query(
     `
       INSERT INTO attestations (
         vt_id,
@@ -309,8 +312,9 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays) {
   };
 }
 
-async function getKeyRotationCount(deviceIdentity) {
-  const result = await query(
+async function getKeyRotationCount(deviceIdentity, db = null) {
+  const runner = db || { query };
+  const result = await runner.query(
     `SELECT COUNT(*)::int AS rotation_count FROM key_rotation_events WHERE old_device_identity = $1 OR new_device_identity = $1`,
     [deviceIdentity]
   );
@@ -571,6 +575,14 @@ async function buildVerifiedReportPdf({
   const entries = attestation.entries;
   const reportCurrency = entries[0]?.payload?.currency || "NGN";
   const statements = computeFinancialStatements(entries, reportCurrency);
+  const evidenceCounts = { self_reported: 0, device_signed: 0, server_attested: 0, corroborated: 0 };
+  entries.forEach((entry) => {
+    const level = entry.evidence_level || "self_reported";
+    if (evidenceCounts[level] !== undefined) evidenceCounts[level] += 1;
+  });
+  const totalEvidenceEntries = entries.length;
+  const attestedEntries = evidenceCounts.server_attested + evidenceCounts.corroborated;
+  const attestedPercent = totalEvidenceEntries ? Math.round((attestedEntries / totalEvidenceEntries) * 100) : 0;
   const totalInflows = statements.incomeStatement.grossRevenue + statements.incomeStatement.otherIncome;
   const totalOutflows = statements.incomeStatement.costOfGoods + statements.incomeStatement.operatingExpenses;
   const cashFlowTotals = statements.cashFlowByMonth.reduce((totals, month) => {
@@ -589,8 +601,8 @@ async function buildVerifiedReportPdf({
   let infoY = 150;
   const coverRows = [
     ["Business", businessName || "Not provided"],
-    ["Phone", phoneNumber],
-    ["Email", email || "Not provided"],
+    ["Phone", maskPhone(phoneNumber)],
+    ["Email", email ? maskEmail(email) : "Not provided"],
     ["Tier", tier ? tier[0].toUpperCase() + tier.slice(1) : "Unknown"],
     ["Report date range", `${formatDateOnly(attestation.window_start)} to ${formatDateOnly(attestation.window_end)}`],
     ["Generated", formatDateTime(attestation.issued_at)],
@@ -607,7 +619,19 @@ async function buildVerifiedReportPdf({
     infoY += 42;
   });
 
-  drawStatusBadge(doc, 50, infoY + 8, "VALID");
+  const evidenceSummaryY = infoY + 10;
+  drawStatusBadge(doc, 50, evidenceSummaryY, "VALID");
+  doc.font("Helvetica-Bold").fontSize(12).fillColor("#1B2F1F").text("Evidence Summary", 50, evidenceSummaryY + 34);
+  doc.font("Helvetica").fontSize(10).fillColor("#0F1A10");
+  [
+    `Total entries: ${totalEvidenceEntries}`,
+    `Server-attested: ${evidenceCounts.server_attested}`,
+    `Device-signed: ${evidenceCounts.device_signed}`,
+    `Self-reported: ${evidenceCounts.self_reported}`,
+    `${attestedEntries} of ${totalEvidenceEntries} entries (${attestedPercent}%) have server attestation.`
+  ].forEach((line, index) => {
+    doc.text(line, 50, evidenceSummaryY + 54 + (index * 16), { width: 280 });
+  });
 
   doc.image(qrBuffer, 380, 150, { width: 120 });
   doc.fontSize(10).fillColor("#6B7C6B").text("Verification URL", 380, 284);
@@ -783,10 +807,11 @@ async function generateVerifiedReport({
   email,
   tier,
   windowDays,
-  amountKobo
+  amountKobo,
+  db = null
 }) {
-  const attestation = await createAttestation(phoneNumber, deviceIdentity, windowDays);
-  const keyRotationEvents = await getKeyRotationCount(deviceIdentity);
+  const attestation = await createAttestation(phoneNumber, deviceIdentity, windowDays, db);
+  const keyRotationEvents = await getKeyRotationCount(deviceIdentity, db);
   const filename = `confirma-verified-report-${new Date().toISOString().slice(0, 10)}.pdf`;
   const pdfBuffer = await buildVerifiedReportPdf({
     attestation,
@@ -914,10 +939,6 @@ export async function registerPaymentRoutes(app) {
         return reply.code(404).send({ error: "User account not found." });
       }
 
-      if (freeReportContext.free_report_used) {
-        return reply.code(403).send({ error: "Free report already claimed." });
-      }
-
       if (!canUseFreeReport(freeReportContext)) {
         return reply.code(403).send({ error: "Free report unavailable for this account." });
       }
@@ -928,28 +949,36 @@ export async function registerPaymentRoutes(app) {
         return reply.code(error.statusCode || 500).send({ error: error.message });
       }
 
-      const report = await generateVerifiedReport({
-        phoneNumber: auth.phone_number,
-        deviceIdentity,
-        businessName: String(freeReportContext.business_name || "").trim(),
-        email: String(freeReportContext.email || "").trim(),
-        tier: "free",
-        windowDays: requestedWindowDays,
-        amountKobo: 0
-      });
+      let report;
+      try {
+        report = await withTransaction(async (client) => {
+          const claimResult = await client.query(
+            `
+              UPDATE profiles
+              SET free_report_used = TRUE
+              WHERE phone_number = $1
+                AND COALESCE(free_report_used, FALSE) = FALSE
+            `,
+            [auth.phone_number]
+          );
 
-      const claimResult = await query(
-        `
-          UPDATE profiles
-          SET free_report_used = TRUE
-          WHERE phone_number = $1
-            AND COALESCE(free_report_used, FALSE) = FALSE
-        `,
-        [auth.phone_number]
-      );
+          if (!claimResult.rowCount) {
+            throw Object.assign(new Error("Free report already claimed."), { statusCode: 403 });
+          }
 
-      if (!claimResult.rowCount) {
-        return reply.code(403).send({ error: "Free report already claimed." });
+          return generateVerifiedReport({
+            phoneNumber: auth.phone_number,
+            deviceIdentity,
+            businessName: String(freeReportContext.business_name || "").trim(),
+            email: String(freeReportContext.email || "").trim(),
+            tier: "free",
+            windowDays: requestedWindowDays,
+            amountKobo: 0,
+            db: client
+          });
+        });
+      } catch (error) {
+        return reply.code(error.statusCode || 500).send({ error: error.message || "Unable to generate free report." });
       }
 
       sendVerifiedReportEmail({

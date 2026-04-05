@@ -30,6 +30,25 @@ export async function registerSyncRoutes(app) {
 
     try {
       const result = await withTransaction(async (client) => {
+        const existingDeviceResult = await client.query(
+          `
+            SELECT phone_number, revoked_at
+            FROM device_identities
+            WHERE device_identity = $1
+            LIMIT 1
+          `,
+          [deviceIdentity]
+        );
+        const existingDevice = existingDeviceResult.rows[0];
+
+        if (existingDevice && existingDevice.phone_number !== auth.phone_number) {
+          throw Object.assign(new Error("Device belongs to another account."), { statusCode: 403 });
+        }
+
+        if (existingDevice?.revoked_at) {
+          throw Object.assign(new Error("device_revoked"), { statusCode: 401 });
+        }
+
         await client.query(
           `
             INSERT INTO device_identities (device_identity, public_key, phone_number, status)
@@ -39,6 +58,7 @@ export async function registerSyncRoutes(app) {
               public_key = EXCLUDED.public_key,
               phone_number = EXCLUDED.phone_number,
               updated_at = NOW()
+            WHERE device_identities.revoked_at IS NULL
           `,
           [deviceIdentity, publicKey, auth.phone_number]
         );
@@ -112,12 +132,13 @@ export async function registerSyncRoutes(app) {
                 entry_hash,
                 prev_entry_hash,
                 signature,
+                evidence_level,
                 confirmed_at,
                 synced_at,
                 public_key_fingerprint,
                 payload
               )
-              VALUES ($1, $2, $3, $4, $5, TO_TIMESTAMP($6), NOW(), $7, $8::jsonb)
+              VALUES ($1, $2, $3, $4, $5, $6, TO_TIMESTAMP($7), NOW(), $8, $9::jsonb)
             `,
             [
               deviceIdentity,
@@ -125,6 +146,7 @@ export async function registerSyncRoutes(app) {
               entry.entry_hash,
               entry.prev_entry_hash,
               entry.signature,
+              "server_attested",
               Number(entry.confirmed_at || 0),
               entry.public_key_fingerprint || null,
               JSON.stringify(entry)
