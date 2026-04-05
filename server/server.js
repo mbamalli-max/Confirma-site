@@ -43,6 +43,16 @@ async function main() {
     }
   }
 
+  // Hard-block: dev OTP must not run against a production (SSL) database
+  if (config.databaseSsl && config.allowDevOtp) {
+    console.error(
+      "FATAL: ALLOW_DEV_OTP=true is prohibited when DATABASE_SSL=true " +
+      "(production database detected). Set ALLOW_DEV_OTP=false or " +
+      "DATABASE_SSL=false for local development."
+    );
+    process.exit(1);
+  }
+
   app.log.info(getAuthDeliverySummary(), "Auth delivery config");
 
   await app.register(cors, {
