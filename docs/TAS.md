@@ -1,8 +1,8 @@
 # Technical Architecture Specification (TAS)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.1
-**Date:** 2026-04-11
+**Version:** 3.2
+**Date:** 2026-04-12
 
 ---
 
@@ -415,6 +415,53 @@ Store: `voice_corrections` (keyPath: `"raw"`)
 5. If user edit differs from raw: `saveVoiceCorrection(raw, userEdit)` — correction stored
 
 **Isolation:** Not synced. Not backed up. Device-local only. Cleared on IndexedDB reset.
+
+---
+
+### 4.15 Onboarding Voice Input
+
+Each onboarding step exposes an optional mic icon. Voice input follows the same pattern as transaction capture and label speech match, reusing existing infrastructure.
+
+#### Per-Step Voice Pipeline
+
+```
+Mic tapped
+  → SpeechRecognition.start()  [locale from getVoiceLocale()]
+  → onresult: raw transcript
+  → fuzzy match against step options
+  → auto-select matched option
+  → speakConfirmationCopy(readbackText)  [TTS readback]
+  → user taps "Continue" or retaps mic to retry
+```
+
+#### Step-by-Step Spec
+
+| Step | Options corpus | Match strategy | TTS readback |
+|---|---|---|---|
+| Phone country | `COUNTRIES` array (country names) | Substring / fuzzy match against `country.name` | "You selected [Country Name]." |
+| Operating region | Same `COUNTRIES` array | Same | "You selected [Country Name]." |
+| Sector | 6 sector labels | Exact / substring match | "You selected [Sector Name]." |
+| Business type | Business types for current sector | Substring match | "You selected [Business Type]." |
+| Preferred labels | All label names for current business type | Substring match (multi-select allowed) | "You added [Label]. [N] selected so far." |
+| Profile name | Free-form, no corpus | No matching — fills name field directly | "Your name is set to [Name]." |
+
+#### Reused Functions
+
+| Function | Location | Role in onboarding voice |
+|---|---|---|
+| `getVoiceLocale()` | ~line 5740 | Same locale as transaction voice capture |
+| `speakConfirmationCopy(text)` | ~line 6168 | TTS readback of each selection |
+| `cancelConfirmationSpeech()` | ~line 6177 | Cancel prior readback before new one |
+| `getSpeechRecognitionErrorMessage(err)` | ~line 3296 | Mic-permission / no-speech error messages |
+| `startSpeechMatch()` | ~line 3701 | Reference pattern for fuzzy option matching |
+
+#### Error Handling
+Same as transaction voice input:
+- Mic permission denied → show error via `getSpeechRecognitionErrorMessage("not-allowed")`
+- No speech detected → show "No audio detected. Try again."
+- No match found → show "Could not match '[transcript]'. Try typing instead."
+
+Voice is always optional — keyboard/tap path remains available on every step.
 
 ---
 
@@ -1079,3 +1126,4 @@ Routing via `vercel.json` `routes` array (not `rewrites`).
 | 2.1 | 2026-04-04 | Global availability model — full country selector, decoupled dimensions |
 | 3.0 | 2026-04-04 | Full rewrite — 17-task security hardening complete: IDOR, OTP, race conditions, CORS, JWT secrets, masking, replay protection, evidence hierarchy, schema migrations, device scope labels |
 | 3.1 | 2026-04-11 | **New sections:** §4.13 Voice Input System (NLP parsing, voice locale, voice correction system); §7.6 Rewarded Export Flow. **Schema:** `received_at TIMESTAMPTZ` on ledger_entries (migration 005); `voice_corrections` IndexedDB store documented. **Security:** SC-21 ALLOW_DEV_OTP hard-block; `extractable: false` corrected in §4.8 keypair snippet. **Onboarding:** country selector updated to searchable input with locale auto-detection. **Financial statements:** `getRecordConfirmedAtMs` `created_at` fallback documented. |
+| 3.2 | 2026-04-12 | **New section:** §4.15 Onboarding Voice Input — mic icon on every onboarding step, fuzzy-match speak-to-select, TTS readback per step type. Reuses `getVoiceLocale()`, `speakConfirmationCopy()`, `startSpeechMatch()` pattern. |

@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.1
-**Date:** 2026-04-11
+**Version:** 3.2
+**Date:** 2026-04-12
 
 ---
 
@@ -139,6 +139,21 @@ Currency is derived from `operating_region`, never from `phone_country`.
 **Post-onboarding:** Profile saved to IndexedDB. Device trust state loaded. If phone unverified, OTP screen available in Settings.
 
 **Re-entry:** "Change business profile" in Settings resets onboarding. Ledger is preserved.
+
+#### Voice Navigation
+
+Every onboarding step exposes an optional mic icon. The interaction pattern mirrors transaction confirmation:
+
+1. User taps mic → microphone activates
+2. User speaks their choice (e.g., "Nigeria", "food vendor", "Rice")
+3. Transcript is fuzzy-matched against the available options for that step
+4. On a match, the option is auto-selected and the app reads it back via TTS:
+   - Country / region / sector / business type: **"You selected [Name]."**
+   - Label (multi-select): **"You added [Label]. [N] selected so far."**
+   - Name field (profile step): **"Your name is set to [Name]."**
+5. User taps "Continue" to advance, or taps mic again to retry
+
+Voice uses the same locale (`getVoiceLocale()`), TTS engine (`speakConfirmationCopy()`), and mic-permission error handling as the transaction voice capture flow. No new permissions or browser capabilities are required.
 
 ### 4.2 Transaction Capture
 
