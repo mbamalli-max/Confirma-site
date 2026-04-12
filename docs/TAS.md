@@ -1,8 +1,8 @@
 # Technical Architecture Specification (TAS)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.0
-**Date:** 2026-04-04
+**Version:** 3.1
+**Date:** 2026-04-11
 
 ---
 
@@ -140,6 +140,12 @@ All mutable state lives in `state` object in `app.js`. Persisted to IndexedDB:
 **`customLabels` store** (keyPath: `"id"`):
 - User-created custom labels
 
+**`voice_corrections` store** (keyPath: `"raw"`):
+- `raw` — original voice transcript fragment (primary key)
+- `corrected` — user-provided replacement
+- `count` — times this correction has been applied (usage frequency)
+- `created_at` — Unix ms timestamp
+
 ### 4.4 Global Availability Model
 
 Three independent dimensions (see PRD §3 for full spec):
@@ -147,8 +153,9 @@ Three independent dimensions (see PRD §3 for full spec):
 - `operating_region` — user-selected at onboarding — governs currency, capabilities
 - `language` — user-selected in Settings — governs UI locale and voice
 
-**Onboarding steps 1 and 2 are separate country selectors.**
-Step 1 sets `phone_country`. Step 2 sets `operating_region`. They may differ.
+**Onboarding steps 1 and 2 are separate country selectors, both implemented as searchable input + filtered list (not visual grids).**
+Step 1 sets `phone_country` — pre-populated from `Intl.DateTimeFormat().resolvedOptions().locale` region segment (e.g. `en-NG` → Nigeria). User can override.
+Step 2 sets `operating_region`. They may differ.
 
 **`REGION_CURRENCY_MAP`** maps ISO alpha-2 → ISO 4217 currency code.
 **`PAID_REPORT_REGIONS`** is a `Set` — currently `new Set(["NG"])`.
@@ -218,9 +225,10 @@ Missing optional fields represented as empty string. Pipe `|` separator.
 ```js
 const keyPair = await crypto.subtle.generateKey(
   { name: "ECDSA", namedCurve: "P-256" },
-  true,           // extractable (for JWK export)
+  false,          // non-extractable — private key cannot be exported (XSS protection)
   ["sign", "verify"]
 );
+// Public key can still be exported: crypto.subtle.exportKey("jwk", keyPair.publicKey)
 ```
 
 **Public key canonicalization:**
@@ -317,9 +325,66 @@ self.addEventListener("message", (event) => {
 
 **Update flow:**
 1. New SW detected → `registration.waiting` exists
-2. UI shows update banner
+2. UI shows update banner (`sw-update-banner`)
 3. User clicks "Update" → `registration.waiting.postMessage({ type: "SKIP_WAITING" })`
 4. `controllerchange` event fires → `window.location.reload()`
+
+### 4.13 Voice Input System
+
+#### Natural Language Parsing
+
+Function: `parseNaturalTransaction(input)` (~line 4129 in `app.js`)
+
+Parses free-text or voice transcripts into structured transaction fields before populating the capture form.
+
+Supported patterns (regex):
+
+| Phrase pattern | Inferred type | Extracted fields |
+|---|---|---|
+| "sold [item] for [amount]" | `sale` (income) | label: item, amount |
+| "sell [item] for [amount]" | `sale` (income) | label: item, amount |
+| "bought [item] for [amount]" | `purchase` (expense) | label: item, amount |
+| "received [amount] from [party]" | `receipt` (income) | amount, counterparty: party |
+| "paid [amount] to [party]" | `payment` (expense) | amount, counterparty: party |
+
+Amount normalization: strips currency symbols (₦, $, NGN, USD), removes commas, converts k-suffixes (`"75k"` → `75000`).
+
+Applied after `applyVoiceCorrections()` and before field population.
+
+#### Voice Locale
+
+Function: `getVoiceLocale()` (~line 5740 in `app.js`)
+
+Returns the BCP-47 language tag for `SpeechRecognition.lang`:
+
+| Condition | Locale returned |
+|---|---|
+| `operating_region = "NG"` (non-Safari) | `"en-NG"` |
+| Safari (any region) | `"en-US"` — Safari workaround: `en-NG` causes recognition failure on iOS |
+| All others | `"en-US"` |
+
+#### Voice Correction System
+
+Core functions in `app.js`:
+
+| Function | ~Line | Description |
+|---|---|---|
+| `getVoiceCorrectionsStore(mode)` | 2577 | Opens `voice_corrections` IndexedDB store in given mode |
+| `getVoiceCorrections()` | 2581 | Returns all corrections sorted by `count` descending |
+| `applyVoiceCorrections(transcript)` | 2605 | Applies all corrections to a raw transcript string |
+| `applyVoiceCorrectionEntry(t, raw, corrected)` | 2599 | Applies one correction via word-boundary regex |
+| `saveVoiceCorrection(raw, corrected)` | 2622 | Upserts correction, increments `count` |
+| `deleteVoiceCorrection(raw)` | 2648 | Removes correction by `raw` primary key |
+| `renderVoiceCorrectionsSettings()` | 2662 | Renders Settings panel UI with correction list |
+
+**Voice pipeline order:**
+1. `SpeechRecognition` → raw transcript
+2. `applyVoiceCorrections(raw)` → corrected transcript
+3. `parseNaturalTransaction(corrected)` → structured fields
+4. User reviews in capture form, can edit manually
+5. If user edit differs from raw: `saveVoiceCorrection(raw, userEdit)` — correction stored
+
+**Isolation:** Not synced. Not backed up. Cleared on IndexedDB reset.
 
 ---
 
@@ -391,8 +456,10 @@ CREATE TABLE ledger_entries (
   payload JSONB NOT NULL,                 -- full record object (denormalized)
   evidence_level VARCHAR(20) DEFAULT 'self_reported',
   corroboration_flags JSONB DEFAULT '{}'::jsonb,
+  received_at TIMESTAMPTZ DEFAULT NOW(),        -- server-side arrival timestamp, independent of client clock
   PRIMARY KEY (device_identity, entry_id)
 );
+-- Note: received_at backfilled from synced_at for pre-migration rows (migration 005)
 
 CREATE UNIQUE INDEX idx_ledger_entries_entry_hash_unique
   ON ledger_entries (entry_hash);         -- replay protection
@@ -701,6 +768,32 @@ Server-generated via pdfkit:
 `maskPhone("+2348031234567")` → `"+234****4567"`
 `maskEmail("john.doe@example.com")` → `"j***e@example.com"`
 
+### 7.6 Rewarded Export Flow
+
+Users have a fixed monthly quota of free text exports. When exhausted, they can watch a rewarded ad to unlock one additional export for that calendar month.
+
+**Quota functions (all in `app.js`):**
+
+| Function | Description |
+|---|---|
+| `getMonthlyFreeExportCount()` | Returns free text exports used this calendar month (IndexedDB settings) |
+| `getRewardedExportCount()` | Returns ad-unlocked exports remaining this month |
+| `hasFreeExportQuota()` | `true` if free or rewarded quota remains |
+| `shouldOfferRewardedExport()` | `true` when free quota exhausted and rewarded ad is available |
+| `refreshRewardedExportState()` | Updates UI to show rewarded button when applicable |
+| `unlockRewardedExport()` | Increments rewarded count after successful ad completion |
+
+**Flow:**
+1. User taps Export → `hasFreeExportQuota()` checked
+2. Quota exhausted → `shouldOfferRewardedExport()` checked
+3. Rewarded available → ad modal shown (`rewarded-ad-modal` with countdown timer)
+4. Ad countdown completes → `unlockRewardedExport()` → export proceeds
+5. No rewarded available → error shown, export blocked
+
+**UI elements:** `rewarded-export-wrap`, `rewarded-export-button`, `rewarded-ad-modal`, `rewarded-ad-slot`, `rewarded-ad-countdown`, `rewarded-ad-complete`
+
+**Constraint:** This system is client-side only. The server does not track export counts — quota is stored in IndexedDB `settings`.
+
 ---
 
 ## §8. Migration System
@@ -725,6 +818,7 @@ Server-generated via pdfkit:
 | `002_replay_protection.sql` | 2 | `UNIQUE INDEX` on `ledger_entries(entry_hash)` |
 | `003_country_region_language.sql` | 3 | `operating_region`, `language` columns on profiles + backfill |
 | `004_evidence_hierarchy.sql` | 4 | `evidence_level`, `corroboration_flags` columns on ledger_entries + backfill |
+| `005_received_at.sql` | 5 | `received_at TIMESTAMPTZ` column on ledger_entries; backfills from `synced_at` |
 
 ### 8.3 Schema Guards (in account.js)
 
@@ -839,6 +933,8 @@ Computed in `buildFinancialStatements(records, currency)` / `computeFinancialSta
 | Cash flow | Monthly sales − Monthly expenses |
 | Streak | Consecutive days (backward from today) with ≥ 1 record |
 
+**Timestamp resolution:** `getRecordConfirmedAtMs(record)` resolves entry timestamps for date range calculations. It uses `confirmed_at` with fallback to `created_at` when `confirmed_at` is absent. Values < 1e12 are treated as Unix seconds and multiplied by 1000; values ≥ 1e12 are treated as milliseconds. Records with neither field are excluded from date range.
+
 ### 11.2 Reversal Handling
 
 Reversed transactions (those whose `entry_hash` appears in any reversal's `reversed_entry_hash`) are excluded from all metric calculations. Reversal records themselves subtract from the original transaction type.
@@ -939,6 +1035,7 @@ Routing via `vercel.json` `routes` array (not `rewrites`).
 18. **Replay protection** — `UNIQUE INDEX` on `ledger_entries(entry_hash)`
 19. **Phone/email masked in lender PDF** — full PII only in user's own text export
 20. **Free report server-enforced** — `free_report_used` flag in DB, not only in localStorage
+21. **`ALLOW_DEV_OTP` hard-blocked in production** — server calls `process.exit(1)` at startup if both `DATABASE_SSL=true` and `ALLOW_DEV_OTP=true` are set simultaneously. Prevents OTP bypass against a production database.
 
 ---
 
@@ -950,4 +1047,5 @@ Routing via `vercel.json` `routes` array (not `rewrites`).
 | 1.5 | 2026-03-25 | Phase 1.5B complete — sync server, fork detection |
 | 2.0 | 2026-03-28 | Phases 1.5C + 1.5D complete — attestation, Paystack PDF, deployment |
 | 2.1 | 2026-04-04 | Global availability model — full country selector, decoupled dimensions |
-| 3.0 | 2026-04-04 | Full rewrite — 17-task security hardening complete: IDOR, OTP, race conditions, CORS, JWT secrets, CORS, masking, replay protection, evidence hierarchy, schema migrations, device scope labels |
+| 3.0 | 2026-04-04 | Full rewrite — 17-task security hardening complete: IDOR, OTP, race conditions, CORS, JWT secrets, masking, replay protection, evidence hierarchy, schema migrations, device scope labels |
+| 3.1 | 2026-04-11 | **New sections:** §4.13 Voice Input System (NLP parsing, voice locale, voice correction system); §7.6 Rewarded Export Flow. **Schema:** `received_at TIMESTAMPTZ` on ledger_entries (migration 005); `voice_corrections` IndexedDB store documented. **Security:** SC-21 ALLOW_DEV_OTP hard-block; `extractable: false` corrected in §4.8 keypair snippet. **Onboarding:** country selector updated to searchable input with locale auto-detection. **Financial statements:** `getRecordConfirmedAtMs` `created_at` fallback documented. |

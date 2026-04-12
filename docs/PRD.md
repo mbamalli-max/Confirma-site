@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.0
-**Date:** 2026-04-04
+**Version:** 3.1
+**Date:** 2026-04-11
 
 ---
 
@@ -108,7 +108,8 @@ Currency is derived from `operating_region`, never from `phone_country`.
 
 ### 3.4 UI/UX Constraints
 
-- Country dropdown shows all 249 ISO 3166-1 alpha-2 countries.
+- Country selector is a searchable input that filters the full 249-country ISO list in real time. There is no alphabetical scroll grid.
+- Phone country (Step 1) is pre-selected based on device locale (`Intl.DateTimeFormat().resolvedOptions().locale`). User can override.
 - No country is hidden because a feature is unsupported there.
 - Unsupported regions display: "Some features are not yet available in your region."
 - Language selector is separate from country.
@@ -126,7 +127,7 @@ Currency is derived from `operating_region`, never from `phone_country`.
 
 | Step | Screen element | Data collected |
 |---|---|---|
-| 1 | Phone country selector (full ISO list) | `profile.country`, `state.authPhoneCountry` |
+| 1 | Phone country — searchable input filtering 249 ISO countries; device locale pre-selects default | `profile.country`, `state.authPhoneCountry` |
 | 2 | Operating region selector ("Where does your business operate?") | `profile.operating_region` |
 | 3 | Sector grid (6 sectors) | `profile.sector_id` |
 | 4 | Business type grid (filtered by sector) | `profile.business_type_id` |
@@ -346,7 +347,41 @@ Every ledger entry carries an `evidence_level` field tracking its trust tier.
 
 ---
 
-## §8. Label System
+## §8. Voice Correction System
+
+Konfirmata learns from the user's manual corrections to voice transcripts, on-device. When a voice transcript is wrong, the user corrects it. The system saves the (raw → corrected) pair and applies it automatically to future transcripts.
+
+### 8.1 How It Works
+
+1. Speech recognition produces a raw transcript
+2. `applyVoiceCorrections(transcript)` runs before NLP parsing — replaces known wrong patterns with learned corrections, ordered by usage frequency (most-used first)
+3. User manually edits any remaining errors in the capture form
+4. If the edited result differs from the original transcript, `saveVoiceCorrection(raw, corrected)` stores the pair and increments its usage counter
+5. Next time the same or similar raw phrase appears, the correction applies automatically
+
+### 8.2 Storage
+
+- IndexedDB store: `voice_corrections`
+- Fields: `raw` (primary key), `corrected`, `count` (usage frequency), `created_at`
+- Corrections sorted descending by `count` so the most reliable fixes apply first
+
+### 8.3 Settings UI
+
+- Settings screen exposes a "Voice corrections" panel
+- Shows all learned corrections with usage counts
+- User can delete individual corrections
+- Empty state: "Konfirmata will learn from manual voice fixes on this device."
+
+### 8.4 Scope
+
+- **Device-local only** — corrections are not synced to the server, not backed up
+- Language-agnostic — corrections apply as string substitution regardless of locale
+- No minimum threshold — a correction is applied from the first time it is saved
+- Cleared on full app data reset (IndexedDB wipe)
+
+---
+
+## §9. Label System
 
 ### 8.1 Sectors (6)
 
@@ -384,7 +419,7 @@ Results sorted by score descending, then alphabetically. Default limit: 12.
 
 ---
 
-## §9. Business Model
+## §10. Business Model
 
 ### 9.1 Free Tier (all regions)
 
@@ -405,13 +440,23 @@ Payment processed via Paystack. PDF generated and emailed on successful payment.
 
 Tier labels on the export screen dynamically reflect actual days of transaction history (e.g., "Gold — 347 days").
 
-### 9.3 Payment Gate Rule
+### 10.3 Rewarded Export (Ad-Unlocked)
+
+When the monthly free text export quota is exhausted, users are offered one additional export per ad view.
+
+- A full-screen ad modal displays a countdown timer
+- On ad completion, the rewarded export count increments for that calendar month
+- Rewarded exports are tracked separately from the free quota
+- Provides revenue via ad impressions without a hard paywall on basic access
+- Not shown when the user has an active paid tier
+
+### 10.4 Payment Gate Rule
 
 > Payment gates **verified PDF export only**. It never gates ledger formation. `confirmationTransition()` must never require payment.
 
 ---
 
-## §10. Export & Attestation
+## §11. Export & Attestation
 
 ### 10.1 Free Text Export
 
@@ -444,7 +489,7 @@ Tier labels on the export screen dynamically reflect actual days of transaction 
 
 ---
 
-## §11. Security & Privacy Constraints
+## §12. Security & Privacy Constraints
 
 1. **Append-only ledger**: No deletion. Amendment via reversal records only.
 2. **Confirmation gate**: Every record requires explicit user confirmation. No bypass.
@@ -462,10 +507,11 @@ Tier labels on the export screen dynamically reflect actual days of transaction 
 14. **Webhook HMAC verified first**: Paystack payloads rejected before any processing if HMAC invalid.
 15. **PDF server-side only**: Never client-side generated. No jsPDF.
 16. **vt_id is `crypto.randomBytes(16)`**: Never sequential, never `Math.random()`.
+17. **Dev OTP hard-blocked in production**: `ALLOW_DEV_OTP=true` is prohibited when `DATABASE_SSL=true`. Server refuses to start if both flags are active simultaneously.
 
 ---
 
-## §12. Acceptance Tests
+## §13. Acceptance Tests
 
 ### Global Availability
 1. User selects Kenya → onboarding completes → amounts shown in KES
@@ -498,19 +544,21 @@ Tier labels on the export screen dynamically reflect actual days of transaction 
 
 ---
 
-## §13. Outstanding Work
+## §14. Outstanding Work
 
 ### Go-Live Blockers
 - [ ] Set `PAYSTACK_SECRET_KEY` + `PAYSTACK_PUBLIC_KEY` in Railway
 - [ ] Set `TERMII_API_KEY` in Railway (real SMS OTP)
 - [ ] Set `RESEND_API_KEY` in Railway (email delivery)
+- [x] `ALLOW_DEV_OTP` hard-blocked when `DATABASE_SSL=true` — enforced at server boot (2026-04-11)
 - [ ] Set `ALLOW_DEV_OTP=false` in Railway for production
 - [ ] Run one live Paystack payment → verify PDF generated + email delivered
 - [ ] QR scan → verify portal shows VALID
 
 ### UX (In Progress)
 - [ ] Phone normalization: NG `08099840666` → `+2348099840666`, US `2678867271` → `+12678867271`
-- [ ] Language selector in Settings
+- [x] Searchable country selector with locale auto-detection (2026-04-11)
+- [ ] Language selector in Settings (English-only currently; UI toggle pending)
 - [ ] Country-aware state/region placeholder in onboarding step 6
 
 ### Identity (Pending Decision)
