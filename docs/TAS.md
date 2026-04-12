@@ -384,7 +384,18 @@ Returns the BCP-47 language tag for `SpeechRecognition.lang`:
 
 #### Voice Correction System
 
-Core functions in `app.js`:
+**IndexedDB Store**
+
+Store: `voice_corrections` (keyPath: `"raw"`)
+
+| Field | Type | Description |
+|---|---|---|
+| `raw` | String | Original voice transcript fragment (primary key) |
+| `corrected` | String | User-provided replacement text |
+| `count` | Number | Times this correction has been applied (usage frequency) |
+| `created_at` | Number | Unix milliseconds timestamp |
+
+**Core functions in `app.js`:**
 
 | Function | ~Line | Description |
 |---|---|---|
@@ -403,7 +414,7 @@ Core functions in `app.js`:
 4. User reviews in capture form, can edit manually
 5. If user edit differs from raw: `saveVoiceCorrection(raw, userEdit)` — correction stored
 
-**Isolation:** Not synced. Not backed up. Cleared on IndexedDB reset.
+**Isolation:** Not synced. Not backed up. Device-local only. Cleared on IndexedDB reset.
 
 ---
 
