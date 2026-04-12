@@ -220,7 +220,7 @@ Currency is derived from `operating_region`, never from `phone_country`.
 - **Profile summary**: name, country, sector, business type
 - **Trust & device**: phone anchor status, device key status, fingerprint, sync status, queue count, recovery contact
 - **Preferences**: daily reminder toggle, privacy mode toggle
-- **App PIN**: enable/disable 4-digit lock
+- **App Passcode**: create/update/remove alphanumeric passcode lock
 - **Actions**: Set up phone verification, Change business profile, Open export
 
 ### 4.7 Export
@@ -248,14 +248,14 @@ Currency is derived from `operating_region`, never from `phone_country`.
 3. Enter 6-digit code
 4. On success: JWT issued, device keypair generated, identity status → `verified_server`
 
-### 4.9 PIN Lock
+### 4.9 Passcode Lock
 
-- Optional alphanumeric passcode lock (minimum 8 characters, must contain at least one letter and one number)
+- Optional alphanumeric passcode (minimum 8 characters, must contain at least one letter and one number)
 - Shown as full-screen overlay on app launch when enabled
 - Hash stored in profile using PBKDF2-SHA256 (210,000 iterations) with per-device salt
-- "Forgot PIN" recovery flow sends reset link via email
+- "Forgot passcode" recovery flow sends reset link via email
 - Separate from phone OTP — local-device protection only
-- Remove PIN option available in Settings
+- Remove passcode option available in Settings
 
 ### 4.10 Additional Screens and Overlays
 
@@ -405,7 +405,7 @@ Konfirmata learns from the user's manual corrections to voice transcripts, on-de
 
 ## §9. Label System
 
-### 8.1 Sectors (6)
+### 9.1 Sectors (6)
 
 1. Trade & Retail
 2. Food & Hospitality
@@ -414,7 +414,7 @@ Konfirmata learns from the user's manual corrections to voice transcripts, on-de
 5. Personal & Professional Services
 6. Digital & Online Business
 
-### 8.2 Business Types (16 across NG + US)
+### 9.2 Business Types (16 across NG + US)
 
 **Nigeria (10):**
 Market Trader, Provision Shop, Food Vendor, Transport Operator, Artisan, Service Provider, Online Seller, Kiosk/Phone Business, Fashion Tailor, Okada/Keke Operator
@@ -422,7 +422,7 @@ Market Trader, Provision Shop, Food Vendor, Transport Operator, Artisan, Service
 **United States (6):**
 Retail, Food Service, Logistics, Contractor, Beauty Services, Digital Business
 
-### 8.3 Label Ranking Algorithm
+### 9.3 Label Ranking Algorithm
 
 Scoring factors (applied per query match):
 
@@ -443,14 +443,14 @@ Results sorted by score descending, then alphabetically. Default limit: 12.
 
 ## §10. Business Model
 
-### 9.1 Free Tier (all regions)
+### 10.1 Free Tier (all regions)
 
 - Unlimited transaction recording
-- Unlimited free text exports
+- 3 free text exports per calendar month (additional exports via rewarded ads)
 - One free verified PDF report per account lifetime (or accounts < 60 days old)
 - Device signing and server sync
 
-### 9.2 Paid Tiers (operating_region = NG only)
+### 10.2 Paid Tiers (operating_region = NG only)
 
 | Tier | Price | Transaction window |
 |---|---|---|
@@ -480,7 +480,7 @@ Users receive **3 free text exports per calendar month**. When exhausted, one ad
 
 ## §11. Export & Attestation
 
-### 10.1 Free Text Export
+### 11.1 Free Text Export
 
 - Available to all users, all regions
 - Plain `.txt` file downloaded to device
@@ -488,20 +488,20 @@ Users receive **3 free text exports per calendar month**. When exhausted, one ad
 - Phone and email shown unmasked (user's own data)
 - Filename: `konfirmata-v3-export-{timestamp}.txt`
 
-### 10.2 Free Verified PDF
+### 11.2 Free Verified PDF
 
 - Available once per account (or accounts < 60 days old)
 - Server-generated PDF, same format as paid tier
 - Claimed via `POST /payment/generate-pdf` with `free_claim: true`
 - Race-condition protected: claim-first transaction with `COALESCE(free_report_used, FALSE) = FALSE`
 
-### 10.3 Paid Verified PDF
+### 11.3 Paid Verified PDF
 
 - Generated after successful Paystack payment
 - Trigger: Paystack `charge.success` webhook → internal attestation → PDF → email
 - PDF contains: cover page (masked phone/email), income statement, cash flow, full ledger appendix, evidence summary, QR code, verify URL, patent notice
 
-### 10.4 Verification Portal
+### 11.4 Verification Portal
 
 - Static page at `/verify/:vt_id`
 - Calls `GET /verify/:vt_id` on load
