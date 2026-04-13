@@ -1,4 +1,4 @@
-const CACHE_NAME = "confirma-cache-v3";
+const CACHE_NAME = "confirma-cache-v4";
 const FILES = [
   "/app",
   "/app/index.html",
@@ -39,6 +39,7 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  // Navigation requests: serve cached index.html
   if (event.request.mode === "navigate") {
     event.respondWith(
       caches.match("/app/index.html").then((cached) => cached || fetch(event.request))
@@ -46,6 +47,27 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  const url = new URL(event.request.url);
+  const isAppAsset = url.pathname.startsWith("/app/") &&
+    (url.pathname.endsWith(".js") || url.pathname.endsWith(".css") || url.pathname.endsWith(".html"));
+
+  if (isAppAsset) {
+    // Stale-while-revalidate: serve cache immediately, update in background
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) =>
+        cache.match(event.request).then((cached) => {
+          const fetchPromise = fetch(event.request).then((response) => {
+            if (response.ok) cache.put(event.request, response.clone());
+            return response;
+          }).catch(() => cached);
+          return cached || fetchPromise;
+        })
+      )
+    );
+    return;
+  }
+
+  // Everything else: cache-first
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );

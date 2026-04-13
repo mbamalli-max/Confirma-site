@@ -790,10 +790,15 @@ async function init() {
   syncVerificationState();
   await loadDeviceTrustState();
   await loadSyncState();
+  await updateSyncBadge();
   wireEvents();
   wirePaymentTierButtons();
   window.addEventListener("online", () => {
+    void updateSyncBadge();
     void flushSyncQueue();
+  });
+  window.addEventListener("offline", () => {
+    void updateSyncBadge();
   });
   registerPwa();
   renderOnboarding();
@@ -854,7 +859,7 @@ function cacheElements() {
     "revoke-old-devices-modal", "revoke-old-devices-list", "revoke-old-devices-skip",
     "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
     "voice-example-v2", "voice-announce", "banner-history", "banner-dashboard", "banner-export",
-    "bottom-nav-v2", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
+    "bottom-nav-v2", "sync-status-badge", "sync-dot", "sync-label", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-preferred-edit-v2", "settings-preferred-editor", "settings-preferred-grid", "settings-preferred-done-v2",
     "settings-voice-corrections-v2", "anomaly-panel", "anomaly-badge", "anomaly-list", "mark-anomalies-reviewed",
@@ -4527,6 +4532,7 @@ async function confirmAppend() {
     void checkForAnomalies(appendedRecord);
     await bumpLabelUsage(record.normalized_label);
     await queueSyncRecord(appendedRecord);
+    await updateSyncBadge();
     resetCaptureForm();
     await renderRecentRecords();
     await renderHistory();
@@ -7408,6 +7414,42 @@ async function refreshSyncQueueCount() {
   state.syncQueueCount = await getSyncQueueCount();
 }
 
+async function updateSyncBadge() {
+  const dot = els["sync-dot"];
+  const label = els["sync-label"];
+  const badge = els["sync-status-badge"];
+  if (!(dot && label && badge)) return;
+
+  let pendingCount = Number(state.syncQueueCount || 0);
+  if (state.db && state.db.objectStoreNames.contains("syncQueue")) {
+    try {
+      pendingCount = await getSyncQueueCount();
+      state.syncQueueCount = pendingCount;
+    } catch (error) {
+      console.warn("Unable to refresh sync badge count.", error);
+    }
+  }
+
+  dot.classList.remove("pending", "offline");
+
+  if (!navigator.onLine) {
+    dot.classList.add("offline");
+    label.textContent = "Offline";
+    badge.title = "Sync status: Offline";
+    return;
+  }
+
+  if (pendingCount > 0) {
+    dot.classList.add("pending");
+    label.textContent = `Syncing ${pendingCount}...`;
+    badge.title = `Sync status: ${pendingCount} pending`;
+    return;
+  }
+
+  label.textContent = "Synced";
+  badge.title = "Sync status: Synced";
+}
+
 function addSyncQueueEntry(item) {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("syncQueue", "readwrite");
@@ -7622,29 +7664,37 @@ async function queueSyncRecord(record) {
 }
 
 async function flushSyncQueue() {
-  if (state.syncInFlight || !state.db) return;
+  if (state.syncInFlight || !state.db) {
+    await updateSyncBadge();
+    return;
+  }
   const queuedEntries = await getSyncQueueEntries(25);
   if (!queuedEntries.length) {
     state.syncStatus = isAuthTokenValid() ? "All queued entries synced." : state.syncStatus;
     await refreshSyncQueueCount();
+    await updateSyncBadge();
     return;
   }
   if (!state.authToken) {
     state.syncStatus = "Queued entries are waiting for server OTP verification.";
     await refreshSyncQueueCount();
+    await updateSyncBadge();
     return;
   }
   if (!isAuthTokenValid()) {
     state.syncStatus = getExpiredAuthTokenMessage();
     await refreshSyncQueueCount();
+    await updateSyncBadge();
     return;
   }
   if (!state.syncApiBaseUrl) {
     state.syncStatus = "Queued entries cannot sync until a sync server URL is configured.";
+    await updateSyncBadge();
     return;
   }
   if (!(state.deviceIdentity && state.devicePublicKey)) {
     state.syncStatus = "Device identity is missing, so server sync is paused.";
+    await updateSyncBadge();
     return;
   }
 
@@ -7682,6 +7732,7 @@ async function flushSyncQueue() {
     }
   } finally {
     state.syncInFlight = false;
+    await updateSyncBadge();
   }
 }
 

@@ -1120,6 +1120,28 @@ h1, h2, h3, h4 {
   z-index: 6;
 }
 
+.sync-status-badge {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.65rem;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.sync-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #52B788;
+}
+
+.sync-dot.pending { background: #E8944A; }
+.sync-dot.offline { background: #B42318; }
+
 .nav-item {
   border: 0;
   border-radius: var(--r-md);

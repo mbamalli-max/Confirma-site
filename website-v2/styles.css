@@ -877,6 +877,49 @@ h3 {
 .trust-item svg { width: 16px; height: 16px; color: rgba(255,255,255,0.4); }
 .trust-item strong { color: rgba(255,255,255,0.9); }
 
+.testimonials {
+  padding: 4rem 0;
+  background: var(--bg-alt, #EDE8DC);
+}
+
+.testimonial-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.testimonial-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  border-left: 4px solid var(--primary-light, #52B788);
+  margin: 0;
+}
+
+.testimonial-card p {
+  font-style: italic;
+  line-height: 1.6;
+  margin-bottom: 1rem;
+  color: var(--text, #1B2F1F);
+}
+
+.testimonial-card footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.testimonial-card footer strong {
+  color: var(--text, #1B2F1F);
+  font-size: 0.95rem;
+}
+
+.testimonial-card footer span {
+  color: var(--muted, #6B7C6B);
+  font-size: 0.8rem;
+}
+
 /* ── CTA section ─────────────────────────────────────────── */
 .cta-section {
   background: linear-gradient(135deg, #1B2F1F, #0F1A10);
