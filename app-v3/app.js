@@ -1088,7 +1088,7 @@ function registerPwa() {
     };
 
     navigator.serviceWorker.register("/app/sw.js").then((registration) => {
-      syncWaitingServiceWorker(registration);
+      state.swRegistration = registration;
       watchInstallingServiceWorker(registration, registration.installing);
       registration.addEventListener("updatefound", () => {
         watchInstallingServiceWorker(registration, registration.installing);
@@ -1928,7 +1928,8 @@ async function getAnomalyEntries() {
 
 async function getUnreviewedAnomalyCount() {
   const entries = await getAnomalyEntries();
-  return entries.filter((entry) => !entry.reviewed).length;
+  const cutoffMs = Date.now() - (3 * 24 * 3600000);
+  return entries.filter((entry) => !entry.reviewed && Number(entry.detected_at || 0) >= cutoffMs).length;
 }
 
 async function computeUserP95HourlyCount() {
