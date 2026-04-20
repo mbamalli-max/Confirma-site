@@ -1241,13 +1241,29 @@ function renderCountryGrid(dimension = "phone_country") {
   const gridId = dimension === "operating_region" ? "operating-region-grid" : "country-grid";
   const container = document.getElementById(gridId);
   if (!container) return;
+
+  const searchId = gridId + "-search";
+  let searchInput = document.getElementById(searchId);
+  if (!searchInput) {
+    searchInput = document.createElement("input");
+    searchInput.type = "search";
+    searchInput.id = searchId;
+    searchInput.placeholder = "Search countries…";
+    searchInput.autocomplete = "off";
+    searchInput.style.cssText = "width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--r-md);font-size:15px;margin-bottom:12px;box-sizing:border-box;background:var(--card);color:var(--text);";
+    searchInput.addEventListener("input", () => renderCountryGrid(dimension));
+    container.insertAdjacentElement("beforebegin", searchInput);
+  }
+  const query = (searchInput.value || "").trim().toLowerCase();
+
   container.innerHTML = "";
 
   const selectedCountry = dimension === "operating_region"
     ? getRecognizedCountryId(state.profile?.operating_region || state.profile?.country || state.profile?.phone_country)
     : getRecognizedCountryId(state.profile?.country || state.profile?.phone_country || state.authPhoneCountry);
 
-  COUNTRIES.forEach((country) => {
+  const filteredCountries = query ? COUNTRIES.filter(c => c.name.toLowerCase().includes(query)) : COUNTRIES;
+  filteredCountries.forEach((country) => {
     container.appendChild(buildVisualCard(country.icon, country.name, "Country", () => {
       if (dimension === "phone_country") {
         state.authPhoneCountry = country.id;
@@ -1388,6 +1404,7 @@ function updateOnboardingStep(step) {
   els["onboarding-back"].hidden = state.onboardingStep === 1;
   els["finish-onboarding"].hidden = state.onboardingStep !== ONBOARDING_PROFILE_STEP;
   updateFinishOnboardingState();
+  window.scrollTo(0, 0);
   focusFirstInteractive(activeStep);
 }
 
