@@ -244,10 +244,6 @@
   <title>Konfirmata</title>
 </head>
 <body>
-  <div id="sw-update-banner" hidden style="position:fixed;top:0;left:0;right:0;background:#1B2F1F;color:#fff;padding:10px 16px;z-index:9999;display:flex;justify-content:space-between;align-items:center;font-size:14px">
-    <span>New version available</span>
-    <button style="background:#52B788;color:#fff;border:none;padding:6px 14px;border-radius:20px;cursor:pointer;font-size:13px">Refresh</button>
-  </div>
   <div id="pin-lock-screen" hidden>
     <div class="pin-lock-card">
       <div class="pin-lock-mark">📒</div>
@@ -437,15 +433,6 @@
         </div>
         <button class="pill-button" id="change-profile" type="button">Change</button>
       </header>
-      <div id="anomaly-banner" class="anomaly-banner" hidden role="alert" aria-live="polite">
-        <span id="anomaly-banner-text">Unusual activity detected</span>
-        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
-          <button class="pill-button" id="anomaly-banner-cta" type="button">Review</button>
-          <button class="pill-button" id="anomaly-banner-dismiss" type="button"
-                  aria-label="Dismiss alert" style="padding:4px 8px">✕</button>
-        </div>
-      </div>
-
       <div class="voice-card">
         <button id="mic-button-v2" class="mic-button" type="button" aria-label="Tap to speak">🎤</button>
         <p id="voice-label-v2">Tap to speak your transaction</p>

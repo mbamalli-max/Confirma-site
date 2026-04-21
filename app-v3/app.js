@@ -889,7 +889,7 @@ function wireEvents() {
     restoreAccountFlow();
   });
   document.getElementById("change-profile").addEventListener("click", openChangeProfileConfirm);
-  document.getElementById("anomaly-banner-cta").addEventListener("click", () => {
+  document.getElementById("anomaly-banner-cta")?.addEventListener("click", () => {
     void openAnomalyReview();
   });
   document.getElementById("anomaly-banner-dismiss")?.addEventListener("click", () => {
@@ -1077,7 +1077,7 @@ function registerPwa() {
       if (!registration) return;
       state.swRegistration = registration;
       if (registration.waiting) {
-        showUpdateBanner();
+        applyWaitingServiceWorkerUpdate();
       }
     };
 
@@ -1109,12 +1109,6 @@ function registerPwa() {
         });
       }
     });
-
-    const refreshButton = document.querySelector("#sw-update-banner button");
-    if (refreshButton) {
-      refreshButton.onclick = null;
-      refreshButton.addEventListener("click", applyWaitingServiceWorkerUpdate);
-    }
   }
 
   // PWA install prompt (Chrome/Android/Edge)
@@ -1160,13 +1154,6 @@ function registerPwa() {
       btn.hidden = true;
       panel.hidden = false;
     }
-  }
-}
-
-function showUpdateBanner() {
-  const banner = document.getElementById("sw-update-banner");
-  if (banner) {
-    banner.hidden = false;
   }
 }
 
