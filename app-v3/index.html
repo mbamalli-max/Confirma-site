@@ -439,7 +439,11 @@
       </header>
       <div id="anomaly-banner" class="anomaly-banner" hidden role="alert" aria-live="polite">
         <span id="anomaly-banner-text">Unusual activity detected</span>
-        <button class="pill-button" id="anomaly-banner-cta" type="button">Review</button>
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+          <button class="pill-button" id="anomaly-banner-cta" type="button">Review</button>
+          <button class="pill-button" id="anomaly-banner-dismiss" type="button"
+                  aria-label="Dismiss alert" style="padding:4px 8px">✕</button>
+        </div>
       </div>
 
       <div class="voice-card">

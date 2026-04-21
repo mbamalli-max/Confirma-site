@@ -892,6 +892,9 @@ function wireEvents() {
   document.getElementById("anomaly-banner-cta").addEventListener("click", () => {
     void openAnomalyReview();
   });
+  document.getElementById("anomaly-banner-dismiss")?.addEventListener("click", () => {
+    void markAllAnomaliesReviewed();
+  });
   document.getElementById("confirm-change-profile").addEventListener("click", confirmChangeProfile);
   document.getElementById("cancel-change-profile").addEventListener("click", closeChangeProfileConfirm);
   document.getElementById("change-confirm-close").addEventListener("click", closeChangeProfileConfirm);
@@ -2038,19 +2041,26 @@ async function checkForAnomalies(newEntry) {
 }
 
 async function notifyAnomaly() {
-  const count = await getUnreviewedAnomalyCount();
+  const entries = await getAnomalyEntries();
+  const cutoffMs = Date.now() - (3 * 24 * 3600000);
+  const recent = entries.filter(
+    (entry) => !entry.reviewed && Number(entry.detected_at || 0) >= cutoffMs
+  );
+  const count = recent.length;
 
   if (els["anomaly-banner"] && els["anomaly-banner-text"]) {
     if (count <= 0) {
       els["anomaly-banner"].hidden = true;
     } else {
       els["anomaly-banner"].hidden = false;
+      const top = recent[0];
+      const meta = getAnomalyDisplayMeta(top.type);
       if (count === 1) {
-        els["anomaly-banner-text"].textContent = "Unusual activity detected — tap to review";
-      } else if (count >= 3) {
-        els["anomaly-banner-text"].textContent = `${count} unreviewed anomalies — please check your recent records`;
+        els["anomaly-banner-text"].textContent =
+          `${meta.icon} ${meta.label}: ${top.detail}`;
       } else {
-        els["anomaly-banner-text"].textContent = `${count} unreviewed anomalies — tap to review`;
+        els["anomaly-banner-text"].textContent =
+          `${meta.icon} ${count} security alerts — tap to review`;
       }
     }
   }
