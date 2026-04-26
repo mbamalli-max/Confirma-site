@@ -3,208 +3,199 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Konfirmata helps entrepreneurs build permanent, verifiable financial history from everyday transactions.">
+  <meta name="description" content="Konfirmata helps entrepreneurs build permanent, exportable financial history from everyday transactions.">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Konfirmata">
   <meta property="og:title" content="For Entrepreneurs | Konfirmata">
-  <meta property="og:description" content="Konfirmata helps entrepreneurs build permanent, verifiable financial history from everyday transactions.">
+  <meta property="og:description" content="Build your financial history one transaction at a time with an offline-first PWA.">
   <meta property="og:url" content="https://konfirmata.com/entrepreneurs.html">
-  <meta property="og:image" content="https://konfirmata.com/og-image.png">
-  <meta property="og:locale" content="en_NG">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="For Entrepreneurs | Konfirmata">
-  <meta name="twitter:description" content="Konfirmata helps entrepreneurs build permanent, verifiable financial history from everyday transactions.">
-  <meta name="twitter:image" content="https://konfirmata.com/og-image.png">
   <link rel="canonical" href="https://konfirmata.com/entrepreneurs.html">
-  <meta name="theme-color" content="#1B2F1F">
+  <meta name="theme-color" content="#0D1F17">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles/main.css">
   <title>For Entrepreneurs | Konfirmata</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="site.js" defer></script>
 </head>
 <body>
-
   <header class="site-header">
-    <div class="shell topbar">
-      <a class="brand" href="index.html" aria-label="Konfirmata home">
-        <div class="brand-logo" aria-hidden="true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 12 10 16 18 8"/></svg>
-        </div>
-        <span class="brand-name">Konfirmata</span>
-      </a>
-      <nav class="nav" aria-label="Primary navigation" id="main-nav">
-        <a href="index.html">Home</a>
-        <a href="entrepreneurs.html" class="active">For Entrepreneurs</a>
-        <a href="lenders.html">For Lenders</a>
-        <a href="how-it-works.html">How It Works</a>
-        <a href="about.html">About</a>
-        <a href="get-the-app.html" class="nav-cta">Get the App</a>
-      </nav>
-      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav" aria-label="Toggle navigation">
-        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-      </button>
-    </div>
+    <a class="brand" href="index.html" aria-label="Konfirmata home">
+      <span class="brand-mark" aria-hidden="true">K</span>
+      <span>Konfirmata</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary navigation">
+      <a href="index.html">Home</a>
+      <a aria-current="page" href="entrepreneurs.html">For Entrepreneurs</a>
+      <a href="lenders.html">For Lenders</a>
+      <a href="how-it-works.html">How It Works</a>
+      <a href="about.html">About</a>
+      <a class="nav-app" href="/app">Open App</a>
+    </nav>
   </header>
 
   <main>
-    <section class="hero" style="padding-bottom: 3rem;">
-      <div class="shell page-hero">
-        <div>
-          <span class="eyebrow">For small business owners, freelancers, independent traders, and self-employed workers</span>
-          <h1>Build your financial history from the work you already do.</h1>
-          <p class="hero-lede">Your business is real. Your records should be too. Konfirmata turns everyday transactions into a permanent, verifiable financial trail — recorded by voice or text, confirmed by you, trusted by lenders.</p>
-          <div class="button-row" style="margin-top: 1.75rem;">
-            <a class="btn btn-primary" data-confirma-app-link href="/app">Get Konfirmata on your phone</a>
-            <a class="btn btn-secondary" href="how-it-works.html">See how records stay protected</a>
+    <section class="hero-section">
+      <div class="hero-pattern" aria-hidden="true"></div>
+      <div class="hero-inner">
+        <p class="section-kicker">For entrepreneurs</p>
+        <h1>Build your financial history &mdash; one transaction at a time</h1>
+        <p class="hero-copy">If your business is real but your records are informal, Konfirmata helps you create a financial trail lenders can understand. Record by voice or text, review it, confirm it, and export it when you are ready.</p>
+        <div class="button-row">
+          <a class="button button-primary" href="/app">Open the App</a>
+          <a class="button button-secondary" href="how-it-works.html">See How It Works</a>
+        </div>
+      </div>
+      <div class="trust-strip" aria-label="Entrepreneur value points">
+        <span>Voice or text entry that matches the language of real work</span>
+        <span>Offline-first recording after setup on the phone you already use</span>
+        <span>Trust tiers that grow as consistency grows</span>
+        <span>Exportable history when you need to show your business record</span>
+      </div>
+    </section>
+
+    <section class="page-section">
+      <div class="section-shell">
+        <div class="section-heading">
+          <span class="section-number">01</span>
+          <p class="section-kicker">Who this is for</p>
+          <h2>Built for real business settings, not office desks.</h2>
+        </div>
+        <div class="narrative-grid">
+          <div class="section-copy">
+            <p>Konfirmata is built for entrepreneurs whose businesses are active every day but whose records are still informal. The goal is not to turn you into an accountant. The goal is to help you build a visible financial history from work you already understand.</p>
+            <p>That includes market traders, food vendors, artisans, gig workers, transport operators, and side-hustle owners who need a simpler way to capture the business activity that already exists.</p>
+            <p>Over time, each confirmed transaction contributes to a record you can keep, learn from, and share when access to credit or a program opportunity depends on proof.</p>
+          </div>
+          <div class="evidence-list" aria-label="Entrepreneur groups">
+            <article>
+              <strong>Market traders</strong>
+              <p>Capture daily sales and stock-related expenses without having to reconstruct them later.</p>
+            </article>
+            <article>
+              <strong>Food vendors</strong>
+              <p>Keep a clearer record of purchases, service income, and repeat trading days.</p>
+            </article>
+            <article>
+              <strong>Artisans</strong>
+              <p>Track paid jobs, materials, and customer payments in a format that stays permanent after confirmation.</p>
+            </article>
+            <article>
+              <strong>Gig workers</strong>
+              <p>Turn inconsistent platform or cash-based activity into a more organized operating history.</p>
+            </article>
           </div>
         </div>
-        <aside class="hero-panel">
-          <span class="tag">What entrepreneurs need most</span>
-          <ul class="check-list">
-            <li>A simple way to capture sales and expenses without accounting language</li>
-            <li>Records that cannot be quietly changed after confirmation</li>
-            <li>A growing history that can support credit access later</li>
-            <li>Offline use on the phones people already own</li>
-          </ul>
-        </aside>
       </div>
     </section>
 
-    <section class="section">
-      <div class="shell">
-        <div class="section-header">
-          <div>
-            <span class="tag">Why it matters</span>
-            <h2 style="margin-top: 0.75rem;">Your business may already be creditworthy. It just needs better records.</h2>
+    <section class="page-section section-tint">
+      <div class="section-shell">
+        <div class="section-heading">
+          <span class="section-number">02</span>
+          <p class="section-kicker">How it works</p>
+          <h2>Record, review, confirm, export.</h2>
+        </div>
+        <div class="steps-grid">
+          <article>
+            <span class="step-number">01</span>
+            <h3>Record</h3>
+            <p>Say something like “Sold rice for 15,000” or type it manually. Konfirmata is built for business language, not bookkeeping jargon.</p>
+          </article>
+          <article>
+            <span class="step-number">02</span>
+            <h3>Review</h3>
+            <p>The app reads back a plain-language summary so you can check what will be written before anything becomes final.</p>
+          </article>
+          <article>
+            <span class="step-number">03</span>
+            <h3>Confirm</h3>
+            <p>No transaction becomes permanent unless you explicitly confirm it. That keeps authority with the entrepreneur.</p>
+          </article>
+          <article>
+            <span class="step-number">04</span>
+            <h3>Export</h3>
+            <p>When you need to show your record, generate an exportable financial history summary that can support review.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="page-section">
+      <div class="section-shell">
+        <div class="section-heading">
+          <span class="section-number">03</span>
+          <p class="section-kicker">Trust tiers</p>
+          <h2>Consistency becomes signal.</h2>
+        </div>
+        <div class="steps-grid">
+          <article>
+            <span class="step-number">NEW</span>
+            <h3>Start the record</h3>
+            <p>Every business begins with first use. The first win is simply creating a confirmation-based habit.</p>
+          </article>
+          <article>
+            <span class="step-number">BRONZE</span>
+            <h3>30 days</h3>
+            <p>A month of steady recording starts to show early continuity and basic operating rhythm.</p>
+          </article>
+          <article>
+            <span class="step-number">SILVER</span>
+            <h3>90 days</h3>
+            <p>Three months of activity begins to look like a lender-relevant picture of ongoing business behavior.</p>
+          </article>
+          <article>
+            <span class="step-number">GOLD</span>
+            <h3>180 days</h3>
+            <p>Six months of append-only history creates a deeper, more established financial identity.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="page-section section-tint">
+      <div class="section-shell">
+        <div class="section-heading">
+          <span class="section-number">04</span>
+          <p class="section-kicker">Languages and offline use</p>
+          <h2>Designed for constrained environments, not perfect connectivity.</h2>
+        </div>
+        <div class="two-column">
+          <div class="section-copy">
+            <p>Konfirmata is delivered as a Progressive Web App, so it can install from the browser and continue working after setup even when connectivity is weak. That matters because the businesses it serves do not always operate in stable data conditions.</p>
+            <p>The current app supports English today. The profile and voice architecture are designed so language options can expand over time without changing how records are formed or confirmed.</p>
           </div>
-          <p class="section-copy">Many informal businesses generate steady activity every day, but that activity disappears because it was never captured in a bank-trusted format.</p>
-        </div>
-        <div class="grid-3">
-          <article class="card">
-            <div class="card-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-            </div>
-            <h3>Speak naturally</h3>
-            <p>Say "Sold 3 items for $120" or type it manually. Konfirmata is built to match the language of real work, not accounting forms.</p>
-          </article>
-          <article class="card">
-            <div class="card-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-            </div>
-            <h3>Confirm before writing</h3>
-            <p>No transaction becomes permanent unless you explicitly confirm it. That protects your authority over the record.</p>
-          </article>
-          <article class="card">
-            <div class="card-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-            </div>
-            <h3>Grow a visible history</h3>
-            <p>As you keep recording, Konfirmata shows streaks, trends, and trust tiers that make your business history easier to understand and present to lenders.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" style="background: var(--slate-50); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
-      <div class="shell story-grid">
-        <article class="story">
-          <span class="eyebrow">Designed for real business settings</span>
-          <h2>Built for constrained environments, not office desks.</h2>
-          <ul class="simple-list">
-            <li>Works as a Progressive Web App on Android and iPhone</li>
-            <li>Installs to the home screen without going through an app store</li>
-            <li>Works offline after setup, and signed records sync when connection returns</li>
-            <li>Supports Nigeria and the United States today</li>
-            <li>Uses country-aware onboarding, business types, labels, and currency formatting</li>
-          </ul>
-        </article>
-        <article class="quote-card">
-          <p>"Every confirmed transaction is permanent, verifiable, and yours." That principle matters most for business owners who have historically been asked to trust systems they do not control.</p>
-          <strong>Konfirmata principle</strong>
-        </article>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="shell">
-        <div class="section-header">
-          <div>
-            <span class="tag">What you get</span>
-            <h2 style="margin-top: 0.75rem;">A record you can keep using.</h2>
+          <div class="lender-points">
+            <h3>What entrepreneurs get right now</h3>
+            <ul>
+              <li>Android and iPhone access through a home-screen installable PWA</li>
+              <li>Voice and text entry for everyday business activity</li>
+              <li>Offline-first recording after setup</li>
+              <li>User-controlled exports when a lender, program, or partner asks for history</li>
+              <li>A record that stays yours unless you choose to share it</li>
+            </ul>
           </div>
         </div>
-        <div class="timeline-grid">
-          <article class="timeline">
-            <h3>Daily recording</h3>
-            <p>Capture sales, expenses, and transfers as they happen, with category suggestions based on your business type.</p>
-          </article>
-          <article class="timeline">
-            <h3>Weekly and monthly trends</h3>
-            <p>See how sales are moving with the built-in dashboard and visual trend chart.</p>
-          </article>
-          <article class="timeline">
-            <h3>Trust tiers</h3>
-            <p>Move from NEW to BRONZE, SILVER, and GOLD as consistent history builds over time. The more you record, the more trustworthy your history becomes to lenders.</p>
-          </article>
-          <article class="timeline">
-            <h3>Free export</h3>
-            <p>Download a free plain-text export of confirmed history, or buy a Verified Report PDF with server attestation and QR verification.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="cta-section">
-      <div class="shell" style="position: relative; z-index: 1;">
-        <h2>You don't need to become a bookkeeper.</h2>
-        <p>Just confirm what already happened — one transaction at a time. Over time, that becomes a financial identity lenders can read and trust.</p>
-        <div class="cta-row" style="justify-content: center;">
-          <a class="btn btn-primary" data-confirma-app-link href="/app">Install Konfirmata</a>
-          <a class="btn btn-secondary" href="banks.html">See the lender view</a>
+        <div class="feature-band">
+          <p>Konfirmata does not ask you to become a bookkeeper. It asks you to confirm what already happened in your business so your work can become visible when it matters.</p>
+          <a class="button button-primary" href="/app">Open the App</a>
         </div>
       </div>
     </section>
   </main>
 
-  <footer class="footer">
-    <div class="shell">
-      <div class="footer-grid">
-        <div>
-          <div class="footer-brand-logo" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 12 10 16 18 8"/></svg>
-          </div>
-          <span class="footer-brand-name">Konfirmata</span>
-          <p class="footer-tagline">Financial identity infrastructure for every business, everywhere.</p>
-        </div>
-        <div class="footer-col">
-          <h4>Product</h4>
-          <a href="how-it-works.html">How It Works</a>
-          <a href="entrepreneurs.html">For Entrepreneurs</a>
-          <a href="lenders.html">For Lenders</a>
-          <a href="get-the-app.html">Get the App</a>
-        </div>
-        <div class="footer-col">
-          <h4>Company</h4>
-          <a href="about.html">About</a>
-          <a href="about.html#patent">Patent</a>
-          <a href="about.html#team">Team</a>
-        </div>
-        <div class="footer-col">
-          <h4>Legal</h4>
-          <a href="#">Privacy Policy</a>
-          <a href="#">Terms of Service</a>
-        </div>
-      </div>
-      <div class="footer-bottom">
-        <p class="footer-copy">© 2025 Konfirmata. USPTO Provisional Patent Application No. 63/987,858.</p>
-        <div class="footer-links-bottom">
-          <a href="index.html">Home</a>
-          <a href="lenders.html">Lenders</a>
-          <a href="about.html">About</a>
-        </div>
-      </div>
+  <footer class="site-footer">
+    <div>
+      <strong>Konfirmata</strong>
+      <p>&copy; 2026 Konfirmata. All rights reserved.</p>
+    </div>
+    <p>USPTO Patent Application No. 63/987,858 | Built in the United States</p>
+    <div class="footer-links">
+      <a href="index.html">Home</a>
+      <a href="entrepreneurs.html">For Entrepreneurs</a>
+      <a href="lenders.html">For Lenders</a>
+      <a href="how-it-works.html">How It Works</a>
+      <a href="about.html">About</a>
+      <a href="index.html#contact">Contact</a>
+      <a href="/app">Open App</a>
     </div>
   </footer>
-
 </body>
 </html>

@@ -3,207 +3,161 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Learn how Konfirmata records, signs, syncs, attests, and verifies business activity through permanent, verified records.">
+  <meta name="description" content="Learn how Konfirmata uses confirmation-gated records, an append-only ledger, and a cryptographic hash chain to form verifiable history.">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Konfirmata">
   <meta property="og:title" content="How It Works | Konfirmata">
-  <meta property="og:description" content="Learn how Konfirmata records, signs, syncs, attests, and verifies business activity through permanent, verified records.">
+  <meta property="og:description" content="A plain-language and technical explanation of Konfirmata's record, review, confirm, and export flow.">
   <meta property="og:url" content="https://konfirmata.com/how-it-works.html">
-  <meta property="og:image" content="https://konfirmata.com/og-image.png">
-  <meta property="og:locale" content="en_NG">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="How It Works | Konfirmata">
-  <meta name="twitter:description" content="Learn how Konfirmata records, signs, syncs, attests, and verifies business activity through permanent, verified records.">
-  <meta name="twitter:image" content="https://konfirmata.com/og-image.png">
   <link rel="canonical" href="https://konfirmata.com/how-it-works.html">
-  <meta name="theme-color" content="#1B2F1F">
+  <meta name="theme-color" content="#0D1F17">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles/main.css">
   <title>How It Works | Konfirmata</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="site.js" defer></script>
 </head>
 <body>
-
   <header class="site-header">
-    <div class="shell topbar">
-      <a class="brand" href="index.html" aria-label="Konfirmata home">
-        <div class="brand-logo" aria-hidden="true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 12 10 16 18 8"/></svg>
-        </div>
-        <span class="brand-name">Konfirmata</span>
-      </a>
-      <nav class="nav" aria-label="Primary navigation" id="main-nav">
-        <a href="index.html">Home</a>
-        <a href="entrepreneurs.html">For Entrepreneurs</a>
-        <a href="lenders.html">For Lenders</a>
-        <a href="how-it-works.html" class="active">How It Works</a>
-        <a href="about.html">About</a>
-        <a href="get-the-app.html" class="nav-cta">Get the App</a>
-      </nav>
-      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav" aria-label="Toggle navigation">
-        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-      </button>
-    </div>
+    <a class="brand" href="index.html" aria-label="Konfirmata home">
+      <span class="brand-mark" aria-hidden="true">K</span>
+      <span>Konfirmata</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary navigation">
+      <a href="index.html">Home</a>
+      <a href="entrepreneurs.html">For Entrepreneurs</a>
+      <a href="lenders.html">For Lenders</a>
+      <a aria-current="page" href="how-it-works.html">How It Works</a>
+      <a href="about.html">About</a>
+      <a class="nav-app" href="/app">Open App</a>
+    </nav>
   </header>
 
   <main>
-    <section class="hero" style="padding-bottom: 3rem;">
-      <div class="shell page-hero">
-        <div>
-          <span class="eyebrow">Simple explanation of the cryptographic chain</span>
-          <h1>Each confirmed transaction becomes part of a protected sequence.</h1>
-          <p class="hero-lede">Konfirmata is built so records are formed carefully, then kept permanently. The goal is not to overwhelm users with technical terms — the goal is to make trust understandable.</p>
+    <section class="hero-section">
+      <div class="hero-pattern" aria-hidden="true"></div>
+      <div class="hero-inner">
+        <p class="section-kicker">How Konfirmata works</p>
+        <h1>Each confirmed transaction becomes part of a protected sequence</h1>
+        <p class="hero-copy">The goal is simple in plain language: record what happened, review it, confirm it, and keep it. The technical architecture exists to make that flow trustworthy rather than easy to rewrite later.</p>
+        <div class="button-row">
+          <a class="button button-primary" href="/app">Open the App</a>
+          <a class="button button-secondary" href="lenders.html">Lender Information</a>
         </div>
-        <aside class="hero-panel">
-          <span class="tag">Core principle</span>
-          <p style="margin-top: 0.75rem; font-style: italic; line-height: 1.65; font-size: 1.05rem;">Konfirmata does not treat typing as authority. <strong>Confirmation</strong> is the moment a record is formed.</p>
-        </aside>
+      </div>
+      <div class="trust-strip" aria-label="How it works highlights">
+        <span>Record by voice or text in everyday business language</span>
+        <span>Review before anything becomes permanent</span>
+        <span>Confirm to write an append-only ledger entry</span>
+        <span>Export a record that can be independently re-checked</span>
       </div>
     </section>
 
-    <section class="section">
-      <div class="shell">
-        <div class="section-header">
-          <div>
-            <span class="tag">Step by step</span>
-            <h2 style="margin-top: 0.75rem;">What happens when a user records a transaction?</h2>
+    <section class="page-section">
+      <div class="section-shell">
+        <div class="section-heading">
+          <span class="section-number">01</span>
+          <p class="section-kicker">Plain-language flow</p>
+          <h2>Record, review, confirm, export.</h2>
+        </div>
+        <div class="steps-grid">
+          <article>
+            <span class="step-number">01</span>
+            <h3>Record</h3>
+            <p>A business owner speaks or types a transaction such as “Sold rice for 15,000.” The product matches real work, not formal accounting forms.</p>
+          </article>
+          <article>
+            <span class="step-number">02</span>
+            <h3>Review</h3>
+            <p>The app interprets the transaction and reads back a plain-language summary before anything is written permanently.</p>
+          </article>
+          <article>
+            <span class="step-number">03</span>
+            <h3>Confirm</h3>
+            <p>This is the decisive step. Without confirmation, there is no permanent entry and nothing is added to the ledger.</p>
+          </article>
+          <article>
+            <span class="step-number">04</span>
+            <h3>Export</h3>
+            <p>When needed, the user generates a financial history summary containing the integrity data required for later review.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="page-section section-dark">
+      <div class="section-shell">
+        <div class="section-heading">
+          <span class="section-number">02</span>
+          <p class="section-kicker">Technical foundation</p>
+          <h2>Append-only records linked by a Cryptographic hash chain.</h2>
+        </div>
+        <div class="trust-grid">
+          <article>
+            <h3>Confirmation-gated authority</h3>
+            <p>Typing is not enough. The user must explicitly confirm before a ledger record can exist.</p>
+          </article>
+          <article>
+            <h3>Append-only ledger</h3>
+            <p>After confirmation, the entry is not editable, not deletable, and not backdatable. New events become new records.</p>
+          </article>
+          <article>
+            <h3>Cryptographic hash chain</h3>
+            <p>Each record contains a cryptographic link to the previous record, creating a tamper-evident sequence over time.</p>
+          </article>
+          <article>
+            <h3>Previous-entry linkage</h3>
+            <p>If an older record were changed, the chain after it would no longer line up cleanly. That is what makes silent tampering easier to detect.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="page-section section-tint">
+      <div class="section-shell">
+        <div class="section-heading">
+          <span class="section-number">03</span>
+          <p class="section-kicker">Trust language</p>
+          <h2>What the core trust terms mean in practice.</h2>
+        </div>
+        <div class="two-column">
+          <div class="section-copy">
+            <p><strong>Confirmation-gated</strong> means the user is the authority that forms the permanent record. Nothing becomes final because of an autosave, a background process, or a later admin edit.</p>
+            <p><strong>Independent verification</strong> means the export contains enough integrity data to let another party re-check the record path without needing direct access to the original phone or a lender-side Konfirmata server.</p>
+            <p>Those two ideas work together: the record is formed intentionally, then preserved in a way that can be reviewed later.</p>
+          </div>
+          <div class="lender-points">
+            <h3>What the export carries</h3>
+            <ul>
+              <li>The period window covered by the export</li>
+              <li>The count of entries included in that record window</li>
+              <li>Integrity data derived from the included ledger sequence</li>
+              <li>A summary ready for lender, program, or audit review</li>
+              <li>Enough structure to re-check the history without depending on a live app session</li>
+            </ul>
           </div>
         </div>
-        <div class="timeline-grid">
-          <article class="timeline">
-            <div style="display:flex; align-items:center; gap: 0.6rem; margin-bottom: 0.5rem;">
-              <span style="width:28px; height:28px; border-radius:50%; background:var(--blue-700); color:white; display:grid; place-items:center; font-size:0.8rem; font-weight:700; flex-shrink:0;">1</span>
-              <h3 style="margin:0;">The user records a transaction</h3>
-            </div>
-            <p>A business owner speaks or types something like "Sold rice for 15,000." Konfirmata supports voice-first recording with text fallback.</p>
-          </article>
-          <article class="timeline">
-            <div style="display:flex; align-items:center; gap: 0.6rem; margin-bottom: 0.5rem;">
-              <span style="width:28px; height:28px; border-radius:50%; background:var(--blue-700); color:white; display:grid; place-items:center; font-size:0.8rem; font-weight:700; flex-shrink:0;">2</span>
-              <h3 style="margin:0;">The user reviews and confirms</h3>
-            </div>
-            <p>The app shows a plain-language summary before anything is written permanently. Without confirmation, there is no ledger entry.</p>
-          </article>
-          <article class="timeline">
-            <div style="display:flex; align-items:center; gap: 0.6rem; margin-bottom: 0.5rem;">
-              <span style="width:28px; height:28px; border-radius:50%; background:var(--orange); color:white; display:grid; place-items:center; font-size:0.8rem; font-weight:700; flex-shrink:0;">3</span>
-              <h3 style="margin:0;">The app appends and signs it</h3>
-            </div>
-            <p>Konfirmata writes the entry into the local append-only ledger, links it to the previous entry with `prev_entry_hash`, and signs it with a device key after trust setup is complete.</p>
-          </article>
-          <article class="timeline">
-            <div style="display:flex; align-items:center; gap: 0.6rem; margin-bottom: 0.5rem;">
-              <span style="width:28px; height:28px; border-radius:50%; background:var(--blue-700); color:white; display:grid; place-items:center; font-size:0.8rem; font-weight:700; flex-shrink:0;">4</span>
-              <h3 style="margin:0;">Signed history syncs and can be attested</h3>
-            </div>
-            <p>When the device comes online, signed entries sync to the server for signature verification and fraud detection. The server can then issue an attestation with a `vt_id`, a `verify_url`, and QR verification.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" style="background: var(--slate-50); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
-      <div class="shell story-grid">
-        <article class="story">
-          <span class="eyebrow">Append-only logic</span>
-          <h2>Why records cannot be silently changed.</h2>
-          <p>After confirmation, the transaction is not editable. It is not deletable. If another event happens later, that event becomes a new record instead of rewriting the old one.</p>
-          <p style="margin-top: 0.85rem;">This matters because institutions need to know that historical records have structure and continuity, not just convenience.</p>
-        </article>
-        <article class="story accent-panel">
-          <span class="eyebrow">Hash chaining</span>
-          <h2>How the chain works in simple terms.</h2>
-          <p>Every record contains a fingerprint of the previous record. That fingerprint is created using SHA-256. If someone tried to tamper with an older entry, the chain after it would no longer match properly.</p>
-          <p style="margin-top: 0.85rem;">After OTP verification, each entry is also signed with a device key, and the server checks both the signature and the chain when syncing queued history.</p>
-        </article>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="shell">
-        <div class="section-header">
-          <div>
-            <span class="tag">Verification surface</span>
-            <h2 style="margin-top: 0.75rem;">What can be checked today?</h2>
-          </div>
-        </div>
-        <div class="grid-3">
-          <article class="card">
-            <div class="card-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-            </div>
-            <h3>Phone + device trust</h3>
-            <p>Users verify their phone by OTP, the device registers an identity with the server, and every signed entry carries that device context into sync.</p>
-          </article>
-          <article class="card">
-            <div class="card-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            </div>
-            <h3>Attestation + verification portal</h3>
-            <p>`POST /attest` returns a `vt_id` and `verify_url`, and the portal shows attestation status, date window, entry count, key rotation events, and fork status.</p>
-          </article>
-          <article class="card">
-            <div class="card-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            </div>
-            <h3>Free export + paid verified reports</h3>
-            <p>Users can generate a free plain-text export of confirmed history, then choose from 30-day, 90-day, or full history reports. Pricing shown in-app after sign-up.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="cta-section">
-      <div class="shell" style="position: relative; z-index: 1;">
-        <h2>Record, confirm, sign, sync, attest, verify.</h2>
-        <p>That is the product flow live today: business activity is captured on-device, protected in an append-only ledger, synced when online, and surfaced through exports, verified reports, and the verification portal.</p>
-        <div class="cta-row" style="justify-content: center;">
-          <a class="btn btn-primary" data-confirma-app-link href="/app">Open the app</a>
-          <a class="btn btn-secondary" href="banks.html">See the lender view</a>
+        <div class="feature-band">
+          <p>The point of the technical model is not to add jargon. It is to make trust legible for both entrepreneurs and institutions when the record finally needs to travel.</p>
+          <a class="button button-primary" href="/app">Open App</a>
         </div>
       </div>
     </section>
   </main>
 
-  <footer class="footer">
-    <div class="shell">
-      <div class="footer-grid">
-        <div>
-          <div class="footer-brand-logo" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 12 10 16 18 8"/></svg>
-          </div>
-          <span class="footer-brand-name">Konfirmata</span>
-          <p class="footer-tagline">Cryptography in service of trust, not in place of it.</p>
-        </div>
-        <div class="footer-col">
-          <h4>Product</h4>
-          <a href="how-it-works.html">How It Works</a>
-          <a href="entrepreneurs.html">For Entrepreneurs</a>
-          <a href="lenders.html">For Lenders</a>
-          <a href="get-the-app.html">Get the App</a>
-        </div>
-        <div class="footer-col">
-          <h4>Company</h4>
-          <a href="about.html">About</a>
-          <a href="about.html#patent">Patent</a>
-          <a href="about.html#roadmap">Build status</a>
-        </div>
-        <div class="footer-col">
-          <h4>Legal</h4>
-          <a href="#">Privacy Policy</a>
-          <a href="#">Terms of Service</a>
-        </div>
-      </div>
-      <div class="footer-bottom">
-        <p class="footer-copy">© 2025 Konfirmata. USPTO Provisional Patent Application No. 63/987,858.</p>
-        <div class="footer-links-bottom">
-          <a href="index.html">Home</a>
-          <a href="lenders.html">Lenders</a>
-          <a href="about.html">About</a>
-        </div>
-      </div>
+  <footer class="site-footer">
+    <div>
+      <strong>Konfirmata</strong>
+      <p>&copy; 2026 Konfirmata. All rights reserved.</p>
+    </div>
+    <p>USPTO Patent Application No. 63/987,858 | Built in the United States</p>
+    <div class="footer-links">
+      <a href="index.html">Home</a>
+      <a href="entrepreneurs.html">For Entrepreneurs</a>
+      <a href="lenders.html">For Lenders</a>
+      <a href="how-it-works.html">How It Works</a>
+      <a href="about.html">About</a>
+      <a href="index.html#contact">Contact</a>
+      <a href="/app">Open App</a>
     </div>
   </footer>
-
 </body>
 </html>
