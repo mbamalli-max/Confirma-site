@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.2
-**Date:** 2026-04-12
+**Version:** 3.3.1
+**Date:** 2026-04-30
 
 ---
 
@@ -14,7 +14,7 @@ Konfirmata is a mobile-first Progressive Web App (PWA) that converts informal bu
 
 > Ledger formation is always free. Payment gates only verified PDF export.
 
-The app captures daily transactions via voice, text, or visual selection. Every record is cryptographically signed using a device-bound keypair and linked into an append-only hash chain. The resulting ledger is server-synced, fork-detected, and — at the paid tier — converted into a signed PDF report that a lender can verify independently at a public URL.
+The app captures daily transactions via voice, text, or visual selection. Every record is cryptographically signed using a device-bound keypair and linked into an append-only hash chain. The free text export embeds the device public key in Base64 SPKI format so signatures can be verified offline with standard P-256 tools. The resulting ledger is server-synced, fork-detected, and — at the paid tier — converted into a signed PDF report that a lender can verify independently at a public URL.
 
 ### Value Proposition
 
@@ -242,9 +242,12 @@ Voice uses the same locale (`getVoiceLocale()`), TTS engine (`speakConfirmationC
 
 **Free text export:**
 - Plain text file download (`.txt`)
-- Contains: header metadata, all records as rows, evidence summary, ledger root hash, single-device scope disclaimer
+- Contains: header metadata, all records as rows, evidence summary, ledger root hash, device fingerprint, embedded ECDSA P-256 public key, single-device scope disclaimer
+- Appends `DEVICE PUBLIC KEY (ECDSA P-256)` section after integrity data
+- Public key is Base64-encoded SPKI format, suitable for OpenSSL, WebCrypto, and other standard P-256 verification tools
 - If authenticated: `POST /attest` called (best-effort, non-blocking) — on success, `vt_id`, `verify_url`, and QR code data URL are appended to the export
 - On attestation failure: export completes silently without attestation block
+- On public key retrieval failure: export still completes and prints `Public Key: Not available — key storage error`
 
 **Paid PDF export (operating_region = NG):**
 - Server-generated via pdfkit
@@ -429,13 +432,16 @@ Konfirmata learns from the user's manual corrections to voice transcripts, on-de
 5. Personal & Professional Services
 6. Digital & Online Business
 
-### 9.2 Business Types (16 across NG + US)
+### 9.2 Business Types (23 across NG + US + global fallback)
 
 **Nigeria (10):**
 Market Trader, Provision Shop, Food Vendor, Transport Operator, Artisan, Service Provider, Online Seller, Kiosk/Phone Business, Fashion Tailor, Okada/Keke Operator
 
-**United States (6):**
-Retail, Food Service, Logistics, Contractor, Beauty Services, Digital Business
+**United States (7):**
+Retail, Food Service, Logistics, Contractor, Beauty Services, Digital Business, Personal Services / Side Hustle
+
+**Global fallback (6):**
+Retail / Trading, Food & Hospitality, Transport & Logistics, Skilled Work / Construction, Personal / Professional Services, Digital / Online Business
 
 ### 9.3 Label Ranking Algorithm
 
@@ -501,6 +507,9 @@ Users receive **3 free text exports per calendar month**. When exhausted, one ad
 - Plain `.txt` file downloaded to device
 - Contains full record ledger, evidence summary, single-device disclaimer
 - Phone and email shown unmasked (user's own data)
+- Embeds the signing device public key as Base64 SPKI in a `DEVICE PUBLIC KEY (ECDSA P-256)` section after integrity data
+- Supports offline third-party verification of entry signatures without contacting Konfirmata servers
+- If the public key cannot be read from local key storage, the export must continue and show `Public Key: Not available — key storage error`
 - Filename: `konfirmata-v3-export-{timestamp}.txt`
 
 ### 11.2 Free Verified PDF
@@ -571,13 +580,15 @@ Users receive **3 free text exports per calendar month**. When exhausted, one ad
 ### Reports
 13. Paid PDF shows masked phone (`+234****5678`) and masked email (`j***e@domain.com`)
 14. Free text export shows unmasked contact with privacy note header
-15. Both exports include evidence summary and single-device scope disclaimer
-16. Verification portal shows VALID for untampered attestation, FORKED for compromised device
+15. Free text export includes `DEVICE PUBLIC KEY (ECDSA P-256)` after integrity data
+16. Embedded public key is valid Base64 SPKI and corresponds to the existing device fingerprint
+17. Both exports include evidence summary and single-device scope disclaimer
+18. Verification portal shows VALID for untampered attestation, FORKED for compromised device
 
 ### Payments (NG only)
-17. Paystack webhook with invalid HMAC returns 400 without processing
-18. Gold tier PDF covers full transaction history
-19. Dynamic tier button labels show actual days of history
+19. Paystack webhook with invalid HMAC returns 400 without processing
+20. Gold tier PDF covers full transaction history
+21. Dynamic tier button labels show actual days of history
 
 ---
 
@@ -598,8 +609,8 @@ Users receive **3 free text exports per calendar month**. When exhausted, one ad
 - [ ] Language selector in Settings (English-only currently; UI toggle pending)
 - [ ] Country-aware state/region placeholder in onboarding step 6
 
-### Identity (Pending Decision)
-- [ ] Brand finalization (Konfirmata vs. Confirma)
+### Identity
+- [x] Brand finalized as Konfirmata
 - [ ] Domain registration for new brand email
 
 ### Phase 2 (Evidence-Gated)
