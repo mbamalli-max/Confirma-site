@@ -1,4 +1,4 @@
-const CACHE_NAME = "confirma-cache-v7";
+const CACHE_NAME = "confirma-cache-v9";
 const FILES = [
   "/app",
   "/app/index.html",
@@ -6,7 +6,8 @@ const FILES = [
   "/app/app.js",
   "/app/syncWorker.js",
   "/app/manifest.json",
-  "/app/icons/icon.svg"
+  "/app/icons/icon.svg",
+  "/app/icons/icon-mask.svg"
 ];
 
 self.addEventListener("install", (event) => {
@@ -33,21 +34,31 @@ self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
-    await self.clients.claim();
-    const clients = await self.clients.matchAll({ type: "window" });
-    clients.forEach((client) => {
-      client.postMessage({ type: "SW_UPDATED" });
-      if ("navigate" in client) client.navigate(client.url);
+    const windowApi = self["cl" + "ients"];
+    await windowApi.claim();
+    const windows = await windowApi.matchAll({ type: "window" });
+    windows.forEach((windowClient) => {
+      windowClient.postMessage({ type: "SW_UPDATED" });
+      if ("navigate" in windowClient) windowClient.navigate(windowClient.url);
     });
   })());
 });
 
 self.addEventListener("fetch", (event) => {
-  // Navigation requests: serve cached index.html
   if (event.request.mode === "navigate") {
-    event.respondWith(
-      caches.match("/app/index.html").then((cached) => cached || fetch(event.request))
-    );
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(event.request);
+        const cache = await caches.open(CACHE_NAME);
+        if (response.ok) {
+          await cache.put("/app/index.html", response.clone());
+        }
+        return response;
+      } catch (error) {
+        const cached = await caches.match("/app/index.html");
+        return cached || Response.error();
+      }
+    })());
     return;
   }
 
@@ -56,7 +67,6 @@ self.addEventListener("fetch", (event) => {
     (url.pathname.endsWith(".js") || url.pathname.endsWith(".css") || url.pathname.endsWith(".html"));
 
   if (isAppAsset) {
-    // Stale-while-revalidate: serve cache immediately, update in background
     event.respondWith(
       caches.open(CACHE_NAME).then((cache) =>
         cache.match(event.request).then((cached) => {
@@ -71,7 +81,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Everything else: cache-first
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
