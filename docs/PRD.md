@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.3.1
-**Date:** 2026-04-30
+**Version:** 3.4.0
+**Date:** 2026-05-11
 
 ---
 
@@ -14,7 +14,7 @@ Konfirmata is a mobile-first Progressive Web App (PWA) that converts informal bu
 
 > Ledger formation is always free. Payment gates only verified PDF export.
 
-The app captures daily transactions via voice, text, or visual selection. Every record is cryptographically signed using a device-bound keypair and linked into an append-only hash chain. The free text export embeds the device public key in Base64 SPKI format so signatures can be verified offline with standard P-256 tools. The resulting ledger is server-synced, fork-detected, and — at the paid tier — converted into a signed PDF report that a lender can verify independently at a public URL.
+The app captures daily transactions via voice, text, or visual selection. Every record is cryptographically signed using a device-bound keypair and linked into an append-only hash chain. The free text export embeds the device public key together with per-entry verification data so a technically capable third party can verify entry integrity offline from the file itself. The resulting ledger is server-synced, fork-detected, and — at the paid tier — converted into a signed PDF report whose attestation payload can be checked offline with Konfirmata's published verification key and cross-checked at a public URL.
 
 ### Value Proposition
 
@@ -128,13 +128,15 @@ Currency is derived from `operating_region`, never from `phone_country`.
 | Step | Screen element | Data collected |
 |---|---|---|
 | 1 | Phone country — searchable input filtering 249 ISO countries; device locale pre-selects default | `profile.country`, `state.authPhoneCountry` |
-| 2 | Operating region selector ("Where does your business operate?") | `profile.operating_region` |
+| 2 | Operating region selector ("Where does your business operate?") with explicit continue CTA after selection | `profile.operating_region` |
 | 3 | Sector grid (6 sectors) | `profile.sector_id` |
 | 4 | Business type grid (filtered by sector) | `profile.business_type_id` |
 | 5 | Preferred labels grid (visual quick-picks for this business type) | `profile.preferred_labels` |
 | 6 | Profile details (name, phone, email, region, birth year, gender) | `profile.display_name` and optional fields |
 
 **Validation:** `business_type_id` and `display_name` are required. All other fields are optional.
+
+**Navigation behavior:** Selecting a phone country advances to the operating-region step. Operating-region selection can advance by tapping a country card and also exposes a "Continue with selected country" button so the flow remains recoverable after stale-shell or service-worker updates.
 
 **Post-onboarding:** Profile saved to IndexedDB. Device trust state loaded. If phone unverified, OTP screen available in Settings.
 
@@ -508,7 +510,8 @@ Users receive **3 free text exports per calendar month**. When exhausted, one ad
 - Contains full record ledger, evidence summary, single-device disclaimer
 - Phone and email shown unmasked (user's own data)
 - Embeds the signing device public key as Base64 SPKI in a `DEVICE PUBLIC KEY (ECDSA P-256)` section after integrity data
-- Supports offline third-party verification of entry signatures without contacting Konfirmata servers
+- Appends a per-entry verification bundle: `entry_hash`, `prev_entry_hash`, `signature_base64`, `signature_message_utf8`, and `canonical_payload_utf8`
+- Supports offline third-party verification from the export file plus the embedded device public key
 - If the public key cannot be read from local key storage, the export must continue and show `Public Key: Not available — key storage error`
 - Filename: `konfirmata-v3-export-{timestamp}.txt`
 
@@ -523,13 +526,14 @@ Users receive **3 free text exports per calendar month**. When exhausted, one ad
 
 - Generated after successful Paystack payment
 - Trigger: Paystack `charge.success` webhook → internal attestation → PDF → email
-- PDF contains: cover page (masked phone/email), income statement, cash flow, full ledger appendix, evidence summary, QR code, verify URL, patent notice
+- PDF contains: cover page (masked phone/email), income statement, cash flow, full ledger appendix, evidence summary, attestation payload, ECDSA attestation signature, verification key URL, QR code, verify URL, patent notice
 
 ### 11.4 Verification Portal
 
 - Static page at `/verify/:vt_id`
 - Calls `GET /verify/:vt_id` on load
 - Displays: validity badge (VALID / FORKED / REVOKED / UNKNOWN), attestation date, entry count, window range, key rotation events, fork status, device fingerprint (8 chars)
+- Exposes attestation payload, signature algorithm, and verification key URL for independent validation tools
 - Returns **no PII** — phone number never exposed, device identity truncated
 - Fields: `attestation_scope: "single_device"`, `scope_description: "This report reflects records from a single device only."`
 
@@ -581,9 +585,11 @@ Users receive **3 free text exports per calendar month**. When exhausted, one ad
 13. Paid PDF shows masked phone (`+234****5678`) and masked email (`j***e@domain.com`)
 14. Free text export shows unmasked contact with privacy note header
 15. Free text export includes `DEVICE PUBLIC KEY (ECDSA P-256)` after integrity data
-16. Embedded public key is valid Base64 SPKI and corresponds to the existing device fingerprint
-17. Both exports include evidence summary and single-device scope disclaimer
-18. Verification portal shows VALID for untampered attestation, FORKED for compromised device
+16. Each exported ledger entry includes `entry_hash`, `prev_entry_hash`, `signature_base64`, `signature_message_utf8`, and `canonical_payload_utf8`
+17. Embedded public key is valid Base64 SPKI and corresponds to the existing device fingerprint
+18. Paid PDF includes attestation payload, ECDSA attestation signature, and verification key URL
+19. Both exports include evidence summary and single-device scope disclaimer
+20. Verification portal shows VALID for untampered attestation, FORKED for compromised device
 
 ### Payments (NG only)
 19. Paystack webhook with invalid HMAC returns 400 without processing
@@ -606,6 +612,7 @@ Users receive **3 free text exports per calendar month**. When exhausted, one ad
 ### UX (In Progress)
 - [ ] Phone normalization: NG `08099840666` → `+2348099840666`, US `2678867271` → `+12678867271`
 - [x] Searchable country selector with locale auto-detection (2026-04-11)
+- [x] Onboarding country-grid recovery shipped in production; operating-region step now has an explicit continue path (2026-05-10)
 - [ ] Language selector in Settings (English-only currently; UI toggle pending)
 - [ ] Country-aware state/region placeholder in onboarding step 6
 

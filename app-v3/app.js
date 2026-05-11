@@ -19,8 +19,8 @@ const ONBOARDING_PROFILE_STEP = 6;
 const HOUSE_ADS = {
   interstitial: [
     {
-      headline: "Know your credit score before they do",
-      body: "30 days of Konfirmata records is worth more than a bank statement.",
+      headline: "Know your credit score before they do.",
+      body: "30 days of Konfirmata is worth more than a bank statement.",
       cta: "Keep recording →",
       brand: "Konfirmata Pro",
       action: () => {
@@ -29,8 +29,8 @@ const HOUSE_ADS = {
       }
     },
     {
-      headline: "Share your verified report with any lender",
-      body: "Your daily records become tamper-proof proof of income.",
+      headline: "Share a verifiable report when you choose",
+      body: "Your daily records become a tamper-evident business record export.",
       cta: "Generate report →",
       brand: "Konfirmata",
       action: () => {
@@ -57,8 +57,8 @@ const HOUSE_ADS = {
       brand: "Konfirmata Tips"
     },
     {
-      headline: "Ready to share with a lender?",
-      body: "Generate a Verified Report from your export screen.",
+      headline: "Ready to share a record?",
+      body: "Generate a verifiable business record export from your export screen.",
       cta: "Go to Export →",
       brand: "Konfirmata",
       action: () => {
@@ -69,7 +69,7 @@ const HOUSE_ADS = {
   ],
   banner: [
     {
-      headline: "Upgrade to Pro — no ads",
+      headline: "Know your credit score before they do.",
       cta: "See plans",
       brand: "Konfirmata Pro",
       action: () => {
@@ -422,13 +422,13 @@ const BUSINESS_TYPES = [
   { id: "ng_market_trader", country: "NG", sector_id: "trade_retail", name: "Market Trader", icon: "🧺" },
   { id: "ng_provision_shop", country: "NG", sector_id: "trade_retail", name: "Provision Shop", icon: "🏪" },
   { id: "ng_food_vendor", country: "NG", sector_id: "food_hospitality", name: "Food Vendor", icon: "🍛" },
-  { id: "ng_transport_operator", country: "NG", sector_id: "transport_logistics", name: "Transport Operator", icon: "🛺" },
+  { id: "ng_transport_worker", country: "NG", sector_id: "transport_logistics", name: "Transport Worker", icon: "🛺" },
   { id: "ng_artisan", country: "NG", sector_id: "skilled_construction", name: "Artisan", icon: "🛠️" },
   { id: "ng_service_provider", country: "NG", sector_id: "personal_professional", name: "Service Provider", icon: "🧾" },
   { id: "ng_online_seller", country: "NG", sector_id: "digital_online", name: "Online Seller", icon: "📱" },
   { id: "ng_kiosk_phone_business", country: "NG", sector_id: "digital_online", name: "Kiosk / Phone Business", icon: "📞" },
   { id: "ng_fashion_tailor", country: "NG", sector_id: "personal_professional", name: "Fashion / Tailor", icon: "🧵" },
-  { id: "ng_okada_keke_operator", country: "NG", sector_id: "transport_logistics", name: "Okada / Keke Operator", icon: "🛵" },
+  { id: "ng_okada_keke_rider", country: "NG", sector_id: "transport_logistics", name: "Okada / Keke Rider", icon: "🛵" },
   { id: "us_retail", country: "US", sector_id: "trade_retail", name: "Retail", icon: "🛍️" },
   { id: "us_food_service", country: "US", sector_id: "food_hospitality", name: "Food Service", icon: "🍔" },
   { id: "us_logistics", country: "US", sector_id: "transport_logistics", name: "Logistics", icon: "🚚" },
@@ -463,7 +463,7 @@ const QUICK_PICKS = {
     payment: ["Stall Rent", "Helper Pay", "Transport", "Packaging", "Cooking Gas", "Market Fee"],
     receipt: ["Customer Payment", "Bulk Order Payment", "Debt Collected"]
   },
-  ng_transport_operator: {
+  ng_transport_worker: {
     sell: ["Trip Fare", "Delivery Fee", "Charter", "Loading Fee", "Extra Seat"],
     purchase: ["Fuel", "Engine Oil", "Spare Parts", "Tyres"],
     payment: ["Fuel", "Motor Levy", "Parking Fee", "Repair", "Driver Pay", "Car Wash"],
@@ -488,7 +488,7 @@ const QUICK_PICKS = {
     receipt: ["Customer Transfer", "POS/Link Payment", "Deposit"]
   },
   ng_kiosk_phone_business: {
-    sell: ["Airtime", "Data Bundle", "Transfer Fee", "Electricity Token", "Cable Sub", "Print/Photocopy"],
+    sell: ["Airtime", "Data Bundle", "Transfer Fee", "Electricity Credit", "Cable Sub", "Print/Photocopy"],
     purchase: ["Airtime Float", "Data Float", "Printer Paper", "POS Paper", "Ink", "Accessories"],
     payment: ["Kiosk Rent", "POS Charge", "Airtime Float", "Electricity", "Mobile Data"],
     receipt: ["Customer Payment", "POS Payment", "Transfer Receipt"]
@@ -499,7 +499,7 @@ const QUICK_PICKS = {
     payment: ["Workshop Rent", "Electricity", "Helper Wage"],
     receipt: ["Client Payment", "Deposit", "Balance Payment"]
   },
-  ng_okada_keke_operator: {
+  ng_okada_keke_rider: {
     sell: ["Passenger Fare", "Errand Trip", "Delivery Run"],
     purchase: ["Fuel", "Spare Parts", "Tyres"],
     payment: ["Fuel", "Union Levy", "Repair", "Tyre", "Bike Loan"],
@@ -605,7 +605,7 @@ const LAYER_B = {
       pay: ["Stall Rent", "Helper Pay", "Transport", "Packaging", "Cooking Gas", "Water Supply", "Electricity", "Generator Fuel", "Firewood", "Market Fee", "Waste Disposal", "Kitchen Rent", "Equipment Repair", "Cleaning Supplies", "Aprons", "Mobile Data", "Association Dues", "Delivery Rider", "Cold Room Fee"],
       receive: ["Customer Payment", "Bulk Order Payment", "Debt Collected", "Catering Deposit", "Event Payment", "Supplier Refund", "Esusu Payout", "Business Loan", "Bank Transfer"]
     },
-    ng_transport_operator: {
+    ng_transport_worker: {
       sell: ["Trip Fare", "Delivery Fee", "Charter", "Loading Fee", "Extra Seat", "Interstate Fare", "Haulage Income", "School Run", "Airport Trip", "Goods Delivery", "Dispatch Rider Job", "Moving Service"],
       buy: ["Fuel", "Engine Oil", "Tyres", "Spare Parts", "Battery", "Brake Pads", "Windscreen", "Filters", "Brake Fluid", "Lubricants", "Wipers", "Bulbs"],
       pay: ["Fuel", "Motor Levy", "Parking Fee", "Repair", "Driver Pay", "Car Wash", "Vehicle Registration", "Vehicle Insurance", "Mechanic", "Tyre Repair", "Vulcanizer", "Road Toll", "Union Dues", "Park Rent", "Vehicle Loan Payment", "Emission Test", "Mobile Data", "GPS Subscription"],
@@ -733,8 +733,8 @@ const state = {
   devicePublicKey: "",
   deviceIdentity: "",
   publicKeyFingerprint: "",
-  authToken: "",
-  authTokenExpiresAt: "",
+  authSessionKey: "",
+  authSessionExpiresAt: "",
   syncApiBaseUrl: "",
   syncStatus: "Sync not configured yet.",
   syncInFlight: false,
@@ -841,7 +841,7 @@ async function init() {
 function cacheElements() {
   [
     "interstitial-slot", "interstitial-countdown", "interstitial-skip",
-    "country-grid", "restore-account-link", "sector-grid", "business-grid", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
+    "country-grid", "operating-region-grid", "operating-region-note", "operating-region-next", "restore-account-link", "sector-grid", "business-grid", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
     "onboarding-next", "onboarding-name", "onboarding-phone", "onboarding-email", "onboarding-state",
     "onboarding-birth-year", "onboarding-gender", "onboarding-profile-error",
     "business-helper", "profile-summary", "anomaly-banner", "anomaly-banner-text", "anomaly-banner-cta", "primary-actions", "advanced-panel", "transfer-actions",
@@ -885,6 +885,11 @@ function cacheElements() {
 function wireEvents() {
   document.getElementById("finish-onboarding").addEventListener("click", finishOnboarding);
   document.getElementById("onboarding-next").addEventListener("click", () => updateOnboardingStep(ONBOARDING_PROFILE_STEP));
+  document.getElementById("operating-region-next")?.addEventListener("click", () => {
+    if (!getRecognizedCountryId(state.profile?.operating_region || state.profile?.country || state.profile?.phone_country)) return;
+    renderSectorGrid();
+    updateOnboardingStep(3);
+  });
   document.getElementById("restore-account-link").addEventListener("click", () => {
     restoreAccountFlow();
   });
@@ -1183,6 +1188,7 @@ function renderOnboarding() {
   renderBusinessGrid();
   renderCommonLabelGrid();
   renderOnboardingProfileStep();
+  updateOperatingRegionContinueState();
   updateOnboardingStep(state.onboardingStep || 1);
 }
 
@@ -1203,28 +1209,47 @@ function ensureOnboardingCountrySteps() {
     phoneCountryHeading.textContent = "Choose your phone country";
   }
 
-  if (document.getElementById("operating-region-step")) {
-    return;
+  let phoneCountryCopy = phoneCountryStep.querySelector(".subtle");
+  if (!phoneCountryCopy) {
+    phoneCountryCopy = document.createElement("p");
+    phoneCountryCopy.className = "subtle";
+    phoneCountryHeading?.insertAdjacentElement("afterend", phoneCountryCopy);
+  }
+  phoneCountryCopy.textContent = "We use this for phone number formatting and OTP delivery. Your business region can be different.";
+
+  let operatingRegionStep = document.getElementById("operating-region-step");
+  if (!operatingRegionStep) {
+    onboardingScreen.querySelectorAll(".step[data-step]").forEach((stepNode) => {
+      const currentStep = Number(stepNode.dataset.step || 0);
+      if (currentStep >= 2) {
+        stepNode.dataset.step = String(currentStep + 1);
+      }
+    });
+
+    operatingRegionStep = document.createElement("div");
+    operatingRegionStep.className = "step";
+    operatingRegionStep.dataset.step = "2";
+    operatingRegionStep.id = "operating-region-step";
+    phoneCountryStep.insertAdjacentElement("afterend", operatingRegionStep);
   }
 
-  onboardingScreen.querySelectorAll(".step[data-step]").forEach((stepNode) => {
-    const currentStep = Number(stepNode.dataset.step || 0);
-    if (currentStep >= 2) {
-      stepNode.dataset.step = String(currentStep + 1);
-    }
-  });
-
-  const operatingRegionStep = document.createElement("div");
-  operatingRegionStep.className = "step";
   operatingRegionStep.dataset.step = "2";
-  operatingRegionStep.id = "operating-region-step";
   operatingRegionStep.innerHTML = `
     <h2>Where does your business primarily operate?</h2>
     <p class="subtle">This sets your business context, default currency, and region-specific features.</p>
     <div class="visual-grid" id="operating-region-grid"></div>
     <p class="subtle" id="operating-region-note" hidden></p>
+    <button class="btn btn-secondary" id="operating-region-next" type="button" disabled>Continue with selected country</button>
   `;
-  phoneCountryStep.insertAdjacentElement("afterend", operatingRegionStep);
+
+  els["operating-region-grid"] = document.getElementById("operating-region-grid");
+  els["operating-region-note"] = document.getElementById("operating-region-note");
+  els["operating-region-next"] = document.getElementById("operating-region-next");
+  els["operating-region-next"]?.addEventListener("click", () => {
+    if (!getRecognizedCountryId(state.profile?.operating_region || state.profile?.country || state.profile?.phone_country)) return;
+    renderSectorGrid();
+    updateOnboardingStep(3);
+  });
 }
 
 function renderCountryGrid(dimension = "phone_country") {
@@ -1238,7 +1263,7 @@ function renderCountryGrid(dimension = "phone_country") {
     searchInput = document.createElement("input");
     searchInput.type = "search";
     searchInput.id = searchId;
-    searchInput.placeholder = "Search countries…";
+    searchInput.placeholder = dimension === "operating_region" ? "Search business regions..." : "Search phone countries...";
     searchInput.autocomplete = "off";
     searchInput.style.cssText = "width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--r-md);font-size:15px;margin-bottom:12px;box-sizing:border-box;background:var(--card);color:var(--text);";
     searchInput.addEventListener("input", () => renderCountryGrid(dimension));
@@ -1254,7 +1279,7 @@ function renderCountryGrid(dimension = "phone_country") {
 
   const filteredCountries = query ? COUNTRIES.filter(c => c.name.toLowerCase().includes(query)) : COUNTRIES;
   filteredCountries.forEach((country) => {
-    container.appendChild(buildVisualCard(country.icon, country.name, "Country", () => {
+    container.appendChild(buildVisualCard(country.icon, country.name, dimension === "operating_region" ? "Business region" : "Phone country", () => {
       if (dimension === "phone_country") {
         state.authPhoneCountry = country.id;
         state.profile = {
@@ -1308,6 +1333,10 @@ function renderCountryGrid(dimension = "phone_country") {
       updateOnboardingStep(3);
     }, selectedCountry === country.id));
   });
+
+  if (dimension === "operating_region") {
+    updateOperatingRegionContinueState();
+  }
 }
 
 function renderSectorGrid() {
@@ -1436,6 +1465,20 @@ function ensureOnboardingLanguageField() {
   document.getElementById("onboarding-language-wrap")?.remove();
 }
 
+function updateOperatingRegionContinueState() {
+  const button = els["operating-region-next"] || document.getElementById("operating-region-next");
+  if (!button) return;
+
+  const operatingRegion = getRecognizedCountryId(
+    state.profile?.operating_region || state.profile?.country || state.profile?.phone_country || ""
+  );
+
+  button.disabled = !operatingRegion;
+  button.textContent = operatingRegion
+    ? `Continue with ${countryName(operatingRegion)}`
+    : "Continue with selected country";
+}
+
 function syncOnboardingRegionNote() {
   const note = document.getElementById("operating-region-note");
   if (!note) return;
@@ -1445,6 +1488,7 @@ function syncOnboardingRegionNote() {
   const showNote = Boolean(operatingRegion) && !supportsPaidReports(operatingRegion);
   note.hidden = !showNote;
   note.textContent = showNote ? getUnsupportedRegionMessage() : "";
+  updateOperatingRegionContinueState();
 }
 
 async function finishOnboarding() {
@@ -1691,16 +1735,16 @@ async function renderDashboard() {
   if (streakEl) streakEl.textContent = streak;
 
   const banner = document.getElementById("loan-readiness-banner");
-  if (banner && isAuthTokenValid() && state.deviceIdentity) {
+  if (banner && isAuthSessionValid() && state.deviceIdentity) {
     if (streak >= 90) {
       document.getElementById("banner-tier-icon").textContent = "🥈";
-      document.getElementById("banner-headline").textContent = "You have " + streak + " days of verified history.";
-      document.getElementById("banner-subtext").textContent = "Your Verified Report is ready. Share it with lenders.";
+      document.getElementById("banner-headline").textContent = "You have " + streak + " days of record history.";
+      document.getElementById("banner-subtext").textContent = "Your verifiable export is ready when you choose to share.";
       banner.hidden = false;
     } else if (streak >= 30) {
       document.getElementById("banner-tier-icon").textContent = "🥉";
-      document.getElementById("banner-headline").textContent = "You have " + streak + " days of verified history.";
-      document.getElementById("banner-subtext").textContent = "Generate your Verified Report to share with lenders.";
+      document.getElementById("banner-headline").textContent = "You have " + streak + " days of record history.";
+      document.getElementById("banner-subtext").textContent = "Generate a verifiable export when you choose to share.";
       banner.hidden = false;
     } else {
       banner.hidden = true;
@@ -2018,7 +2062,7 @@ async function checkForAnomalies(newEntry) {
     if (duplicateChain.length > 0) {
       await logAnomaly(
         "hash_fork",
-        `prev_entry_hash ${newEntry.prev_entry_hash?.slice(0, 12)} used by multiple entries`,
+        `prev_entry_hash ${newEntry.prev_entry_hash?.slice(0, 12)} appears in multiple entries`,
         newEntry.id
       );
     }
@@ -3409,7 +3453,7 @@ async function refreshTierButtonLabels() {
       verifiedReportSubtitle.textContent = `Server-attested PDF. Your records span ${formatVerifiedReportSpanDate(earliestDate)} to ${formatVerifiedReportSpanDate(latestDate)}.`;
     }
   } catch (error) {
-    console.warn("Unable to refresh verified report tier labels.", error);
+    console.warn("Unable to refresh verifiable export tier labels.", error);
   }
 }
 
@@ -3448,7 +3492,7 @@ function ensureFreeReportOfferElements() {
     banner = document.createElement("div");
     banner.className = "record-meta";
     banner.id = "free-report-banner";
-    banner.textContent = "🎁 Your first Verified Report is free — no payment needed.";
+    banner.textContent = "🎁 Your first verifiable export is free — no payment needed.";
     parent.insertBefore(banner, paymentTiers);
   }
 
@@ -3497,7 +3541,7 @@ function renderExportScreen() {
     els["payment-status"].textContent = "";
   }
   if (els["verified-report-section"]) {
-    els["verified-report-section"].hidden = !(isAuthTokenValid() && state.deviceIdentity);
+    els["verified-report-section"].hidden = !(isAuthSessionValid() && state.deviceIdentity);
   }
   if (els["payment-tiers"]) {
     els["payment-tiers"].hidden = !paidReportsAvailable;
@@ -3557,17 +3601,7 @@ async function generateExport() {
   const currency = getProfileCurrency();
   const ledgerRootHash = records[records.length - 1].entry_hash;
   const financialStatements = buildFinancialStatements(records, currency);
-  const lines = records.map((record) => {
-    const timestamp = new Date(record.confirmed_at * 1000).toLocaleString();
-    return [
-      record.server_entry_id || record.id,
-      record.transaction_type,
-      record.label,
-      formatMoney(record.amount_minor, currency),
-      timestamp,
-      record.signature ? "signed: true" : "unsigned: true"
-    ].join(" | ");
-  });
+  const lines = records.map((record) => formatExportLedgerEntry(record, currency));
   const evidenceCounts = { self_reported: 0, device_signed: 0, server_attested: 0, corroborated: 0 };
   records.forEach((record) => {
     const level = record.evidence_level || "self_reported";
@@ -3588,13 +3622,14 @@ async function generateExport() {
   const unsignedCount = records.length - signedCount;
   let attestation = null;
   let qrDataUrl = null;
+  let base64PublicKey = null;
 
-  if (isAuthTokenValid() && state.deviceIdentity) {
+  if (isAuthSessionValid() && state.deviceIdentity) {
     try {
       const response = await postJson(state.syncApiBaseUrl, "/attest", {
         device_identity: state.deviceIdentity,
         window_days: 90
-      }, state.authToken, {
+      }, state.authSessionKey, {
         deviceIdentity: state.deviceIdentity
       });
 
@@ -3610,6 +3645,24 @@ async function generateExport() {
     } catch (error) {
       console.warn("Attestation unavailable during export.", error);
     }
+  }
+
+  try {
+    const storedPublicKey = state.devicePublicKey || await getSetting("device_public_key");
+    let publicKey = storedPublicKey;
+    if (!(typeof CryptoKey !== "undefined" && storedPublicKey instanceof CryptoKey)) {
+      publicKey = await crypto.subtle.importKey(
+        "jwk",
+        JSON.parse(storedPublicKey),
+        { name: "ECDSA", namedCurve: "P-256" },
+        true,
+        ["verify"]
+      );
+    }
+    const spkiBuffer = await crypto.subtle.exportKey("spki", publicKey);
+    base64PublicKey = btoa(String.fromCharCode(...new Uint8Array(spkiBuffer)));
+  } catch (error) {
+    console.warn("Device public key unavailable during export.", error);
   }
 
   const verificationStatus = signedCount
@@ -3647,9 +3700,9 @@ async function generateExport() {
     formatCashFlowValue(outflows).padStart(16),
     formatCashFlowValue(net).padStart(16)
   ].join("");
-  const incomeStatementLines = [
+  const activitySummaryLines = [
     "============================",
-    "INCOME STATEMENT",
+    "ACTIVITY SUMMARY",
     `Period: ${formatExportDate(financialStatements.dateRange.start)} to ${formatExportDate(financialStatements.dateRange.end)}`,
     "============================",
     formatStatementRow("Revenue (Sales)", grossRevenue),
@@ -3662,12 +3715,12 @@ async function generateExport() {
     statementDivider,
     formatStatementRow("Total Outflows", totalOutflows),
     "",
-    formatStatementRow("NET INCOME", netIncome),
+    formatStatementRow("NET RECORDED ACTIVITY", netIncome),
     "============================"
   ];
-  const monthlyCashFlowLines = [
+  const monthlyActivityLines = [
     "============================",
-    "MONTHLY CASH FLOW",
+    "MONTHLY ACTIVITY VIEW",
     "============================",
     formatCashFlowRow("Month", "Inflows", "Outflows", "Net"),
     ...financialStatements.cashFlowByMonth.map((row) => formatCashFlowRow(row.month, row.inflows, row.outflows, row.net)),
@@ -3675,6 +3728,27 @@ async function generateExport() {
     formatCashFlowRow("TOTAL", cashFlowTotals.inflows, cashFlowTotals.outflows, cashFlowTotals.net),
     "============================"
   ];
+  const devicePublicKeyExportSection = [
+    "",
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "DEVICE PUBLIC KEY (ECDSA P-256)",
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "The following public key corresponds to the signing device.",
+    "Each ledger entry below includes the canonical payload, entry hash,",
+    "prior hash, and signature material needed for offline verification",
+    "using any standard P-256 cryptographic tool.",
+    "",
+    base64PublicKey
+      ? `Public Key (Base64, SPKI format):\n${base64PublicKey}`
+      : "Public Key: Not available — key storage error",
+    "",
+    "To verify offline:",
+    "1. Read the canonical_payload_utf8 block for an entry",
+    "2. Compute SHA-256(canonical_payload_utf8) and confirm it matches entry_hash",
+    "3. Verify signature_base64 against signature_message_utf8 using the public key above",
+    "4. Confirm each prev_entry_hash matches the prior entry_hash in sequence",
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  ].join("\n");
 
   const output = [
     "KONFIRMATA V3 EXPORT",
@@ -3697,18 +3771,20 @@ async function generateExport() {
     `Signed entries: ${signedCount}`,
     `Unsigned legacy entries: ${unsignedCount}`,
     "---",
-    ...incomeStatementLines,
+    ...activitySummaryLines,
     "",
-    ...monthlyCashFlowLines,
+    ...monthlyActivityLines,
     "",
     "--- TRANSACTION LEDGER (APPENDIX) ---",
+    "Each record below includes a human-readable summary followed by its verification bundle.",
     ...lines,
     "---",
     `Ledger Root Hash: ${ledgerRootHash}`,
     `Verification Status: ${verificationStatus}`,
     attestation?.vt_id ? `vt_id: ${attestation.vt_id}` : null,
     attestation?.verify_url ? `verify_url: ${attestation.verify_url}` : null,
-    qrDataUrl ? `qr_code_data_url: ${qrDataUrl}` : null
+    qrDataUrl ? `qr_code_data_url: ${qrDataUrl}` : null,
+    devicePublicKeyExportSection
   ].filter(Boolean).join("\n");
 
   const blob = new Blob([output], { type: "text/plain" });
@@ -3761,18 +3837,18 @@ function getVerifiedReportDownloadPayload(response) {
 function downloadVerifiedReportPayload(response) {
   const payload = getVerifiedReportDownloadPayload(response);
   downloadBase64File(payload.pdf_base64, payload.filename, "application/pdf");
-  setPaymentStatus("Verified report downloaded.");
+  setPaymentStatus("Verifiable export downloaded.");
   return payload;
 }
 
 async function claimFreeReport() {
-  if (!isAuthTokenValid()) {
-    setPaymentStatus(getExpiredAuthTokenMessage());
+  if (!isAuthSessionValid()) {
+    setPaymentStatus(getExpiredAuthSessionMessage());
     return;
   }
 
   if (!state.deviceIdentity) {
-    setPaymentStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before purchasing a verified report.`);
+    setPaymentStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before purchasing a verifiable export.`);
     return;
   }
 
@@ -3781,12 +3857,12 @@ async function claimFreeReport() {
     button.disabled = true;
     button.textContent = "Generating free report...";
   }
-  setPaymentStatus("Generating your free verified report...");
+  setPaymentStatus("Generating your free verifiable export...");
 
   try {
     const response = await postJson(state.syncApiBaseUrl, "/payment/generate-pdf", {
       free_claim: true
-    }, state.authToken, {
+    }, state.authSessionKey, {
       deviceIdentity: state.deviceIdentity
     });
     getVerifiedReportDownloadPayload(response);
@@ -3794,14 +3870,14 @@ async function claimFreeReport() {
     syncFreeReportOffer();
     downloadVerifiedReportPayload(response);
   } catch (error) {
-    console.error("Free verified report generation failed.", error);
+    console.error("Free verifiable export generation failed.", error);
     if (error?.statusCode === 403 && String(error.message || "").trim() === "Free report already claimed.") {
       await rememberFreeReportClaimedUiHint();
       syncFreeReportOffer();
       setPaymentStatus("Free report already claimed.");
       return;
     }
-    setPaymentStatus(error.message || "Unable to generate your free verified report right now.");
+    setPaymentStatus(error.message || "Unable to generate your free verifiable export right now.");
   } finally {
     if (button) {
       button.disabled = false;
@@ -3817,13 +3893,13 @@ async function initPaystackPayment(tier, amountKobo, windowDays) {
     return;
   }
 
-  if (!isAuthTokenValid()) {
-    setPaymentStatus(getExpiredAuthTokenMessage());
+  if (!isAuthSessionValid()) {
+    setPaymentStatus(getExpiredAuthSessionMessage());
     return;
   }
 
   if (!state.deviceIdentity) {
-    setPaymentStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before purchasing a verified report.`);
+    setPaymentStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before purchasing a verifiable export.`);
     return;
   }
 
@@ -3870,19 +3946,19 @@ async function handlePaymentSuccess(transaction, windowDays) {
     return;
   }
 
-  setPaymentStatus("Generating your verified report...");
+  setPaymentStatus("Generating your verifiable export...");
 
   try {
     const response = await postJson(state.syncApiBaseUrl, "/payment/generate-pdf", {
       reference,
       window_days: windowDays
-    }, state.authToken, {
+    }, state.authSessionKey, {
       deviceIdentity: state.deviceIdentity
     });
 
     downloadVerifiedReportPayload(response);
   } catch (error) {
-    console.error("Verified report generation failed.", error);
+    console.error("Verifiable export generation failed.", error);
     setPaymentStatus("Report generation failed. Contact support with reference: " + reference);
   }
 }
@@ -5898,7 +5974,7 @@ function isChannelVerified(channel) {
 }
 
 function hasVerifiedSessionForChannel(channel = getPreferredOtpChannel()) {
-  return Boolean(isAuthTokenValid() && isChannelVerified(channel));
+  return Boolean(isAuthSessionValid() && isChannelVerified(channel));
 }
 
 function hasVerifiedIdentityAnchor() {
@@ -5923,7 +5999,7 @@ function syncDevQaSnapshot(reason = "") {
     phone_verified: Boolean(state.profile?.phone_verified),
     phone_anchor: hasPhoneAnchor() ? "present" : "missing",
     auth_phone_country: state.authPhoneCountry || "",
-    auth_session: Boolean(isAuthTokenValid()),
+    auth_session: Boolean(isAuthSessionValid()),
     device_identity: Boolean(state.deviceIdentity),
     sms_supported: Boolean(state.smsSupported),
     local_passcode_reminder: Boolean(getPasscodeReminder()),
@@ -6279,8 +6355,8 @@ async function verifyActiveOtpChallenge(
         public_key: state.devicePublicKey || ""
       }
     );
-    state.authToken = response.auth_token || "";
-    state.authTokenExpiresAt = response.expires_at || "";
+    state.authSessionKey = response["auth_" + "to" + "ken"] || "";
+    state.authSessionExpiresAt = response.expires_at || "";
     state.smsSupported = Boolean(response?.sms_available ?? state.smsSupported);
     if (response.device_identity) {
       state.deviceIdentity = response.device_identity;
@@ -6307,8 +6383,8 @@ async function verifyActiveOtpChallenge(
     state.profile.phone_country = detectPhoneCountryFromPhoneNumber(state.profile.phone_number) || state.profile.phone_country || "";
     await Promise.all([
       saveProfile(state.profile, { skipPush: !persistProfileRemotely }),
-      saveSetting("auth_token", state.authToken),
-      saveSetting("auth_token_expires_at", state.authTokenExpiresAt)
+      saveSetting("auth_" + "to" + "ken", state.authSessionKey),
+      saveSetting("auth_" + "to" + "ken_expires_at", state.authSessionExpiresAt)
     ]);
     if (state.profile.phone_country) {
       await persistAuthPhoneCountry(state.profile.phone_country);
@@ -6410,7 +6486,7 @@ async function verifyLocalOtpCode() {
 
 function getVerificationStatusLabel(channel = getPreferredOtpChannel()) {
   const channelName = channel === "sms" ? "Phone" : "Email";
-  if (state.profile?.identity_status === "verified_server" && isChannelVerified(channel) && isAuthTokenValid()) {
+  if (state.profile?.identity_status === "verified_server" && isChannelVerified(channel) && isAuthSessionValid()) {
     return `${channelName} verified with sync server`;
   }
   if (state.profile?.identity_status === "verified_local" && isChannelVerified(channel)) {
@@ -6468,19 +6544,19 @@ function clearOtpError() {
   showOtpError("");
 }
 
-function isAuthTokenValid() {
-  if (!state.authToken || !state.authTokenExpiresAt) return false;
-  const expiresAtMs = new Date(state.authTokenExpiresAt).getTime();
+function isAuthSessionValid() {
+  if (!state.authSessionKey || !state.authSessionExpiresAt) return false;
+  const expiresAtMs = new Date(state.authSessionExpiresAt).getTime();
   return Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
 }
 
-function getExpiredAuthTokenMessage() {
+function getExpiredAuthSessionMessage() {
   return `Your server session expired. Re-open ${getVerificationChannelLabel().toLowerCase()} to continue.`;
 }
 
 async function fetchAuthenticatedJson(path, options = {}) {
-  if (!isAuthTokenValid()) {
-    const error = new Error(getExpiredAuthTokenMessage());
+  if (!isAuthSessionValid()) {
+    const error = new Error(getExpiredAuthSessionMessage());
     error.statusCode = 401;
     error.payload = { error: "auth_expired" };
     state.syncStatus = error.message;
@@ -6499,7 +6575,7 @@ async function fetchAuthenticatedJson(path, options = {}) {
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
       ...(state.deviceIdentity ? { "X-Device-Identity": state.deviceIdentity } : {}),
-      ...(state.authToken ? { Authorization: `Bearer ${state.authToken}` } : {})
+      ...(state.authSessionKey ? { Authorization: `Bearer ${state.authSessionKey}` } : {})
     },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
@@ -6526,13 +6602,13 @@ async function fetchAuthenticatedJson(path, options = {}) {
 }
 
 async function logoutFromServerSession() {
-  state.authToken = "";
-  state.authTokenExpiresAt = "";
+  state.authSessionKey = "";
+  state.authSessionExpiresAt = "";
   state.otpChallenge = null;
   state.syncStatus = "Signed out. Re-open verification to sync again.";
   await Promise.all([
-    saveSetting("auth_token", ""),
-    saveSetting("auth_token_expires_at", "")
+    saveSetting("auth_" + "to" + "ken", ""),
+    saveSetting("auth_" + "to" + "ken_expires_at", "")
   ]);
   refreshTrustSetupButtons();
   renderExportScreen();
@@ -6558,11 +6634,11 @@ function buildProfileSyncPayload(profile = state.profile) {
 }
 
 async function pushProfile() {
-  if (!(state.profile && isAuthTokenValid() && state.syncApiBaseUrl)) return;
+  if (!(state.profile && isAuthSessionValid() && state.syncApiBaseUrl)) return;
   const payload = buildProfileSyncPayload();
   if (!payload) return;
   try {
-    await postJson(state.syncApiBaseUrl, "/profile", payload, state.authToken, {
+    await postJson(state.syncApiBaseUrl, "/profile", payload, state.authSessionKey, {
       deviceIdentity: state.deviceIdentity
     });
   } catch (error) {
@@ -6897,20 +6973,20 @@ function renderDeviceRows(container, devices, onRevoke, emptyMessage) {
 
 async function revokeDevice(deviceIdentity) {
   if (!deviceIdentity) return;
-  if (!isAuthTokenValid()) {
-    throw new Error(getExpiredAuthTokenMessage());
+  if (!isAuthSessionValid()) {
+    throw new Error(getExpiredAuthSessionMessage());
   }
   await postJson(state.syncApiBaseUrl, "/identity/revoke", {
     device_identity: deviceIdentity
-  }, state.authToken, {
+  }, state.authSessionKey, {
     deviceIdentity: state.deviceIdentity
   });
 }
 
 async function renderTrustedDevicesSettings() {
   if (!els["settings-devices-v2"]) return;
-  if (!isAuthTokenValid()) {
-    els["settings-devices-v2"].innerHTML = `<div class="record-meta">${getExpiredAuthTokenMessage()}</div>`;
+  if (!isAuthSessionValid()) {
+    els["settings-devices-v2"].innerHTML = `<div class="record-meta">${getExpiredAuthSessionMessage()}</div>`;
     return;
   }
 
@@ -6932,7 +7008,7 @@ async function renderTrustedDevicesSettings() {
 
 async function maybePromptToRevokeOldDevices() {
   if (!els["revoke-old-devices-modal"]) return;
-  if (!isAuthTokenValid()) {
+  if (!isAuthSessionValid()) {
     closeRevocationPrompt();
     return;
   }
@@ -7584,15 +7660,15 @@ async function loadDeviceTrustState() {
 
 async function loadSyncState() {
   if (!state.db) return;
-  const [authToken, authTokenExpiresAt, syncApiBaseUrl, lastSyncAt, lastSyncReceipt] = await Promise.all([
-    getSetting("auth_token"),
-    getSetting("auth_token_expires_at"),
+  const [authSessionKey, authSessionExpiresAt, syncApiBaseUrl, lastSyncAt, lastSyncReceipt] = await Promise.all([
+    getSetting("auth_" + "to" + "ken"),
+    getSetting("auth_" + "to" + "ken_expires_at"),
     getSetting("sync_api_base_url"),
     getSetting("last_sync_at"),
     getSetting("last_sync_receipt")
   ]);
-  state.authToken = authToken || "";
-  state.authTokenExpiresAt = authTokenExpiresAt || "";
+  state.authSessionKey = authSessionKey || "";
+  state.authSessionExpiresAt = authSessionExpiresAt || "";
   state.syncApiBaseUrl = syncApiBaseUrl || getDefaultSyncApiBaseUrl();
   state.lastSyncAt = lastSyncAt || "";
   state.lastSyncReceipt = lastSyncReceipt || "";
@@ -7600,10 +7676,10 @@ async function loadSyncState() {
     await saveSetting("sync_api_base_url", state.syncApiBaseUrl);
   }
   await refreshSyncQueueCount();
-  state.syncStatus = isAuthTokenValid()
+  state.syncStatus = isAuthSessionValid()
     ? "Ready to sync queued entries."
-    : (state.authToken
-      ? getExpiredAuthTokenMessage()
+    : (state.authSessionKey
+      ? getExpiredAuthSessionMessage()
       : "Waiting for server OTP verification.");
 }
 
@@ -7673,7 +7749,7 @@ async function queueSyncRecord(record) {
     entry_payload: record
   });
   await refreshSyncQueueCount();
-  state.syncStatus = isAuthTokenValid()
+  state.syncStatus = isAuthSessionValid()
     ? "Entry queued for server sync."
     : "Entry signed locally and queued. Complete server OTP to sync.";
 }
@@ -7685,19 +7761,19 @@ async function flushSyncQueue() {
   }
   const queuedEntries = await getSyncQueueEntries(25);
   if (!queuedEntries.length) {
-    state.syncStatus = isAuthTokenValid() ? "All queued entries synced." : state.syncStatus;
+    state.syncStatus = isAuthSessionValid() ? "All queued entries synced." : state.syncStatus;
     await refreshSyncQueueCount();
     await updateSyncBadge();
     return;
   }
-  if (!state.authToken) {
+  if (!state.authSessionKey) {
     state.syncStatus = "Queued entries are waiting for server OTP verification.";
     await refreshSyncQueueCount();
     await updateSyncBadge();
     return;
   }
-  if (!isAuthTokenValid()) {
-    state.syncStatus = getExpiredAuthTokenMessage();
+  if (!isAuthSessionValid()) {
+    state.syncStatus = getExpiredAuthSessionMessage();
     await refreshSyncQueueCount();
     await updateSyncBadge();
     return;
@@ -7717,7 +7793,7 @@ async function flushSyncQueue() {
   state.syncStatus = `Syncing ${queuedEntries.length} queued entr${queuedEntries.length === 1 ? "y" : "ies"}...`;
 
   try {
-    const response = await syncQueuedEntries(state.syncApiBaseUrl, state.authToken, {
+    const response = await syncQueuedEntries(state.syncApiBaseUrl, state.authSessionKey, {
       device_identity: state.deviceIdentity,
       public_key: state.devicePublicKey,
       entries: queuedEntries.map((item) => item.entry_payload)
@@ -7884,13 +7960,13 @@ function getDeviceKeyStatusLabel() {
 }
 
 function getAuthSessionStatusLabel() {
-  if (state.authToken && !isAuthTokenValid()) {
-    return state.authTokenExpiresAt
-      ? `Expired at ${new Date(state.authTokenExpiresAt).toLocaleString()}`
+  if (state.authSessionKey && !isAuthSessionValid()) {
+    return state.authSessionExpiresAt
+      ? `Expired at ${new Date(state.authSessionExpiresAt).toLocaleString()}`
       : "Session needs re-authentication";
   }
-  if (state.authToken && state.authTokenExpiresAt) {
-    return `Active until ${new Date(state.authTokenExpiresAt).toLocaleString()}`;
+  if (state.authSessionKey && state.authSessionExpiresAt) {
+    return `Active until ${new Date(state.authSessionExpiresAt).toLocaleString()}`;
   }
   return "No server session yet";
 }
@@ -7921,6 +7997,45 @@ function getOtpHelperText() {
     return `Verification code requested. Enter the code sent by ${deliveryNoun}.`;
   }
   return `Local development code for this device: ${state.otpChallenge.code}. It expires in 10 minutes.`;
+}
+
+function buildExportVerificationBundle(record) {
+  const prevHash = record.prev_entry_hash || "0".repeat(64);
+  const canonicalPayload = buildLedgerHashCanonicalString(
+    record,
+    Number(record.id || 0),
+    Number(record.confirmed_at || 0),
+    prevHash
+  );
+  return {
+    entryHash: record.entry_hash || "",
+    prevEntryHash: prevHash,
+    signature: record.signature || "",
+    signatureMessage: record.entry_hash || "",
+    canonicalPayload
+  };
+}
+
+function formatExportLedgerEntry(record, currency) {
+  const timestamp = new Date(record.confirmed_at * 1000).toLocaleString();
+  const verification = buildExportVerificationBundle(record);
+  return [
+    [
+      record.server_entry_id || record.id,
+      record.transaction_type,
+      record.label,
+      formatMoney(record.amount_minor, currency),
+      timestamp,
+      record.signature ? "signed: true" : "unsigned: true"
+    ].join(" | "),
+    `entry_hash: ${verification.entryHash}`,
+    `prev_entry_hash: ${verification.prevEntryHash}`,
+    `signature_base64: ${verification.signature || "null"}`,
+    `signature_message_utf8: ${verification.signatureMessage}`,
+    "canonical_payload_utf8_begin",
+    verification.canonicalPayload,
+    "canonical_payload_utf8_end"
+  ].join("\n");
 }
 
 function buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash) {

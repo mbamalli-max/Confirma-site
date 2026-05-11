@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
-import { authenticateRequest, buildReceiptSignature } from "../auth-utils.js";
+import { authenticateRequest } from "../auth-utils.js";
+import { buildAttestationEnvelope } from "../attestation-signing.js";
 import { query, withTransaction } from "../db.js";
 import { maskPhone, maskEmail } from "../utils/mask.js";
 
@@ -259,14 +260,17 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = n
   const windowStart = new Date(entries[0].confirmed_at);
   const windowEnd = new Date(entries[entryCount - 1].confirmed_at);
   const vtId = crypto.randomBytes(16).toString("hex");
-  const serverSignature = buildReceiptSignature([
-    vtId,
-    deviceIdentity,
-    ledgerRootHash,
-    windowStart.toISOString(),
-    windowEnd.toISOString()
-  ]);
   const issuedAt = new Date();
+  const attestation = buildAttestationEnvelope({
+    vt_id: vtId,
+    device_identity: deviceIdentity,
+    ledger_root_hash: ledgerRootHash,
+    entry_count: entryCount,
+    window_start: windowStart.toISOString(),
+    window_end: windowEnd.toISOString(),
+    issued_at: issuedAt.toISOString(),
+    status: "VALID"
+  });
 
   await runner.query(
     `
@@ -285,29 +289,20 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = n
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'VALID', $9)
     `,
     [
-      vtId,
+      attestation.vt_id,
       deviceIdentity,
       phoneNumber,
-      ledgerRootHash,
-      windowStart.toISOString(),
-      windowEnd.toISOString(),
-      entryCount,
-      serverSignature,
-      issuedAt.toISOString()
+      attestation.ledger_root_hash,
+      attestation.window_start,
+      attestation.window_end,
+      attestation.entry_count,
+      attestation.server_signature,
+      attestation.issued_at
     ]
   );
 
   return {
-    vt_id: vtId,
-    verify_url: `${VERIFY_BASE_URL}/verify/${vtId}`,
-    ledger_root_hash: ledgerRootHash,
-    window_start: windowStart.toISOString(),
-    window_end: windowEnd.toISOString(),
-    entry_count: entryCount,
-    issued_at: issuedAt.toISOString(),
-    server_signature: serverSignature,
-    device_identity: deviceIdentity,
-    device_fingerprint: deviceIdentity.slice(0, 8),
+    ...attestation,
     entries
   };
 }
@@ -750,7 +745,10 @@ async function buildVerifiedReportPdf({
 
   const footerRows = [
     ["Ledger Root Hash", attestation.ledger_root_hash],
-    ["Server Signature", attestation.server_signature],
+    ["Attestation Payload (canonical JSON)", attestation.attestation_payload],
+    ["Attestation Signature (ECDSA P-256)", attestation.server_signature],
+    ["Signature Algorithm", attestation.signature_algorithm || "ECDSA_P256_SHA256_P1363"],
+    ["Verification Key URL", attestation.verification_key_url || `${VERIFY_BASE_URL}/.well-known/verification-key.json`],
     ["Attestation Timestamp", formatDateTime(attestation.issued_at)],
     ["Device Fingerprint", attestation.device_fingerprint],
     ["Key Rotation Events", String(keyRotationEvents)],
@@ -760,11 +758,13 @@ async function buildVerifiedReportPdf({
 
   let footerY = 140;
   footerRows.forEach(([label, value]) => {
+    const stringValue = String(value);
+    const valueHeight = doc.heightOfString(stringValue, { width: 495 });
     doc.fontSize(10).fillColor("#6B7C6B").text(label.toUpperCase(), 50, footerY);
-    doc.fontSize(11).fillColor("#0F1A10").text(String(value), 50, footerY + 14, {
+    doc.fontSize(11).fillColor("#0F1A10").text(stringValue, 50, footerY + 14, {
       width: 495
     });
-    footerY += 46;
+    footerY += 28 + valueHeight;
   });
 
   doc.fontSize(10).fillColor("#0F1A10").text(PATENT_NOTICE, 50, footerY + 18, {

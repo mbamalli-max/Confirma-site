@@ -1,14 +1,14 @@
 # Technical Architecture Specification (TAS)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.3.1
-**Date:** 2026-04-30
+**Version:** 3.4.0
+**Date:** 2026-05-11
 
 ---
 
 ## §1. System Overview
 
-Konfirmata is a financial identity infrastructure that converts informal business activity into cryptographically verifiable ledger records. The output is a bank-usable identity: a signed transaction history that can be verified offline from the text export and, when attested, server-verified through the public verification portal.
+Konfirmata is a financial identity infrastructure that converts informal business activity into cryptographically verifiable ledger records. The output is a bank-usable identity: a signed transaction history that can be verified offline from the text export and, when attested, checked offline with Konfirmata's published attestation verification key or cross-checked through the public verification portal.
 
 **Core thesis:** Ledger formation is always free. Payment gates only verified PDF export.
 
@@ -78,7 +78,7 @@ app-v3/
 ```
 
 Served at `/app` via Vercel `routes` config pointing to `app-v3/index.html`.
-Base href set to `/app/` so relative asset paths resolve correctly.
+Base href defaults to `/app/` in production. A small bootstrap script rewrites the `<base>` for `file://` local preview (`./`) and raw local HTTP preview of `app-v3/` (`/app-v3/`) so module imports resolve in each environment.
 
 ### 4.2 Screen Flow
 
@@ -153,9 +153,9 @@ Three independent dimensions (see PRD §3 for full spec):
 - `operating_region` — user-selected at onboarding — governs currency, capabilities
 - `language` — user-selected in Settings — governs UI locale and voice
 
-**Onboarding steps 1 and 2 are separate country selectors, both implemented as searchable input + filtered list (not visual grids).**
+**Onboarding steps 1 and 2 are separate country selectors, both implemented as searchable inputs with filtered country card grids.**
 Step 1 sets `phone_country` — pre-populated from `Intl.DateTimeFormat().resolvedOptions().locale` region segment (e.g. `en-NG` → Nigeria). User can override.
-Step 2 sets `operating_region`. They may differ.
+Step 2 sets `operating_region`. They may differ. The operating-region step also exposes an explicit continue button (`#operating-region-next`) so the flow remains recoverable when the shell has preselected the current region.
 
 **`REGION_CURRENCY_MAP`** maps ISO alpha-2 → ISO 4217 currency code.
 **`PAID_REPORT_REGIONS`** is a `Set` — currently `new Set(["NG"])`.
@@ -209,10 +209,10 @@ if (operating_region !== "NG") {
 
 ### 4.7 Canonical Signing String
 
-Used for both `entry_hash` computation and ECDSA signing:
+Used to compute `entry_hash`. The app then signs the UTF-8 bytes of the resulting `entry_hash` hex string with ECDSA:
 
 ```
-{transaction_type}|{label}|{amount_minor}|{currency}|{counterparty}|
+{id}|{transaction_type}|{normalized_label}|{amount_minor}|{currency}|{counterparty}|
 {business_type_id}|{country}|{source_account}|{destination_account}|
 {reversed_entry_hash}|{reversed_transaction_type}|{confirmed_at}|{prev_entry_hash}
 ```
@@ -254,9 +254,9 @@ const public_key_fingerprint = hash.slice(0, 16); // 16 hex chars = 8 bytes
 **Entry signing:**
 ```js
 const signatureBuffer = await crypto.subtle.sign(
-  { name: "ECDSA", hash: "SHA-256" },
+  { name: "ECDSA", hash: { name: "SHA-256" } },
   privateKey,
-  hexToBytes(entryHash)
+  new TextEncoder().encode(entryHash)
 );
 const signature = bytesToBase64(new Uint8Array(signatureBuffer)); // IEEE P1363 (raw r||s)
 ```
@@ -316,7 +316,7 @@ The private key remains non-extractable. Only the public key is converted from s
 
 ### 4.12 Service Worker
 
-**Cache name:** `confirma-cache-v7`
+**Cache name:** `confirma-cache-v9`
 
 **Cached files:**
 - `/app/index.html`
@@ -325,8 +325,9 @@ The private key remains non-extractable. Only the public key is converted from s
 - `/app/syncWorker.js`
 - `/app/manifest.json`
 - `/app/icons/icon.svg`
+- `/app/icons/icon-mask.svg`
 
-**Install:** Cache all files. Does NOT call `skipWaiting()` immediately.
+**Install:** Cache all files and call `skipWaiting()` immediately so the updated worker can replace stale onboarding shells quickly.
 
 **Message listener:**
 ```js
@@ -335,9 +336,9 @@ self.addEventListener("message", (event) => {
 });
 ```
 
-**Activate:** Delete old cache names, claim clients.
+**Activate:** Delete old cache names, claim clients, post `SW_UPDATED`, and navigate open windows so the new shell is picked up without requiring a manual cache purge.
 
-**Fetch:** Cache-first for navigation (returns `index.html`), cache-first for all assets.
+**Fetch:** Network-first for navigation with cached `index.html` fallback; stale-while-revalidate for app JS/CSS/HTML assets; cache-first for everything else.
 
 **Update flow:**
 1. New SW detected → `registration.waiting` exists
@@ -502,6 +503,7 @@ Voice is always optional — keyboard/tap path remains available on every step.
 | `POST` | `/sync/entries` | Bearer JWT | — | Upload signed entries, fork detection |
 | `POST` | `/identity/rotate` | Bearer JWT | — | OTP-verified key rotation |
 | `POST` | `/identity/revoke` | Bearer JWT | — | Revoke a device identity |
+| `GET` | `/.well-known/verification-key.json` | None | None | Published server verification key for offline attestation checks |
 | `POST` | `/attest` | Bearer JWT | — | Issue vt_id attestation certificate |
 | `GET` | `/verify/:vt_id` | None | 100/min per IP | Public verification endpoint |
 | `GET` | `/profile` | Bearer JWT | — | Fetch user profile |
@@ -617,7 +619,7 @@ CREATE TABLE attestations (
   window_days INTEGER NOT NULL,
   fork_status TEXT DEFAULT 'NORMAL',     -- NORMAL | FORKED
   key_rotation_events INTEGER DEFAULT 0,
-  server_signature TEXT NOT NULL,        -- HMAC-SHA256 of attestation fields
+  server_signature TEXT NOT NULL,        -- Base64 IEEE P1363 ECDSA attestation signature (legacy rows may contain HMAC)
   issued_at TIMESTAMPTZ DEFAULT NOW(),
   verify_url TEXT,
   entries JSONB,                         -- snapshot of entries for PDF generation
@@ -654,7 +656,7 @@ CREATE TABLE schema_migrations (
 | Entry signature verification | ECDSA P-256, IEEE P1363 | User's public key (JWK, stored at registration) |
 | HMAC sync receipt | HMAC-SHA256 | `SERVER_RECEIPT_SECRET` |
 | JWT issuance/verification | HS256 | `JWT_SECRET` |
-| Attestation server signature | HMAC-SHA256 | `SERVER_RECEIPT_SECRET` |
+| Attestation server signature | ECDSA P-256, IEEE P1363 | `SERVER_ATTESTATION_PRIVATE_KEY_PEM` |
 | OTP hash | SHA-256(`"{identifier}:{code}"`) | — |
 | vt_id generation | `crypto.randomBytes(16).toString('hex')` | — |
 | Paystack webhook verification | HMAC-SHA512 | `PAYSTACK_SECRET_KEY` |
@@ -703,6 +705,7 @@ DATABASE_URL=postgresql://...
 DATABASE_SSL=true
 JWT_SECRET=<256-bit hex — REQUIRED>
 SERVER_RECEIPT_SECRET=<256-bit hex — REQUIRED>
+SERVER_ATTESTATION_PRIVATE_KEY_PEM=<PEM-encoded P-256 private key — REQUIRED in production>
 JWT_EXPIRY=30d
 OTP_TTL_MINUTES=10
 OTP_RATE_LIMIT_PER_HOUR=5
@@ -716,10 +719,11 @@ RESEND_FROM_EMAIL=Konfirmata <noreply@konfirmata.com>
 PAYSTACK_SECRET_KEY=<key>       # webhook HMAC + verification
 PAYSTACK_PUBLIC_KEY=<key>       # frontend Paystack Inline
 VERIFY_BASE_URL=https://konfirmata.com
+VERIFICATION_KEY_URL=https://konfirmata.com/.well-known/verification-key.json
 CORS_ORIGINS=https://konfirmata.com,https://www.konfirmata.com
 ```
 
-Server refuses to boot in production if `JWT_SECRET` or `SERVER_RECEIPT_SECRET` are empty.
+Server refuses to boot in production if `JWT_SECRET`, `SERVER_RECEIPT_SECRET`, or `SERVER_ATTESTATION_PRIVATE_KEY_PEM` are empty.
 
 ---
 
@@ -735,13 +739,16 @@ POST /attest (Bearer JWT)
   → ledger_root_hash = entry_hash of last entry in window
   → entry_count = COUNT(entries)
   → vt_id = crypto.randomBytes(16).toString('hex')
-  → server_signature = HMAC-SHA256(vt_id || phone || device_identity ||
-                                   ledger_root_hash || entry_count ||
-                                   window_start || window_end, SERVER_RECEIPT_SECRET)
+  → attestation_payload = canonical JSON containing:
+      vt_id, device_fingerprint, ledger_root_hash, entry_count,
+      window_start, window_end, issued_at, status, attestation_scope
+  → server_signature = ECDSA-P256-SHA256(attestation_payload, SERVER_ATTESTATION_PRIVATE_KEY_PEM)
   → INSERT INTO attestations
   → Return { vt_id, verify_url, ledger_root_hash, entry_count, window_start,
-             window_end, fork_status, issued_at, attestation_scope: "single_device",
-             scope_description: "This report reflects records from a single device only." }
+             window_end, issued_at, attestation_scope: "single_device",
+             scope_description: "This report reflects records from a single device only.",
+             attestation_payload, server_signature, signature_algorithm,
+             verification_key_url }
 ```
 
 ### 6.2 Verification Flow
@@ -749,16 +756,18 @@ POST /attest (Bearer JWT)
 ```
 GET /verify/:vt_id (public, rate-limited 100/min/IP)
   → Fetch attestation from DB
-  → Recompute HMAC-SHA256 with stored fields
-  → Compare with stored server_signature
+  → Rebuild canonical attestation_payload from stored fields
+  → Verify ECDSA signature with public key from /.well-known/verification-key.json
   → If match: status = VALID
+  → Legacy HMAC attestations remain valid through a server-side compatibility fallback
   → If mismatch: status = UNKNOWN
   → If device FORKED/REVOKED: fork_status reflects actual status
   → Return {
       vt_id, attested_at, window_start, window_end, entry_count,
       fork_status, device_fingerprint (8 chars only), key_rotation_events,
       attestation_scope: "single_device",
-      scope_description: "...",
+      scope_description: "...", attestation_payload, server_signature,
+      signature_algorithm, verification_key_url,
       status: "VALID" | "FORKED" | "REVOKED" | "UNKNOWN"
     }
 ```
@@ -823,7 +832,12 @@ Client-generated by `generateExport()` in `app-v3/app.js`:
 - Header metadata, single-device scope note, sync/device status
 - User contact details unmasked because this is the user's own export
 - Income statement and monthly cash flow sections
-- Full transaction ledger appendix
+- Full transaction ledger appendix with per-entry verification bundle:
+  - `entry_hash`
+  - `prev_entry_hash`
+  - `signature_base64`
+  - `signature_message_utf8` (the exact UTF-8 message signed by ECDSA; currently equal to `entry_hash`)
+  - `canonical_payload_utf8` delimited by `canonical_payload_utf8_begin` / `canonical_payload_utf8_end`
 - Evidence summary
 - Integrity data: ledger root hash, verification status, optional `vt_id`, optional `verify_url`, optional QR code data URL
 - `DEVICE PUBLIC KEY (ECDSA P-256)` section appended after integrity data
@@ -832,7 +846,7 @@ Public key export rules:
 - Source: stored device public key from `settings.device_public_key`
 - Stored format: canonical public JWK string used for device identity and fingerprint derivation
 - Export format: SPKI bytes encoded as Base64
-- Purpose: allow any third party to verify ECDSA P-256 signatures offline without contacting Konfirmata servers
+- Purpose: allow any third party to recompute `entry_hash`, verify the ECDSA signature, and walk the hash chain from the exported file itself
 - Failure mode: never fail the export; append `Public Key: Not available — key storage error`
 - Do not change signing logic, hash-chain computation, `verify_url`, QR generation, or IndexedDB write paths
 
@@ -864,6 +878,9 @@ Server-generated via pdfkit:
 
 **Footer:**
 - `ledger_root_hash`
+- `attestation_payload`
+- `server_signature` (ECDSA P-256 attestation signature)
+- `verification_key_url`
 - `vt_id`
 - QR code pointing to `verify_url`
 - Device fingerprint (8 chars)
@@ -1167,3 +1184,5 @@ Routing via `vercel.json` `routes` array (not `rewrites`).
 | 3.2 | 2026-04-12 | **New section:** §4.15 Onboarding Voice Input — mic icon on every onboarding step, fuzzy-match speak-to-select, TTS readback per step type. Reuses `getVoiceLocale()`, `speakConfirmationCopy()`, `startSpeechMatch()` pattern. |
 | 3.3 | 2026-04-27 | **Free export offline verification:** `generateExport()` embeds the device ECDSA P-256 public key as Base64 SPKI after integrity data, enabling independent signature verification without server contact. Documents graceful key-storage failure behavior and public-only export constraint. |
 | 3.3.1 | 2026-04-30 | **Doc accuracy pass:** service worker cache name updated to `confirma-cache-v7`; environment template port updated to `8787` to match server `.env`. |
+| 3.3.2 | 2026-05-10 | **Onboarding recovery + runtime parity:** onboarding country selectors documented as searchable card grids; operating-region continue CTA (`#operating-region-next`) documented. **Local preview:** runtime `<base>` rewrite documented for `file://` and raw local HTTP preview. **Service worker:** cache name updated to `confirma-cache-v9`, `icon-mask.svg` added to precache list, navigation fetch updated to network-first with cached shell fallback, and activate behavior documented as window refresh/navigation to clear stale shells after redeploy. |
+| 3.4.0 | 2026-05-11 | **Offline verification hardening:** free text export now emits per-entry verification bundles (`entry_hash`, `prev_entry_hash`, `signature_base64`, `signature_message_utf8`, `canonical_payload_utf8`). **Attestations:** new server attestations use ECDSA P-256 signatures and publish the verification key at `/.well-known/verification-key.json`, while the verify endpoint retains legacy HMAC fallback for older reports. **Doc accuracy:** canonical signing string and entry-signing snippets corrected to match the live implementation that signs the UTF-8 `entry_hash` message. |
