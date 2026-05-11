@@ -1,10 +1,20 @@
 import crypto from "node:crypto";
 import { authenticateRequest, buildReceiptSignature } from "../auth-utils.js";
 import { query } from "../db.js";
-
-const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL || "https://konfirmata.com";
+import {
+  ATTESTATION_SCOPE,
+  ATTESTATION_SCOPE_DESCRIPTION,
+  LEGACY_ATTESTATION_SIGNATURE_ALGORITHM,
+  buildAttestationPayload,
+  buildAttestationEnvelope,
+  exportPublishedVerificationKey,
+  getVerificationKeyMetadata,
+  verifyAttestationPayload
+} from "../attestation-signing.js";
 
 export async function registerAttestRoutes(app) {
+  app.get("/.well-known/verification-key.json", async () => exportPublishedVerificationKey());
+
   app.post("/attest", async (request, reply) => {
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
@@ -57,42 +67,41 @@ export async function registerAttestRoutes(app) {
     const windowStart = new Date(entries[0].confirmed_at);
     const windowEnd = new Date(entries[entryCount - 1].confirmed_at);
 
-    // Generate vt_id
     const vtId = crypto.randomBytes(16).toString("hex");
 
-    // HMAC server signature
-    const serverSignature = buildReceiptSignature([
-      vtId,
-      deviceIdentity,
-      ledgerRootHash,
-      windowStart.toISOString(),
-      windowEnd.toISOString()
-    ]);
-
     const issuedAt = new Date();
+    const attestation = buildAttestationEnvelope({
+      vt_id: vtId,
+      device_identity: deviceIdentity,
+      ledger_root_hash: ledgerRootHash,
+      entry_count: entryCount,
+      window_start: windowStart.toISOString(),
+      window_end: windowEnd.toISOString(),
+      issued_at: issuedAt.toISOString(),
+      status: "VALID"
+    });
 
-    // Insert attestation
     await query(
       `
         INSERT INTO attestations (vt_id, device_identity, phone_number, ledger_root_hash, window_start, window_end, entry_count, server_signature, status, issued_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'VALID', $9)
       `,
-      [vtId, deviceIdentity, auth.phone_number, ledgerRootHash, windowStart.toISOString(), windowEnd.toISOString(), entryCount, serverSignature, issuedAt.toISOString()]
+      [
+        attestation.vt_id,
+        deviceIdentity,
+        auth.phone_number,
+        attestation.ledger_root_hash,
+        attestation.window_start,
+        attestation.window_end,
+        attestation.entry_count,
+        attestation.server_signature,
+        attestation.issued_at
+      ]
     );
-
-    const verifyUrl = `${VERIFY_BASE_URL}/verify/${vtId}`;
 
     return {
       ok: true,
-      vt_id: vtId,
-      ledger_root_hash: ledgerRootHash,
-      window_start: windowStart.toISOString(),
-      window_end: windowEnd.toISOString(),
-      entry_count: entryCount,
-      issued_at: issuedAt.toISOString(),
-      verify_url: verifyUrl,
-      attestation_scope: "single_device",
-      scope_description: "This report reflects records from a single device only."
+      ...attestation
     };
   });
 
@@ -121,16 +130,37 @@ export async function registerAttestRoutes(app) {
       return { status: "UNKNOWN" };
     }
 
-    // Re-verify server_signature
-    const expectedSignature = buildReceiptSignature([
-      attestation.vt_id,
-      attestation.device_identity,
-      attestation.ledger_root_hash,
-      new Date(attestation.window_start).toISOString(),
-      new Date(attestation.window_end).toISOString()
-    ]);
+    const attestationPayload = buildAttestationPayload({
+      vt_id: attestation.vt_id,
+      device_fingerprint: attestation.device_identity.substring(0, 8),
+      ledger_root_hash: attestation.ledger_root_hash,
+      entry_count: attestation.entry_count,
+      window_start: attestation.window_start,
+      window_end: attestation.window_end,
+      issued_at: attestation.issued_at,
+      status: attestation.status
+    });
 
-    if (expectedSignature !== attestation.server_signature) {
+    const verificationKeyMetadata = getVerificationKeyMetadata();
+    let signatureAlgorithm = verificationKeyMetadata.signature_algorithm;
+    let verificationKeyUrl = verificationKeyMetadata.verification_key_url;
+
+    if (!verifyAttestationPayload(attestationPayload, attestation.server_signature)) {
+      const legacyExpectedSignature = buildReceiptSignature([
+        attestation.vt_id,
+        attestation.device_identity,
+        attestation.ledger_root_hash,
+        new Date(attestation.window_start).toISOString(),
+        new Date(attestation.window_end).toISOString()
+      ]);
+      if (legacyExpectedSignature !== attestation.server_signature) {
+        return { status: "INVALID" };
+      }
+      signatureAlgorithm = LEGACY_ATTESTATION_SIGNATURE_ALGORITHM;
+      verificationKeyUrl = null;
+    }
+
+    if (!attestation.server_signature) {
       return { status: "INVALID" };
     }
 
@@ -156,11 +186,15 @@ export async function registerAttestRoutes(app) {
       ledger_root_hash: attestation.ledger_root_hash,
       window_start: new Date(attestation.window_start).toISOString(),
       window_end: new Date(attestation.window_end).toISOString(),
-      entry_count: attestation.entry_count,
+      entry_count: Number(attestation.entry_count || 0),
       key_rotation_events: rotationResult.rows[0]?.rotation_count || 0,
       fork_status: forkStatus,
-      attestation_scope: "single_device",
-      scope_description: "This report reflects records from a single device only."
+      attestation_scope: ATTESTATION_SCOPE,
+      scope_description: ATTESTATION_SCOPE_DESCRIPTION,
+      server_signature: attestation.server_signature,
+      attestation_payload: attestationPayload,
+      signature_algorithm: signatureAlgorithm,
+      verification_key_url: verificationKeyUrl
     };
   });
 }

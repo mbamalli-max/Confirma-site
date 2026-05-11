@@ -24,6 +24,10 @@
   ],
   "routes": [
     {
+      "src": "/\\.well-known/verification-key\\.json",
+      "dest": "https://api.konfirmata.com/.well-known/verification-key.json"
+    },
+    {
       "src": "/app/sw.js",
       "dest": "/app-v3/sw.js",
       "headers": { "Service-Worker-Allowed": "/app" }

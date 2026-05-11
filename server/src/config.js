@@ -15,6 +15,15 @@ function normalizeOtpChannel(rawValue) {
   return String(rawValue || "").trim().toLowerCase() === "sms" ? "sms" : "email";
 }
 
+function normalizeMultilineSecret(rawValue) {
+  return String(rawValue || "").replace(/\\n/g, "\n").trim();
+}
+
+function normalizeBaseUrl(rawValue, fallback) {
+  const value = String(rawValue || fallback || "").trim();
+  return value.replace(/\/+$/, "");
+}
+
 function isPlaceholderSecret(value, placeholders = []) {
   const normalizedValue = String(value || "").trim();
   return !normalizedValue || placeholders.includes(normalizedValue);
@@ -28,14 +37,19 @@ export const config = {
   databaseSsl: String(process.env.DATABASE_SSL || "false") === "true",
   jwtSecret: process.env.JWT_SECRET || "",
   serverReceiptSecret: process.env.SERVER_RECEIPT_SECRET || "",
+  serverAttestationPrivateKeyPem: normalizeMultilineSecret(
+    process.env.SERVER_ATTESTATION_PRIVATE_KEY_PEM || process.env.SERVER_ATTESTATION_PRIVATE_KEY || ""
+  ),
   jwtExpiry: process.env.JWT_EXPIRY || "30d",
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES || 10),
   otpRateLimitPerHour: Number(process.env.OTP_RATE_LIMIT_PER_HOUR || 50),
   otpDefaultChannel: normalizeOtpChannel(process.env.OTP_DEFAULT_CHANNEL || "email"),
-  allowDevOtp: String(process.env.ALLOW_DEV_OTP || "true") === "true",
+  allowDevOtp: String(process.env.ALLOW_DEV_OTP || "false") === "true",
   smsProviderEnabled: String(process.env.SMS_PROVIDER_ENABLED || "false") === "true",
   resendApiKey: String(process.env.RESEND_API_KEY || "").trim(),
-  resendFromEmail: String(process.env.RESEND_FROM_EMAIL || "Konfirmata <noreply@konfirmata.com>").trim()
+  resendFromEmail: String(process.env.RESEND_FROM_EMAIL || "Konfirmata <noreply@konfirmata.com>").trim(),
+  verifyBaseUrl: normalizeBaseUrl(process.env.VERIFY_BASE_URL, "https://konfirmata.com"),
+  verificationKeyUrl: normalizeBaseUrl(process.env.VERIFICATION_KEY_URL, "")
 };
 
 export function getAuthDeliverySummary() {
@@ -62,6 +76,14 @@ export function validateRuntimeConfig() {
 
   if (!config.serverReceiptSecret) {
     errors.push("SERVER_RECEIPT_SECRET environment variable is required");
+  }
+
+  if (strictMode && !config.serverAttestationPrivateKeyPem) {
+    errors.push("SERVER_ATTESTATION_PRIVATE_KEY_PEM environment variable is required in production for offline attestation verification.");
+  }
+
+  if (!strictMode && !config.serverAttestationPrivateKeyPem) {
+    warnings.push("SERVER_ATTESTATION_PRIVATE_KEY_PEM is not set; development attestation signatures will use an ephemeral in-memory key.");
   }
 
   if (config.smsProviderEnabled) {
