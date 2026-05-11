@@ -24,7 +24,7 @@
     <nav class="site-nav" aria-label="Primary navigation">
       <a href="/">Home</a>
       <a href="/entrepreneurs.html">For Entrepreneurs</a>
-      <a href="/lenders.html">For Lenders</a>
+      <a href="/lenders.html">For Institutions</a>
       <a href="/how-it-works.html">How It Works</a>
       <a href="/about.html">About</a>
       <a class="nav-app" href="/app">Open App</a>
@@ -183,4 +183,12 @@
         }
 
         showResult(data, code);
-  
+      } catch (error) {
+        showNetworkError(code);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", loadPublicReview);
+  </script>
+</body>
+</html>
