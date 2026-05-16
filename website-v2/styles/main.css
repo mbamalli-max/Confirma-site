@@ -742,6 +742,15 @@ li {
   color: var(--muted);
 }
 
+.verify-example {
+  font-size: 0.9rem;
+}
+
+.verify-example a {
+  color: var(--accent, #2E7D55);
+  text-decoration: underline;
+}
+
 .verify-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 0.6fr);

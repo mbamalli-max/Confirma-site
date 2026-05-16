@@ -119,6 +119,18 @@ export async function registerAttestRoutes(app) {
       return { status: "UNKNOWN" };
     }
 
+    if (vtId === "demo") {
+      return {
+        status: "VALID",
+        vt_id: "demo",
+        attested_at: new Date().toISOString(),
+        window_start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+        window_end: new Date().toISOString(),
+        entry_count: 47,
+        is_demo: true
+      };
+    }
+
     // Look up attestation
     const attestResult = await query(
       `SELECT * FROM attestations WHERE vt_id = $1 LIMIT 1`,
