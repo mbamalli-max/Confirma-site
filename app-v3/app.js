@@ -3208,7 +3208,7 @@ async function generateExport() {
     try {
       const response = await postJson(state.syncApiBaseUrl, "/attest", {
         device_identity: state.deviceIdentity,
-        window_days: 90
+        window_days: 0
       }, state.authSessionKey, {
         deviceIdentity: state.deviceIdentity
       });
@@ -3555,7 +3555,7 @@ async function buildClientVerifiablePdfReport() {
   try {
     attestation = await postJson(state.syncApiBaseUrl, "/attest", {
       device_identity: state.deviceIdentity,
-      window_days: 3650
+      window_days: 0
     }, state.authSessionKey, {
       deviceIdentity: state.deviceIdentity
     });
