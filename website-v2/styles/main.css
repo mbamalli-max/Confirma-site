@@ -758,6 +758,36 @@ li {
   margin-top: 1.5rem;
 }
 
+.attestation-details {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(13, 31, 23, 0.14);
+}
+
+.attestation-details h2 {
+  margin: 0.25rem 0 0;
+  color: var(--dark);
+  font-size: clamp(1.5rem, 4vw, 2.2rem);
+}
+
+.attestation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.mono-value {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.mono-value a {
+  color: var(--accent, #2E7D55);
+  text-decoration: underline;
+}
+
 .status-block {
   padding: 1rem;
 }
@@ -839,7 +869,8 @@ li {
   .narrative-grid,
   .two-column,
   .inventor-layout,
-  .verify-grid {
+  .verify-grid,
+  .attestation-grid {
     grid-template-columns: 1fr;
   }
 

@@ -6,6 +6,7 @@ import { maskPhone, maskEmail } from "../utils/mask.js";
 
 const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL || "https://konfirmata.com";
 const PATENT_NOTICE = "Protected under USPTO Provisional Application 63/987,858. Konfirmata Temporal Attestation System (TAS). Unauthorized reproduction of this attestation mechanism is prohibited.";
+const VERIFIED_REPORT_TEMPLATE_VERSION = "2026-05-16-redesign";
 let resendModulePromise = null;
 let pdfkitModulePromise = null;
 let qrCodeModulePromise = null;
@@ -491,6 +492,8 @@ async function buildVerifiedReportPdf({
   const PDFDocument = await getPdfDocumentConstructor();
   const QRCode = await getQrCodeModule();
   const doc = new PDFDocument({ size: "A4", margin: 50, bufferPages: true });
+  doc.info.Title = "Konfirmata Verified Report";
+  doc.info.Subject = `Verified report template ${VERIFIED_REPORT_TEMPLATE_VERSION}`;
   const chunks = [];
 
   const pdfReady = new Promise((resolve, reject) => {

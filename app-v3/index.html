@@ -3,113 +3,42 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <base href="/app/">
+  <base id="app-base" href="/app/">
+  <script>
+    (function() {
+      var base = document.getElementById("app-base");
+      if (!base) return;
+
+      var isFile = window.location.protocol === "file:";
+      var isLocalHttp = /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+      var path = window.location.pathname || "";
+
+      if (isFile) {
+        base.setAttribute("href", "./");
+        return;
+      }
+
+      if (isLocalHttp && path.indexOf("/app-v3/") !== -1) {
+        base.setAttribute("href", "/app-v3/");
+        return;
+      }
+
+      base.setAttribute("href", "/app/");
+    })();
+  </script>
   <meta name="theme-color" content="#1A3C34">
   <meta name="color-scheme" content="light">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Konfirmata">
   <meta name="application-name" content="Konfirmata">
-  <meta name="description" content="Konfirmata — voice-first transaction capture. Build verified financial history.">
+  <meta name="description" content="Konfirmata — voice-first transaction capture. Build verifiable business records.">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon.svg">
   <link rel="stylesheet" href="styles.css">
   <style>
     [hidden] { display: none !important; }
-
-    .interstitial-wrap {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      padding: 2rem;
-      gap: 1.5rem;
-    }
-
-    .interstitial-label {
-      font-size: 0.7rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    .interstitial-ad-slot {
-      width: 100%;
-      max-width: 400px;
-    }
-
-    .interstitial-footer {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-
-    .interstitial-timer {
-      font-size: 0.85rem;
-      color: var(--muted);
-    }
-
-    .house-ad {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 1rem;
-      background: var(--card);
-      display: flex;
-      flex-direction: column;
-      gap: 0.4rem;
-      box-shadow: var(--shadow-xs);
-    }
-
-    .house-ad-brand {
-      font-size: 0.65rem;
-      text-transform: uppercase;
-      color: var(--muted);
-      letter-spacing: 0.08em;
-    }
-
-    .house-ad-headline {
-      font-weight: 600;
-      font-size: 0.95rem;
-    }
-
-    .house-ad-body {
-      font-size: 0.8rem;
-      color: var(--muted);
-    }
-
-    .house-ad-cta {
-      align-self: flex-start;
-      margin-top: 0.25rem;
-    }
-
-    .ad-record {
-      position: relative;
-    }
-
-    .ad-record::after {
-      content: "Sponsored";
-      position: absolute;
-      top: 0.5rem;
-      right: 0.75rem;
-      font-size: 0.6rem;
-      color: var(--muted);
-      background: var(--surface);
-      padding: 1px 5px;
-      border-radius: 4px;
-      border: 1px solid var(--border);
-    }
-
-    .ad-banner-slot {
-      padding: 0.75rem 1rem;
-    }
-
-    .rewarded-export-wrap {
-      display: grid;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
-    }
 
     .anomaly-banner {
       background: #fff3cd;
@@ -174,7 +103,7 @@
     }
 
     .restore-link {
-      margin-top: 0.9rem;
+      margin: 0 0 0.9rem;
       border: 0;
       background: transparent;
       color: var(--muted);
@@ -267,17 +196,6 @@
   </div>
 
   <div class="app-shell">
-    <section class="screen" id="screen-interstitial">
-      <div class="interstitial-wrap">
-        <div class="interstitial-label">Advertisement</div>
-        <div class="interstitial-ad-slot" id="interstitial-slot"></div>
-        <div class="interstitial-footer">
-          <span class="interstitial-timer" id="interstitial-countdown">Skip in 5s</span>
-          <button class="btn btn-secondary" id="interstitial-skip" type="button" disabled>Skip →</button>
-        </div>
-      </div>
-    </section>
-
     <section class="screen active" id="screen-onboarding">
       <div class="hero">
         <div class="hero-mark" aria-hidden="true">
@@ -293,41 +211,50 @@
         </div>
         <div>
           <h1>Konfirmata</h1>
-          <p>Voice-first transaction capture. Build verified financial history.</p>
+          <p>Voice-first transaction capture. Build verifiable business records.</p>
         </div>
       </div>
 
       <div class="panel">
         <div class="stepper-row">
-          <div class="stepper" id="onboarding-step-copy">Step 1 of 5</div>
+          <div class="stepper" id="onboarding-step-copy">Step 1 of 6</div>
           <button class="pill-button" id="onboarding-back" type="button" hidden>Back</button>
         </div>
 
         <div class="step active" data-step="1">
-          <h2>Choose your country</h2>
-          <div class="visual-grid" id="country-grid"></div>
+          <h2>Choose your phone country</h2>
+          <p class="subtle">We use this for phone number formatting and OTP delivery. Your business region can be different.</p>
           <button class="restore-link" id="restore-account-link" type="button">Already have an account? Restore your account →</button>
+          <div class="visual-grid" id="country-grid"></div>
         </div>
 
-        <div class="step" data-step="2">
+        <div class="step" data-step="2" id="operating-region-step">
+          <h2>Where does your business primarily operate?</h2>
+          <p class="subtle">This sets your business context, default currency, and region-specific features.</p>
+          <button class="btn btn-secondary" id="operating-region-next" type="button" disabled>Continue with selected country</button>
+          <div class="visual-grid" id="operating-region-grid"></div>
+          <p class="subtle" id="operating-region-note" hidden></p>
+        </div>
+
+        <div class="step" data-step="3">
           <h2>Choose your sector</h2>
           <div class="visual-grid" id="sector-grid"></div>
         </div>
 
-        <div class="step" data-step="3">
+        <div class="step" data-step="4">
           <h2>Choose your business type</h2>
           <p class="subtle" id="business-helper"></p>
           <div class="visual-grid" id="business-grid"></div>
         </div>
 
-        <div class="step" data-step="4">
+        <div class="step" data-step="5">
           <h2>Pick your common transactions</h2>
           <p class="subtle">Choose the labels you use most often. Konfirmata will surface them more often while recording.</p>
           <div class="visual-grid label-grid" id="common-label-grid"></div>
           <button class="btn btn-secondary" id="onboarding-next" type="button">Continue</button>
         </div>
 
-        <div class="step" data-step="5">
+        <div class="step" data-step="6">
           <h2>About you</h2>
           <p class="subtle">This helps personalise your records and supports account
           recovery. All fields except name are optional.</p>
@@ -551,7 +478,6 @@
         </div>
         <button class="pill-button" id="back-home" type="button">Back</button>
       </header>
-      <div class="ad-banner-slot" id="banner-history" hidden></div>
       <div class="panel">
         <div class="history-list" id="history-records-v2"></div>
       </div>
@@ -565,14 +491,13 @@
         </div>
         <button class="pill-button privacy-button" id="privacy-toggle-btn" type="button" aria-label="Toggle amount visibility">👁️</button>
       </header>
-      <div class="ad-banner-slot" id="banner-dashboard" hidden></div>
       <div class="metric-grid">
         <div class="metric-card">
-          <span>Today’s Sales</span>
+          <span>Today’s Inflows</span>
           <strong class="money-value" id="dash-today-sales-v2">₦0</strong>
         </div>
         <div class="metric-card">
-          <span>Monthly Sales</span>
+          <span>Monthly Inflows</span>
           <strong class="money-value" id="dash-monthly-sales-v2">₦0</strong>
         </div>
         <div class="metric-card">
@@ -608,11 +533,11 @@
         <div class="banner-content">
           <span class="banner-icon" id="banner-tier-icon">🥉</span>
           <div>
-            <strong id="banner-headline">You have 30 days of verified history.</strong>
-            <p class="subtle" id="banner-subtext">Generate your Verified Report to share with lenders.</p>
+            <strong id="banner-headline">You have 30 days of record history.</strong>
+            <p class="subtle" id="banner-subtext">Generate a verifiable business record export when you choose to share.</p>
           </div>
         </div>
-        <button class="btn btn-primary btn-sm" id="banner-cta" type="button" data-target-screen="screen-export">Get Verified Report</button>
+        <button class="btn btn-primary btn-sm" id="banner-cta" type="button" data-target-screen="screen-export">Get Verifiable Export</button>
       </div>
       <div class="panel">
         <h2>Recent confirmed records</h2>
@@ -748,15 +673,6 @@
           <button class="btn btn-secondary" id="settings-logout-v2" type="button">Log out</button>
         </div>
       </div>
-      <div class="panel" id="upgrade-plan-panel" hidden>
-        <h2>Upgrade plan</h2>
-        <p class="subtle">Remove ads and unlock unlimited exports.</p>
-        <div class="button-stack" style="margin-top:12px">
-          <button class="btn btn-primary" id="upgrade-plan-btn" type="button">
-            View plans
-          </button>
-        </div>
-      </div>
       <div class="panel" id="install-app-panel" hidden>
         <h2>Install app</h2>
         <p class="subtle" id="install-app-hint">Add Konfirmata to your home screen for faster access and full offline support.</p>
@@ -773,33 +689,19 @@
           <span>Download confirmed records</span>
         </div>
       </header>
-      <div class="ad-banner-slot" id="banner-export" hidden></div>
       <div class="panel">
-        <h2>Free export</h2>
-        <p class="subtle">Download confirmed transactions with a simple integrity trail for review.</p>
+        <h2>Verifiable PDF export</h2>
+        <p class="subtle">Download a server-attested PDF with QR code, full entry list, and record integrity data.</p>
         <div class="settings-list" id="export-trust-status-v3"></div>
-        <div class="rewarded-export-wrap" id="rewarded-export-wrap" hidden>
-          <p class="record-meta">You’ve used all free exports for this month.</p>
-          <button class="btn btn-secondary" id="rewarded-export-button" type="button">Watch a short ad to unlock 1 more export</button>
-        </div>
         <button class="btn btn-secondary" id="export-open-trust-v3" type="button">Open email verification</button>
-        <button class="btn btn-primary" id="export-button-v2" type="button">Generate export</button>
+        <button class="btn btn-primary" id="export-button-v2" type="button">Generate verifiable PDF</button>
         <div class="verified-report-section" id="verified-report-section" hidden>
-          <h3>Verified Report (PDF)</h3>
-          <p class="subtle">Server-attested PDF with QR code, full entry list, and integrity proof. Accepted by lenders.</p>
-          <p class="record-meta" id="verified-report-region-note" hidden>Verified Reports — coming soon for your region.</p>
-          <div class="payment-tiers" id="payment-tiers">
-            <button class="btn btn-secondary tier-btn" data-tier="bronze" data-amount="50000" data-window="30" type="button">
-              ₦500 — 30 days
-            </button>
-            <button class="btn btn-secondary tier-btn" data-tier="silver" data-amount="150000" data-window="90" type="button">
-              ₦1,500 — 90 days
-            </button>
-            <button class="btn btn-primary tier-btn" data-tier="gold" data-amount="250000" data-window="0" type="button">
-              ₦2,500 — Full history
-            </button>
-          </div>
-          <p class="record-meta" id="payment-status" aria-live="polite" aria-atomic="true"></p>
+          <h3>Verifiable Export</h3>
+          <p class="subtle">Server-attested file with QR code, full entry list, and record integrity data. The app is free to use.</p>
+          <p class="subtle">Konfirmata does not independently verify that an underlying transaction occurred. It produces tamper-evident business activity records whose integrity, sequence, and device origin can be cryptographically verified.</p>
+          <p class="record-meta" id="verified-report-region-note" hidden>Verifiable exports — coming soon for your region.</p>
+          <button class="btn btn-primary" id="free-report-btn" type="button" hidden>Generate verifiable export</button>
+          <p class="record-meta" id="report-status" aria-live="polite" aria-atomic="true"></p>
         </div>
         <p class="record-meta" id="export-status-v2" aria-live="polite" aria-atomic="true"></p>
         <p class="record-meta storage-warning" id="storage-warning-v2" hidden></p>
@@ -960,9 +862,9 @@
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="revoke-old-devices-title">
       <div class="action-header">
         <div>
-          <h2 id="revoke-old-devices-title">Previous device detected</h2>
-          <p class="subtle">We found another active device linked to your account.
-          If you've lost or replaced that phone, revoke it now to prevent unauthorised access.</p>
+          <h2 id="revoke-old-devices-title">Active account sessions</h2>
+          <p class="subtle">Older active sign-ins can include repeated restores on this phone.
+          Revoke them only if you lost or replaced a device.</p>
         </div>
       </div>
       <div class="device-list" id="revoke-old-devices-list"></div>
@@ -1020,22 +922,8 @@
     </div>
   </div>
 
-  <div class="modal-shell" id="rewarded-ad-modal" hidden>
-    <div class="modal-backdrop"></div>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rewarded-ad-title">
-      <div class="interstitial-wrap" style="min-height:auto;padding:0">
-        <div class="interstitial-label" id="rewarded-ad-title">Advertisement</div>
-        <div class="interstitial-ad-slot" id="rewarded-ad-slot"></div>
-        <div class="interstitial-footer">
-          <span class="interstitial-timer" id="rewarded-ad-countdown">Unlock in 15s</span>
-          <button class="btn btn-secondary" id="rewarded-ad-complete" type="button" disabled>Unlock export</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js" integrity="sha384-HGmnkDZJy7mRkoARekrrj0VjEFSh9a0Z8qxGri/kTTAJkgR8hqD1lHsYSh3JdzRi" crossorigin="anonymous"></script>
-  <script src="https://js.paystack.co/v2/inline.js"></script>
+  <script src="vendor/qrcode.min.js"></script>
+  <script src="vendor/jspdf.umd.min.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

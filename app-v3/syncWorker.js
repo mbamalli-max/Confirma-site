@@ -2,7 +2,7 @@ function normalizeApiBaseUrl(rawUrl) {
   return String(rawUrl || "").trim().replace(/\/+$/, "");
 }
 
-export async function postJson(baseUrl, path, body, authToken, options = {}) {
+export async function postJson(baseUrl, path, body, authSessionKey, options = {}) {
   const normalizedBaseUrl = normalizeApiBaseUrl(baseUrl);
   const deviceIdentity = String(options.deviceIdentity || "").trim();
   if (!normalizedBaseUrl) {
@@ -16,7 +16,7 @@ export async function postJson(baseUrl, path, body, authToken, options = {}) {
     headers: {
       "Content-Type": "application/json",
       ...(deviceIdentity ? { "X-Device-Identity": deviceIdentity } : {}),
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      ...(authSessionKey ? { Authorization: `Bearer ${authSessionKey}` } : {})
     },
     body: JSON.stringify(body)
   });
@@ -78,14 +78,14 @@ export async function verifyOtpCode(baseUrl, identifier, code, extra = {}) {
   });
 }
 
-export async function syncQueuedEntries(baseUrl, authToken, payload, deviceIdentity = "") {
-  return postJson(baseUrl, "/sync/entries", payload, authToken, {
+export async function syncQueuedEntries(baseUrl, authSessionKey, payload, deviceIdentity = "") {
+  return postJson(baseUrl, "/sync/entries", payload, authSessionKey, {
     deviceIdentity
   });
 }
 
-export async function rotateDeviceIdentity(baseUrl, authToken, payload, deviceIdentity = "") {
-  return postJson(baseUrl, "/identity/rotate", payload, authToken, {
+export async function rotateDeviceIdentity(baseUrl, authSessionKey, payload, deviceIdentity = "") {
+  return postJson(baseUrl, "/identity/rotate", payload, authSessionKey, {
     deviceIdentity
   });
 }

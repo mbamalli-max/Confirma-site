@@ -3,19 +3,19 @@
    App URL binding + Scroll animations (IntersectionObserver)
    ============================================================ */
 
-var DEFAULT_CONFIRMA_APP_URL = window.location.origin + "/app";
+var DEFAULT_KONFIRMATA_APP_URL = window.location.origin + "/app";
 
-window.CONFIRMA_APP_URL = window.CONFIRMA_APP_URL || DEFAULT_CONFIRMA_APP_URL;
+window.KONFIRMATA_APP_URL = window.KONFIRMATA_APP_URL || DEFAULT_KONFIRMATA_APP_URL;
 
 document.addEventListener("DOMContentLoaded", function () {
   // ── App URL binding ──────────────────────────────────────
-  var appUrl = window.CONFIRMA_APP_URL;
+  var appUrl = window.KONFIRMATA_APP_URL;
 
-  document.querySelectorAll("[data-confirma-app-link]").forEach(function (link) {
+  document.querySelectorAll("[data-konfirmata-app-link]").forEach(function (link) {
     link.setAttribute("href", appUrl);
   });
 
-  document.querySelectorAll("[data-confirma-app-text]").forEach(function (node) {
+  document.querySelectorAll("[data-konfirmata-app-text]").forEach(function (node) {
     node.textContent = appUrl;
   });
 

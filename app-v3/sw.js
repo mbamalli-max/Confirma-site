@@ -1,10 +1,12 @@
-const CACHE_NAME = "confirma-cache-v9";
+const CACHE_NAME = "konfirmata-cache-v16";
 const FILES = [
   "/app",
   "/app/index.html",
   "/app/styles.css",
   "/app/app.js",
   "/app/syncWorker.js",
+  "/app/vendor/qrcode.min.js",
+  "/app/vendor/jspdf.umd.min.js",
   "/app/manifest.json",
   "/app/icons/icon.svg",
   "/app/icons/icon-mask.svg"

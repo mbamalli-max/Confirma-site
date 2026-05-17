@@ -1,0 +1,8 @@
+output/
+snapshots/
+tmp/
+docs/
+scripts/
+server/node_modules/
+.git/
+*.log

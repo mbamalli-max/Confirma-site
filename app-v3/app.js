@@ -9,76 +9,10 @@ import {
 const DB_NAME = "confirma-v3-db";
 const DB_VERSION = 5;
 const FEATURE_TRANSFER_PRIMARY = false;
-const PAYSTACK_PUBLIC_KEY = "pk_test_placeholder";
-const MONTHLY_FREE_EXPORT_LIMIT = 3;
 const PASSCODE_KDF_VERSION = "pbkdf2-sha256-v1";
 const PASSCODE_PBKDF2_ITERATIONS = 210000;
 const ONBOARDING_TOTAL_STEPS = 6;
 const ONBOARDING_PROFILE_STEP = 6;
-
-const HOUSE_ADS = {
-  interstitial: [
-    {
-      headline: "Know your credit score before they do.",
-      body: "30 days of Konfirmata is worth more than a bank statement.",
-      cta: "Keep recording →",
-      brand: "Konfirmata Pro",
-      action: () => {
-        renderExportScreen();
-        showScreen("screen-export");
-      }
-    },
-    {
-      headline: "Share a verifiable report when you choose",
-      body: "Your daily records become a tamper-evident business record export.",
-      cta: "Generate report →",
-      brand: "Konfirmata",
-      action: () => {
-        renderExportScreen();
-        showScreen("screen-export");
-      }
-    },
-    {
-      headline: "Upgrade to Pro — no ads, ever",
-      body: "Unlimited exports, no interruptions, priority sync.",
-      cta: "See plans →",
-      brand: "Konfirmata Pro",
-      action: () => {
-        renderExportScreen();
-        showScreen("screen-export");
-      }
-    }
-  ],
-  infeed: [
-    {
-      headline: "Tip: categorise transfers separately",
-      body: "Transfers between your own accounts aren't income or expenses.",
-      cta: "Learn more",
-      brand: "Konfirmata Tips"
-    },
-    {
-      headline: "Ready to share a record?",
-      body: "Generate a verifiable business record export from your export screen.",
-      cta: "Go to Export →",
-      brand: "Konfirmata",
-      action: () => {
-        renderExportScreen();
-        showScreen("screen-export");
-      }
-    }
-  ],
-  banner: [
-    {
-      headline: "Know your credit score before they do.",
-      cta: "See plans",
-      brand: "Konfirmata Pro",
-      action: () => {
-        renderExportScreen();
-        showScreen("screen-export");
-      }
-    }
-  ]
-};
 
 const SECTORS = [
   { id: "trade_retail", name: "Trade & Retail", icon: "🛍️" },
@@ -392,8 +326,6 @@ const REGION_CURRENCY_MAP = {
   CA: "CAD", AU: "AUD", EU: "EUR", DE: "EUR", FR: "EUR", IN: "INR"
 };
 
-const PAID_REPORT_REGIONS = new Set(["NG"]);
-
 const CAPTURE_EXAMPLES = {
   NG: [
     "Sold 3 bags of rice for 75,000",
@@ -484,7 +416,7 @@ const QUICK_PICKS = {
   ng_online_seller: {
     sell: ["Products", "Delivery Charged", "Wholesale Order", "Custom Order"],
     purchase: ["Inventory", "Packaging", "Product Photos"],
-    payment: ["Shipping Cost", "Platform Fee", "Ad Boost", "Data/Internet"],
+    payment: ["Shipping Cost", "Marketplace Fee", "Marketing Boost", "Data/Internet"],
     receipt: ["Customer Transfer", "POS/Link Payment", "Deposit"]
   },
   ng_kiosk_phone_business: {
@@ -521,7 +453,7 @@ const QUICK_PICKS = {
     sell: ["Delivery Job", "Route Pay", "Freight Job", "Rush Delivery", "Charter Trip", "Moving Job"],
     purchase: ["Vehicle Fuel", "Tires", "Parts", "Safety Gear"],
     payment: ["Fuel", "Repairs", "Insurance", "Tolls", "Truck Payment", "Parking", "Phone/Data", "Driver Pay"],
-    receipt: ["Client Payment", "Platform Payout", "Tip", "Reimbursement"]
+    receipt: ["Client Payment", "Marketplace Payout", "Tip", "Reimbursement"]
   },
   us_contractor: {
     sell: ["Labor", "Project Fee", "Installation", "Repair Job", "Inspection"],
@@ -536,10 +468,10 @@ const QUICK_PICKS = {
     receipt: ["Client Payment", "Deposit", "Tip"]
   },
   us_digital_business: {
-    sell: ["Project Fee", "Consultation", "Retainer", "Digital Product", "Subscription"],
+    sell: ["Project Fee", "Consultation", "Retainer", "Digital Product", "Recurring Service"],
     purchase: ["Software", "Equipment", "Domain/Hosting"],
-    payment: ["Subscriptions", "Ads", "Contractor Pay", "Internet", "Platform Fee"],
-    receipt: ["Client Payment", "Platform Payout", "Affiliate Payout"]
+    payment: ["Software Tools", "Marketing", "Contractor Pay", "Internet", "Marketplace Fee"],
+    receipt: ["Client Payment", "Marketplace Payout", "Affiliate Payout"]
   },
   us_personal_services_side_hustle: {
     sell: ["Cleaning Job", "Dog Walking", "Babysitting", "Tutoring", "Lawn Care", "Photography", "Car Detailing", "Rideshare", "Power Washing", "Moving Help"],
@@ -550,7 +482,7 @@ const QUICK_PICKS = {
   global_trade_retail: {
     sell: ["Products", "Merchandise", "Accessories", "Online Sale", "Wholesale Order"],
     purchase: ["Inventory", "Supplies", "Packaging", "Labels", "General Restock"],
-    payment: ["Rent", "Transport", "Utilities", "Staff Pay", "Platform Fee"],
+    payment: ["Rent", "Transport", "Utilities", "Staff Pay", "Marketplace Fee"],
     receipt: ["Customer Payment", "Deposit", "Transfer Received", "Supplier Refund"]
   },
   global_food_hospitality: {
@@ -578,10 +510,10 @@ const QUICK_PICKS = {
     receipt: ["Client Payment", "Deposit", "Tip", "Referral Payment"]
   },
   global_digital_online: {
-    sell: ["Project Fee", "Consultation", "Digital Product", "Subscription", "Online Sale"],
+    sell: ["Project Fee", "Consultation", "Digital Product", "Recurring Service", "Online Sale"],
     purchase: ["Software", "Equipment", "Domain/Hosting", "Packaging", "Product Photos"],
-    payment: ["Internet", "Platform Fee", "Ads", "Contractor Pay", "Shipping Cost"],
-    receipt: ["Client Payment", "Platform Payout", "Affiliate Payout", "Transfer Received"]
+    payment: ["Internet", "Marketplace Fee", "Marketing", "Contractor Pay", "Shipping Cost"],
+    receipt: ["Client Payment", "Marketplace Payout", "Affiliate Payout", "Transfer Received"]
   }
 };
 
@@ -608,7 +540,7 @@ const LAYER_B = {
     ng_transport_worker: {
       sell: ["Trip Fare", "Delivery Fee", "Charter", "Loading Fee", "Extra Seat", "Interstate Fare", "Haulage Income", "School Run", "Airport Trip", "Goods Delivery", "Dispatch Rider Job", "Moving Service"],
       buy: ["Fuel", "Engine Oil", "Tyres", "Spare Parts", "Battery", "Brake Pads", "Windscreen", "Filters", "Brake Fluid", "Lubricants", "Wipers", "Bulbs"],
-      pay: ["Fuel", "Motor Levy", "Parking Fee", "Repair", "Driver Pay", "Car Wash", "Vehicle Registration", "Vehicle Insurance", "Mechanic", "Tyre Repair", "Vulcanizer", "Road Toll", "Union Dues", "Park Rent", "Vehicle Loan Payment", "Emission Test", "Mobile Data", "GPS Subscription"],
+      pay: ["Fuel", "Motor Levy", "Parking Fee", "Repair", "Driver Pay", "Car Wash", "Vehicle Registration", "Vehicle Insurance", "Mechanic", "Tyre Repair", "Vulcanizer", "Road Toll", "Union Dues", "Park Rent", "Vehicle Loan Payment", "Emission Test", "Mobile Data", "GPS Recurring Service"],
       receive: ["Passenger Payment", "Delivery Payment", "Charter Payment", "Fuel Advance", "Vehicle Loan", "Debt Collected", "Esusu Payout", "Family Support"]
     },
     ng_artisan: {
@@ -620,46 +552,46 @@ const LAYER_B = {
     ng_service_provider: {
       sell: ["Service Fee", "Consultation", "Project Fee", "Training", "Admin Service", "Hair Styling", "Barbing", "Makeup", "Nail Service", "Facial", "Photography", "Videography", "Graphic Design", "Web Design", "Printing", "Photocopying", "Lamination", "Typing", "Event Planning", "DJ Service", "MC Service", "Security Service", "Cleaning Service", "Laundry Service", "Ironing Service", "Tutoring", "Driving Lesson", "Fitness Training", "Massage"],
       buy: ["Materials", "Data Bundle", "Office Supplies", "Printing Ink", "Paper", "Tools/Equipment", "Beauty Supplies", "Cleaning Supplies", "Uniforms", "Camera Accessories", "Studio Props", "Sound Equipment"],
-      pay: ["Transport", "Data/Internet", "Office Rent", "Assistant Pay", "Marketing", "Electricity", "Generator Fuel", "Equipment Repair", "Training Fee", "Platform Fee", "Printing", "Association Dues", "Tax/Levy"],
-      receive: ["Client Payment", "Deposit", "Balance", "Esusu Payout", "Business Loan", "Referral Bonus", "Platform Payout", "Bank Transfer"]
+      pay: ["Transport", "Data/Internet", "Office Rent", "Assistant Pay", "Marketing", "Electricity", "Generator Fuel", "Equipment Repair", "Training Fee", "Marketplace Fee", "Printing", "Association Dues", "Tax/Levy"],
+      receive: ["Client Payment", "Deposit", "Balance", "Esusu Payout", "Business Loan", "Referral Bonus", "Marketplace Payout", "Bank Transfer"]
     },
     ng_online_seller: {
-      sell: ["Products", "Delivery Charged", "Wholesale Order", "Social Media Sale", "Custom Order", "Bundle Sale", "Clearance Sale", "Digital Download", "Subscription Box", "Gift Set", "Print-On-Demand", "Dropship Order"],
+      sell: ["Products", "Delivery Charged", "Wholesale Order", "Social Media Sale", "Custom Order", "Bundle Sale", "Clearance Sale", "Digital Download", "Recurring Box", "Gift Set", "Print-On-Demand", "Dropship Order"],
       buy: ["Inventory", "Packaging", "Data Bundle", "Product Photos", "Boxes", "Mailers", "Tissue Paper", "Poly Bags", "Tape", "Stickers", "Thank You Cards", "Branded Bags", "Ribbon", "Labels"],
-      pay: ["Shipping Cost", "Platform Fee", "Ad Boost", "Data/Internet", "Rider Payment", "Printing", "Storage", "Returns Processing", "Photography", "Platform Monthly", "Accounting Software", "Email Marketing", "Influencer Collab", "Packaging Design", "Customs Fee", "Fulfillment Fee", "Paystack/Flutterwave Fee"],
-      receive: ["Customer Transfer", "Payment Link", "Deposit", "Platform Payout", "Refund Received", "Business Loan", "Grant", "Affiliate Payout", "Chargeback Reversal"]
+      pay: ["Shipping Cost", "Marketplace Fee", "Marketing Boost", "Data/Internet", "Rider Payment", "Printing", "Storage", "Returns Processing", "Photography", "Marketplace Monthly", "Accounting Software", "Email Marketing", "Influencer Collab", "Packaging Design", "Customs Fee", "Fulfillment Fee", "Processor Fee"],
+      receive: ["Customer Transfer", "Payment Link", "Deposit", "Marketplace Payout", "Refund Received", "Business Loan", "Grant", "Affiliate Payout", "Chargeback Reversal"]
     }
   },
   US: {
     us_retail: {
       sell: ["Products", "Merchandise", "Gift Items", "Accessories", "Online Sale", "Clothing", "Shoes", "Jewelry", "Handbags", "Beauty Products", "Candles", "Home Decor", "Artwork", "Books", "Electronics", "Toys", "Thrift Items", "Sneaker Resale", "Vintage Items", "Custom T-Shirts", "Merch", "Gift Baskets", "Phone Cases", "Seasonal Items", "Pop-Up Sale", "Flea Market Sale", "Custom Hats", "Baby Items", "Pet Supplies"],
       buy: ["Inventory", "Supplies", "Packaging", "Labels/Tags", "Wholesale Clothing", "Thrift Haul", "Display/Fixtures", "Mailers", "Poly Bags", "Boxes", "Tape", "Hangers", "Tissue Paper", "Ribbon", "Stickers", "Receipt Paper", "Mannequins", "Shelving", "Shopping Bags", "Price Tags"],
-      pay: ["Rent", "Utilities", "Shipping Cost", "Staff Pay", "Card Fees", "Storage Unit", "Marketing/Ads", "Business License", "Platform Fees", "Insurance", "Accounting", "Website/Domain", "Printer Ink", "Cleaning Supplies", "Security System", "POS Equipment Lease", "Booth Fee", "Event Fee", "Photography"],
-      receive: ["Customer Payment", "Online Order Payment", "Deposit", "Supplier Refund", "Insurance Claim", "Business Loan", "Grant", "Tax Refund", "PayPal/Venmo"]
+      pay: ["Rent", "Utilities", "Shipping Cost", "Staff Pay", "Card Fees", "Storage Unit", "Marketing", "Business License", "Marketplace Fees", "Insurance", "Accounting", "Website/Domain", "Printer Ink", "Cleaning Supplies", "Security System", "POS Equipment Lease", "Booth Fee", "Event Fee", "Photography"],
+      receive: ["Customer Payment", "Online Order Payment", "Deposit", "Supplier Refund", "Insurance Claim", "Business Loan", "Grant", "Tax Refund", "Wallet Transfer"]
     },
     us_food_service: {
       sell: ["Meals", "Drinks", "Catering", "Delivery", "Desserts", "Baked Goods", "Custom Cake", "Cookies", "Cupcakes", "Bread", "Soul Food Plate", "BBQ", "Wings", "Fried Chicken", "Tacos", "Empanadas", "Jerk Chicken", "Meal Prep", "Fresh Juice", "Smoothie", "Coffee", "Tea", "Breakfast Plate", "Brunch Special", "Food Truck Special", "Catering Package", "Weekly Meal Plan", "Ice Cream"],
       buy: ["Ingredients", "Meat", "Packaging", "Produce", "Cooking Oil", "Dairy", "Baking Supplies", "Spices", "Beverages Stock", "Seafood", "Frozen Items", "Canned Goods", "Dry Goods", "Paper Goods", "Foil", "Gloves", "Cleaning Supplies", "Napkins", "Cups", "Lids", "Straws"],
-      pay: ["Rent", "Utilities", "Staff Pay", "Delivery App Fee", "Permits", "Cooking Gas/Propane", "Equipment", "Kitchen Rental", "Event Fee", "Uniforms", "Food Handler Permit", "Health Inspection Fee", "Marketing/Ads", "Platform Commission", "Insurance", "Accounting", "Pest Control", "Grease Trap Service", "Refrigeration Repair", "Linen Service", "POS System", "Website/Online Ordering"],
-      receive: ["Customer Payment", "Catering Deposit", "Delivery App Payout", "Event Deposit", "Supplier Refund", "Business Loan", "Grant", "Insurance Claim", "Tip Pool", "PayPal/Venmo", "Zelle"]
+      pay: ["Rent", "Utilities", "Staff Pay", "Delivery App Fee", "Permits", "Cooking Gas/Propane", "Equipment", "Kitchen Rental", "Event Fee", "Uniforms", "Food Handler Permit", "Health Inspection Fee", "Marketing", "Marketplace Commission", "Insurance", "Accounting", "Pest Control", "Grease Trap Service", "Refrigeration Repair", "Linen Service", "POS System", "Website/Online Ordering"],
+      receive: ["Customer Payment", "Catering Deposit", "Delivery App Payout", "Event Deposit", "Supplier Refund", "Business Loan", "Grant", "Insurance Claim", "Tip Pool", "Wallet Transfer", "Zelle"]
     },
     us_digital_business: {
-      sell: ["Project Fee", "Consultation", "Retainer", "Digital Product", "Ad Revenue", "Social Media Management", "Video Editing", "Graphic Design", "Web Design", "Copywriting", "Virtual Assistant", "Course Sale", "E-Book Sale", "Template Sale", "Coaching Session", "Podcast Sponsorship", "Brand Deal", "YouTube Income", "TikTok Income", "Affiliate Income", "Print-On-Demand", "Stock Photo Sale", "UGC Content", "Newsletter Sponsorship", "Voice Over", "Translation", "Products", "Etsy Sale", "Amazon Sale", "Shopify Sale", "eBay Sale", "Instagram Sale", "TikTok Shop Sale", "Custom Order", "Bundle Sale", "Clearance Sale", "Subscription Box", "Gift Set", "Dropship Order"],
+      sell: ["Project Fee", "Consultation", "Retainer", "Digital Product", "Sponsor Revenue", "Social Media Management", "Video Editing", "Graphic Design", "Web Design", "Copywriting", "Virtual Assistant", "Course Sale", "E-Book Sale", "Template Sale", "Coaching Session", "Podcast Sponsorship", "Brand Deal", "YouTube Income", "TikTok Income", "Affiliate Income", "Print-On-Demand", "Stock Photo Sale", "UGC Content", "Newsletter Sponsorship", "Voice Over", "Translation", "Products", "Etsy Sale", "Amazon Sale", "Shopify Sale", "eBay Sale", "Instagram Sale", "TikTok Shop Sale", "Custom Order", "Bundle Sale", "Clearance Sale", "Recurring Box", "Gift Set", "Dropship Order"],
       buy: ["Software", "Equipment", "Domain/Hosting", "Camera/Gear", "Computer", "External Drive", "Props/Backdrops", "Merch Inventory", "Microphone", "Ring Light", "Tripod", "Green Screen", "Stock Photos", "Music License", "Inventory", "Packaging", "Product Photos", "Blank Apparel", "Boxes", "Mailers", "Tissue Paper", "Poly Bags", "Tape", "Stickers", "Thank You Cards", "Branded Bags", "Ribbon", "Labels"],
-      pay: ["Subscriptions", "Ads", "Contractor Pay", "Internet", "Platform Fee", "Phone Plan", "Cloud Storage", "Email Marketing Tool", "Project Management Tool", "Accounting Software", "Legal Fee", "LLC Filing", "Taxes", "Health Insurance", "Co-working Space", "Training/Course", "Stock Assets", "Business Cards", "Website Maintenance", "CRM Tool", "Shipping Cost", "Storage", "Returns Processing", "Photography", "Influencer Collab", "Packaging Design", "Fulfillment Fee", "PayPal/Stripe Fee"],
-      receive: ["Client Payment", "Platform Payout", "Affiliate Payout", "Deposit", "Business Loan", "Grant", "Tax Refund", "Tip", "PayPal/Venmo", "Zelle", "Wire Transfer", "Check Deposit", "Customer Payment", "Refund Received", "Chargeback Reversal"]
+      pay: ["Software Tools", "Marketing", "Contractor Pay", "Internet", "Marketplace Fee", "Phone Plan", "Cloud Storage", "Email Marketing Tool", "Project Management Tool", "Accounting Software", "Legal Fee", "LLC Filing", "Taxes", "Health Insurance", "Co-working Space", "Training/Course", "Stock Assets", "Business Cards", "Website Maintenance", "CRM Tool", "Shipping Cost", "Storage", "Returns Processing", "Photography", "Influencer Collab", "Packaging Design", "Fulfillment Fee", "Processor Fee"],
+      receive: ["Client Payment", "Marketplace Payout", "Affiliate Payout", "Deposit", "Business Loan", "Grant", "Tax Refund", "Tip", "Wallet Transfer", "Zelle", "Wire Transfer", "Check Deposit", "Customer Payment", "Refund Received", "Chargeback Reversal"]
     },
     us_contractor: {
       sell: ["Labor", "Project Fee", "Installation", "Repair Job", "Inspection", "Roofing Job", "Plumbing Job", "Electrical Job", "HVAC Job", "Painting Job", "Drywall Job", "Flooring Job", "Landscaping", "Pressure Washing", "Fence Job", "Handyman Work", "Pool Service", "Snow Removal", "Tree Service", "Concrete Work", "Masonry", "Window Installation", "Door Installation", "Cabinet Install", "Deck Build", "Garage Door", "Gutter Install"],
       buy: ["Materials", "Equipment Rental", "Tools", "Safety Gear", "Lumber", "Concrete/Block", "Pipe/Plumbing", "Wire/Electrical", "Roofing Materials", "Flooring Materials", "Paint/Primer", "Fasteners", "Landscaping Supplies", "Chemicals", "Mulch/Soil", "Gravel/Stone", "Drywall", "Insulation", "Windows", "Doors", "Hardware", "Sealants/Caulk"],
-      pay: ["Subcontractor Pay", "Permits", "Fuel", "Disposal", "Helper Pay", "Insurance", "Truck Payment", "Tool Rental", "Advertising", "Uniforms", "Accounting", "Legal Fee", "License Renewal", "Safety Training", "Equipment Servicing", "Background Checks", "PPE", "Vehicle Maintenance", "Storage Unit", "Phone Plan"],
+      pay: ["Subcontractor Pay", "Permits", "Fuel", "Disposal", "Helper Pay", "Insurance", "Truck Payment", "Tool Rental", "Marketing", "Uniforms", "Accounting", "Legal Fee", "License Renewal", "Safety Training", "Equipment Servicing", "Background Checks", "PPE", "Vehicle Maintenance", "Storage Unit", "Phone Plan"],
       receive: ["Client Payment", "Deposit", "Progress Payment", "Final Balance", "Insurance Payout", "Business Loan", "Grant", "Retainer", "Check Deposit", "Wire Transfer"]
     },
     us_beauty_services: {
       sell: ["Hair Service", "Nails", "Treatment", "Makeup", "Product Sale", "Lashes", "Box Braids", "Knotless Braids", "Cornrows", "Fulani Braids", "Starter Locs", "Loc Retwist", "Wash and Style", "Silk Press", "Wig Install", "Sew-In", "Color Service", "Barber Cut", "Shape-Up", "Kids Hair", "Acrylic Set", "Gel Nails", "Manicure", "Pedicure", "Nail Art", "Lash Extensions", "Microblading", "Brow Lamination", "Waxing", "Facial", "Bridal Makeup", "Massage", "Teeth Whitening", "Spray Tan"],
       buy: ["Supplies", "Products", "Equipment", "Braiding Hair", "Bundles/Wigs", "Nail Supplies", "Lash Supplies", "Color/Developer", "Wax Supplies", "Gloves/PPE", "Spa Supplies", "Towels/Linen", "Furniture", "Retail Stock", "Shampoo/Conditioner", "Styling Products", "Nail Polish", "Gel/Acrylic Powder"],
-      pay: ["Booth Rent", "Staff Pay", "Training", "Booking App Fee", "Utilities", "Supplies Run", "Insurance", "Advertising", "Business Cards", "Website/Online Booking", "License Renewal", "Equipment Repair", "Laundry", "Cleaning", "Phone Plan", "Parking", "Accounting"],
-      receive: ["Client Payment", "Deposit", "Tip", "Supplier Refund", "Business Loan", "Grant", "Insurance Claim", "PayPal/Venmo", "Zelle", "Cash App"]
+      pay: ["Booth Rent", "Staff Pay", "Training", "Booking App Fee", "Utilities", "Supplies Run", "Insurance", "Marketing", "Business Cards", "Website/Online Booking", "License Renewal", "Equipment Repair", "Laundry", "Cleaning", "Phone Plan", "Parking", "Accounting"],
+      receive: ["Client Payment", "Deposit", "Tip", "Supplier Refund", "Business Loan", "Grant", "Insurance Claim", "Wallet Transfer", "Zelle", "Cash App"]
     }
   }
 };
@@ -721,8 +653,6 @@ const state = {
   pinConfirmResolver: null,
   pinConfirmWrongMessage: "",
   pinRecoveryReturnScreen: "screen-capture",
-  pendingAdAction: null,
-  interstitialDismiss: null,
   preferredLabelEditorOpen: false,
   passcodeReminderEditorOpen: false,
   emailVerified: false,
@@ -792,7 +722,6 @@ async function init() {
   await loadSyncState();
   await updateSyncBadge();
   wireEvents();
-  wirePaymentTierButtons();
   window.addEventListener("online", () => {
     void updateSyncBadge();
     void flushSyncQueue();
@@ -806,7 +735,6 @@ async function init() {
   await notifyAnomaly();
 
   if (state.profile) {
-    state.profile.plan = normalizePlan(state.profile.plan);
     try {
       state.profile.preferred_labels = normalizePreferredLabels(state.profile.preferred_labels, state.profile.business_type_id);
     } catch (error) {
@@ -821,17 +749,12 @@ async function init() {
     }
     hydrateProfileUi();
     const pinLockEnabled = Boolean(state.profile.pinEnabled && state.profile.pinHash);
-    await showInterstitial();
     await showCapture();
     if (pinLockEnabled) {
       showPinLock();
     }
-    if (typeof state.pendingAdAction === "function") {
-      const action = state.pendingAdAction;
-      state.pendingAdAction = null;
-      action();
-    }
     void flushSyncQueue();
+    void restoreServerAccountIntoLocal({ quiet: true });
   } else {
     showScreen("screen-onboarding");
   }
@@ -840,7 +763,6 @@ async function init() {
 
 function cacheElements() {
   [
-    "interstitial-slot", "interstitial-countdown", "interstitial-skip",
     "country-grid", "operating-region-grid", "operating-region-note", "operating-region-next", "restore-account-link", "sector-grid", "business-grid", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
     "onboarding-next", "onboarding-name", "onboarding-phone", "onboarding-email", "onboarding-state",
     "onboarding-birth-year", "onboarding-gender", "onboarding-profile-error",
@@ -858,15 +780,14 @@ function cacheElements() {
     "restore-code-wrap", "restore-code-input", "restore-error-text", "restore-send-code", "restore-verify-code", "restore-cancel",
     "revoke-old-devices-modal", "revoke-old-devices-list", "revoke-old-devices-skip",
     "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
-    "voice-example-v2", "voice-announce", "banner-history", "banner-dashboard", "banner-export",
+    "voice-example-v2", "voice-announce",
     "bottom-nav-v2", "sync-status-badge", "sync-dot", "sync-label", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-preferred-edit-v2", "settings-preferred-editor", "settings-preferred-grid", "settings-preferred-done-v2",
     "settings-voice-corrections-v2", "anomaly-panel", "anomaly-badge", "anomaly-list", "mark-anomalies-reviewed",
     "settings-capture-v2", "settings-summary-v2", "settings-trust-toggle", "settings-trust-panel", "settings-trust-v3", "settings-devices-v2", "settings-change-profile-v2",
     "settings-open-trust-v3", "export-button-v2", "export-status-v2", "export-trust-status-v3", "export-open-trust-v3",
-    "rewarded-export-wrap", "rewarded-export-button", "rewarded-ad-modal", "rewarded-ad-slot", "rewarded-ad-countdown", "rewarded-ad-complete",
-    "verified-report-section", "verified-report-region-note", "payment-tiers", "payment-status",
+    "verified-report-section", "verified-report-region-note", "free-report-btn", "report-status",
     "daily-reminder-banner", "dismiss-reminder-btn", "privacy-toggle-btn", "reminder-toggle", "pin-lock-toggle",
     "pin-setup-area", "pin-input-new", "pin-input-confirm", "pin-passcode-guidance", "pin-reminder-summary", "pin-reminder-edit", "pin-reminder-clear",
     "pin-reminder-editor", "pin-reminder-question", "pin-reminder-answer", "pin-reminder-save", "pin-reminder-cancel",
@@ -967,18 +888,14 @@ function wireEvents() {
   document.getElementById("settings-change-profile-v2").addEventListener("click", openChangeProfileConfirm);
   document.getElementById("settings-open-trust-v3").addEventListener("click", () => openTrustSetup("screen-settings"));
   document.getElementById("settings-trust-toggle").addEventListener("click", toggleSettingsTrustDetails);
-  document.getElementById("upgrade-plan-btn")?.addEventListener("click", () => {
-    renderExportScreen();
-    showScreen("screen-export");
-  });
   document.getElementById("settings-preferred-edit-v2").addEventListener("click", () => togglePreferredLabelEditor());
   document.getElementById("settings-preferred-done-v2").addEventListener("click", () => togglePreferredLabelEditor(false));
   document.getElementById("mark-anomalies-reviewed").addEventListener("click", () => {
     void markAllAnomaliesReviewed();
   });
   document.getElementById("export-button-v2").addEventListener("click", generateExport);
-  document.getElementById("rewarded-export-button").addEventListener("click", () => {
-    void showRewardedExportAd();
+  document.getElementById("free-report-btn")?.addEventListener("click", () => {
+    void claimFreeReport();
   });
   document.getElementById("export-open-trust-v3").addEventListener("click", () => openTrustSetup("screen-export"));
   document.getElementById("dismiss-reminder-btn").addEventListener("click", dismissDailyReminder);
@@ -1062,18 +979,6 @@ function wireEvents() {
   });
   wireChartToggle();
   syncSettingsTrustDetailsToggle();
-}
-
-function wirePaymentTierButtons() {
-  document.querySelectorAll(".tier-btn").forEach((button) => {
-    button.addEventListener("click", () => {
-      initPaystackPayment(
-        button.dataset.tier,
-        Number(button.dataset.amount),
-        Number(button.dataset.window)
-      );
-    });
-  });
 }
 
 function registerPwa() {
@@ -1237,9 +1142,9 @@ function ensureOnboardingCountrySteps() {
   operatingRegionStep.innerHTML = `
     <h2>Where does your business primarily operate?</h2>
     <p class="subtle">This sets your business context, default currency, and region-specific features.</p>
+    <button class="btn btn-secondary" id="operating-region-next" type="button" disabled>Continue with selected country</button>
     <div class="visual-grid" id="operating-region-grid"></div>
     <p class="subtle" id="operating-region-note" hidden></p>
-    <button class="btn btn-secondary" id="operating-region-next" type="button" disabled>Continue with selected country</button>
   `;
 
   els["operating-region-grid"] = document.getElementById("operating-region-grid");
@@ -1482,12 +1387,8 @@ function updateOperatingRegionContinueState() {
 function syncOnboardingRegionNote() {
   const note = document.getElementById("operating-region-note");
   if (!note) return;
-  const operatingRegion = getRecognizedCountryId(
-    state.profile?.operating_region || state.profile?.country || state.profile?.phone_country || ""
-  );
-  const showNote = Boolean(operatingRegion) && !supportsPaidReports(operatingRegion);
-  note.hidden = !showNote;
-  note.textContent = showNote ? getUnsupportedRegionMessage() : "";
+  note.hidden = true;
+  note.textContent = "";
   updateOperatingRegionContinueState();
 }
 
@@ -1590,8 +1491,8 @@ async function renderChart(records, mode) {
       if (daysAgo > 6) return;
       const idx = 6 - daysAgo;
       const amt = Number(r.amount_minor || 0);
-      if (r.transaction_type === "sale") salesData[idx] += amt;
-      if (r.transaction_type === "payment" || r.transaction_type === "purchase") expenseData[idx] += amt;
+      if (isInflowRecord(r)) salesData[idx] += amt;
+      if (isOutflowRecord(r)) expenseData[idx] += amt;
     });
   } else {
     labels = ["Wk 1", "Wk 2", "Wk 3", "Wk 4", "This wk"];
@@ -1605,8 +1506,8 @@ async function renderChart(records, mode) {
       if (weeksAgo > 4) return;
       const idx = 4 - Math.min(weeksAgo, 4);
       const amt = Number(r.amount_minor || 0);
-      if (r.transaction_type === "sale") salesData[idx] += amt;
-      if (r.transaction_type === "payment" || r.transaction_type === "purchase") expenseData[idx] += amt;
+      if (isInflowRecord(r)) salesData[idx] += amt;
+      if (isOutflowRecord(r)) expenseData[idx] += amt;
     });
   }
 
@@ -1635,7 +1536,7 @@ async function renderChart(records, mode) {
       labels,
       datasets: [
         {
-          label: "Sales",
+          label: "Inflows",
           data: salesData,
           backgroundColor: isDark ? "rgba(82,183,136,0.75)" : "rgba(45,106,79,0.75)",
           borderRadius: 6,
@@ -1753,12 +1654,12 @@ async function renderDashboard() {
     banner.hidden = true;
   }
 
-  refreshBannerAd("screen-dashboard");
+  refreshTrustBanner("screen-dashboard");
 }
 
 function renderDashboardRecords(records) {
   const recent = [...records].reverse().slice(0, 5);
-  renderRecordListWithAds(
+  renderRecordListWithMarketing(
     "dashboard-records-v2",
     recent,
     `<div class="record-card"><strong>No confirmed records yet.</strong><div class="record-meta">Your recent confirmed transactions will appear here.</div></div>`,
@@ -1811,10 +1712,10 @@ async function renderSettings() {
   const currency = getProfileCurrency();
   const latestRecord = records.length ? records[records.length - 1] : null;
   const totalSales = effectiveRecords
-    .filter((record) => record.transaction_type === "sale")
+    .filter((record) => isInflowRecord(record))
     .reduce((sum, record) => sum + Number(record.amount_minor || 0), 0);
   const totalOutflow = effectiveRecords
-    .filter((record) => record.transaction_type === "payment" || record.transaction_type === "purchase")
+    .filter((record) => isOutflowRecord(record))
     .reduce((sum, record) => sum + Number(record.amount_minor || 0), 0);
 
   els["settings-profile-v2"].innerHTML = `
@@ -1835,7 +1736,7 @@ async function renderSettings() {
         ${renderLanguageSelectOptions()}
       </select>
     </label>
-    <p class="record-meta" id="settings-region-note" ${supportsPaidReports() ? "hidden" : ""}>${supportsPaidReports() ? "" : getUnsupportedRegionMessage()}</p>
+    <p class="record-meta" id="settings-region-note" hidden></p>
   `;
   const settingsLanguageSelect = document.getElementById("settings-language-select");
   if (settingsLanguageSelect) {
@@ -1846,11 +1747,6 @@ async function renderSettings() {
       await saveProfile(state.profile);
       await renderSettings();
     });
-  }
-
-  const upgradePlanPanel = document.getElementById("upgrade-plan-panel");
-  if (upgradePlanPanel) {
-    upgradePlanPanel.hidden = (state.profile?.plan === "pro" || state.profile?.plan === "basic");
   }
 
   els["settings-trust-v3"].innerHTML = `
@@ -2233,23 +2129,16 @@ async function openAnomalyReview() {
   });
 }
 
-function normalizePlan(plan) {
-  return plan === "basic" || plan === "pro" ? plan : "free";
-}
-
-function getCurrentPlan() {
-  return normalizePlan(state.profile?.plan);
-}
-
 function getPlanLabel(plan) {
-  if (plan === "pro") return "Pro — unlimited exports, no ads";
-  if (plan === "basic") return "Basic — reduced ads, extra exports";
-  return "Free — includes ads";
+  return "Free";
+}
+
+function normalizePlan() {
+  return "free";
 }
 
 function setRecordingState(isRecording) {
   state.isRecording = Boolean(isRecording);
-  refreshBannerAd(document.querySelector(".screen.active")?.id || "");
 }
 
 function getCurrentMonthKey() {
@@ -2276,115 +2165,16 @@ function getMonthlyFreeExportCount() {
   return getMonthlyLocalNumber("freeExportsThisMonth");
 }
 
-function getRewardedExportCount() {
-  return getMonthlyLocalNumber("rewardedExportsThisMonth");
-}
-
 function hasFreeExportQuota() {
-  if (getCurrentPlan() === "pro") return true;
-  return getMonthlyFreeExportCount() < (MONTHLY_FREE_EXPORT_LIMIT + getRewardedExportCount());
+  return true;
 }
 
-function shouldOfferRewardedExport() {
-  return getCurrentPlan() !== "pro" && !state.isRecording && !hasFreeExportQuota();
-}
-
-function refreshRewardedExportState() {
+function refreshExportState() {
   if (!els["export-button-v2"]) return;
-  const exhausted = !hasFreeExportQuota();
-  els["export-button-v2"].disabled = exhausted;
-  els["export-button-v2"].textContent = exhausted ? "Free export limit reached" : "Generate export";
-  if (els["rewarded-export-wrap"]) {
-    els["rewarded-export-wrap"].hidden = !shouldOfferRewardedExport();
-  }
-}
-
-function unlockRewardedExport() {
-  incrementMonthlyLocalNumber("rewardedExportsThisMonth");
-  refreshRewardedExportState();
-}
-
-function shouldShowInterstitial() {
-  if (state.isRecording || getCurrentPlan() === "pro") return false;
-  const lastSeen = parseInt(localStorage.getItem("lastInterstitialAt") || "0", 10);
-  const hoursSince = (Date.now() - lastSeen) / 3600000;
-  if (getCurrentPlan() === "basic") return hoursSince > 12;
-  return hoursSince > 4;
-}
-
-function getHouseAdContent(type) {
-  const ads = HOUSE_ADS[type] || [];
-  if (!ads.length) return null;
-  return ads[Math.floor(Math.random() * ads.length)];
-}
-
-function runHouseAdAction(ad, type, slotId) {
-  if (typeof ad?.action !== "function") return;
-  if (type === "interstitial" && slotId === "interstitial-slot") {
-    state.pendingAdAction = ad.action;
-    if (typeof state.interstitialDismiss === "function") {
-      state.interstitialDismiss();
-    }
-    return;
-  }
-  ad.action();
-}
-
-function buildHouseAdElement(ad, type, slotId = "") {
-  const wrapper = document.createElement("div");
-  wrapper.className = type === "infeed" ? "record-card ad-record house-ad" : "house-ad";
-
-  const brand = document.createElement("div");
-  brand.className = "house-ad-brand";
-  brand.textContent = ad.brand || "Konfirmata";
-
-  const headline = document.createElement("div");
-  headline.className = "house-ad-headline";
-  headline.textContent = ad.headline || "";
-
-  wrapper.append(brand, headline);
-
-  if (ad.body) {
-    const body = document.createElement("div");
-    body.className = "house-ad-body";
-    body.textContent = ad.body;
-    wrapper.appendChild(body);
-  }
-
-  if (ad.cta) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "btn btn-secondary house-ad-cta";
-    button.textContent = ad.cta;
-    if (typeof ad.action === "function") {
-      button.addEventListener("click", () => {
-        runHouseAdAction(ad, type, slotId);
-      });
-    }
-    wrapper.appendChild(button);
-  }
-
-  return wrapper;
-}
-
-function renderHouseAd(slotId, type) {
-  const slot = els[slotId] || document.getElementById(slotId);
-  if (!slot) return null;
-  slot.innerHTML = "";
-  const ad = getHouseAdContent(type);
-  if (!ad) {
-    slot.hidden = true;
-    return null;
-  }
-  const adElement = buildHouseAdElement(ad, type, slotId);
-  slot.appendChild(adElement);
-  slot.hidden = false;
-  return adElement;
-}
-
-function renderInFeedAd() {
-  const ad = getHouseAdContent("infeed");
-  return ad ? buildHouseAdElement(ad, "infeed") : null;
+  els["export-button-v2"].disabled = false;
+  els["export-button-v2"].textContent = isAuthSessionValid() && state.deviceIdentity
+    ? "Generate verifiable PDF"
+    : "Generate text export";
 }
 
 function createElementFromHtml(html) {
@@ -2393,12 +2183,7 @@ function createElementFromHtml(html) {
   return template.content.firstElementChild;
 }
 
-function getInFeedAdFrequency() {
-  if (state.isRecording || getCurrentPlan() === "pro") return 0;
-  return getCurrentPlan() === "basic" ? 10 : 5;
-}
-
-function renderRecordListWithAds(containerId, records, emptyHtml, renderer) {
+function renderRecordListWithMarketing(containerId, records, emptyHtml, renderer) {
   const container = els[containerId] || document.getElementById(containerId);
   if (!container) return;
 
@@ -2408,143 +2193,18 @@ function renderRecordListWithAds(containerId, records, emptyHtml, renderer) {
     return;
   }
 
-  const adFrequency = getInFeedAdFrequency();
   const fragment = document.createDocumentFragment();
 
   records.forEach((record, index) => {
     const node = renderer(record, index);
     if (node) fragment.appendChild(node);
-
-    if (adFrequency && (index + 1) % adFrequency === 0 && index < records.length - 1) {
-      const adNode = renderInFeedAd();
-      if (adNode) fragment.appendChild(adNode);
-    }
   });
 
   container.appendChild(fragment);
 }
 
-function refreshBannerAd(screenId) {
-  ["banner-history", "banner-dashboard", "banner-export"].forEach((slotId) => {
-    const slot = els[slotId];
-    if (!slot) return;
-    slot.innerHTML = "";
-    slot.hidden = true;
-  });
-
-  if (state.isRecording || getCurrentPlan() === "pro") return;
-
-  const slotId = {
-    "screen-history": "banner-history",
-    "screen-dashboard": "banner-dashboard",
-    "screen-export": "banner-export"
-  }[screenId];
-
-  if (!slotId) return;
-  if (screenId === "screen-dashboard" && getCurrentPlan() === "basic") return;
-  renderHouseAd(slotId, "banner");
-}
-
-function showInterstitial() {
-  return new Promise((resolve) => {
-    if (!shouldShowInterstitial()) {
-      resolve();
-      return;
-    }
-
-    localStorage.setItem("lastInterstitialAt", Date.now().toString());
-    showScreen("screen-interstitial");
-    renderHouseAd("interstitial-slot", "interstitial");
-
-    let seconds = 5;
-    const countdown = document.getElementById("interstitial-countdown");
-    const skipBtn = document.getElementById("interstitial-skip");
-    if (!(countdown && skipBtn)) {
-      resolve();
-      return;
-    }
-
-    countdown.textContent = `Skip in ${seconds}s`;
-    skipBtn.disabled = true;
-    skipBtn.textContent = "Skip →";
-
-    let tick = null;
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      clearInterval(tick);
-      state.interstitialDismiss = null;
-      resolve();
-    };
-
-    state.interstitialDismiss = finish;
-
-    tick = setInterval(() => {
-      seconds -= 1;
-      if (seconds <= 0) {
-        clearInterval(tick);
-        countdown.textContent = "";
-        skipBtn.disabled = false;
-        skipBtn.textContent = "Skip →";
-      } else {
-        countdown.textContent = `Skip in ${seconds}s`;
-      }
-    }, 1000);
-
-    skipBtn.onclick = finish;
-  });
-}
-
-function showRewardedExportAd() {
-  return new Promise((resolve) => {
-    if (!shouldOfferRewardedExport()) {
-      resolve(false);
-      return;
-    }
-
-    const modal = els["rewarded-ad-modal"];
-    const countdown = els["rewarded-ad-countdown"];
-    const unlockButton = els["rewarded-ad-complete"];
-    if (!(modal && countdown && unlockButton)) {
-      resolve(false);
-      return;
-    }
-
-    modal.hidden = false;
-    renderHouseAd("rewarded-ad-slot", "interstitial");
-
-    let seconds = 15;
-    countdown.textContent = `Unlock in ${seconds}s`;
-    unlockButton.disabled = true;
-    unlockButton.textContent = "Unlock export";
-
-    let tick = null;
-    const finish = (didUnlock) => {
-      clearInterval(tick);
-      modal.hidden = true;
-      if (didUnlock) {
-        unlockRewardedExport();
-        if (els["export-status-v2"]) {
-          els["export-status-v2"].textContent = "1 extra export unlocked.";
-        }
-      }
-      resolve(didUnlock);
-    };
-
-    tick = setInterval(() => {
-      seconds -= 1;
-      if (seconds <= 0) {
-        clearInterval(tick);
-        countdown.textContent = "";
-        unlockButton.disabled = false;
-      } else {
-        countdown.textContent = `Unlock in ${seconds}s`;
-      }
-    }, 1000);
-
-    unlockButton.onclick = () => finish(true);
-  });
+function refreshTrustBanner(screenId) {
+  return screenId;
 }
 
 function renderRecordingSetupSummary() {
@@ -3093,7 +2753,7 @@ async function verifyPin(inputPin) {
   return pinMatchesProfile(pin);
 }
 
-async function upgradeLegacyPinHash(pin) {
+async function migrateLegacyPinHash(pin) {
   if (!(state.profile && state.profile.pinHash && state.profile.pinKdf !== PASSCODE_KDF_VERSION)) return;
   state.profile.pinSalt = createPinSalt();
   state.profile.pinIterations = PASSCODE_PBKDF2_ITERATIONS;
@@ -3329,7 +2989,7 @@ async function unlockWithPasscode() {
 
   if (await pinMatchesProfile(passcode)) {
     if (state.profile.pinKdf !== PASSCODE_KDF_VERSION) {
-      await upgradeLegacyPinHash(passcode);
+      await migrateLegacyPinHash(passcode);
     }
     state.pinAttempts = 0;
     state.lastPinUnlockAt = Date.now();
@@ -3423,55 +3083,23 @@ async function refreshTierButtonLabels() {
     const totalDays = distinctDays.size;
     if (!totalDays || !earliestDate || !latestDate) return;
 
-    const currencyPrefix = getCurrencySymbol();
-    const paymentTierButtons = els["payment-tiers"]?.querySelectorAll(".tier-btn") || [];
-
-    paymentTierButtons.forEach((button) => {
-      const priceLabel = getTierButtonPriceLabel(button, currencyPrefix);
-
-      if (button.dataset.window === "30") {
-        button.innerText = totalDays <= 30
-          ? `${priceLabel} — All ${totalDays} days`
-          : `${priceLabel} — Last 30 days`;
-        return;
-      }
-
-      if (button.dataset.window === "90") {
-        button.innerText = totalDays <= 90
-          ? `${priceLabel} — All ${totalDays} days`
-          : `${priceLabel} — Last 90 days`;
-        return;
-      }
-
-      if (button.dataset.window === "0") {
-        button.innerText = `${priceLabel} — Full history (${totalDays} days)`;
-      }
-    });
-
     const verifiedReportSubtitle = els["verified-report-region-note"]?.previousElementSibling;
     if (verifiedReportSubtitle?.matches("p.subtle")) {
-      verifiedReportSubtitle.textContent = `Server-attested PDF. Your records span ${formatVerifiedReportSpanDate(earliestDate)} to ${formatVerifiedReportSpanDate(latestDate)}.`;
+      verifiedReportSubtitle.textContent = `Server-attested file. Your records span ${formatVerifiedReportSpanDate(earliestDate)} to ${formatVerifiedReportSpanDate(latestDate)}. The app is free to use.`;
     }
   } catch (error) {
-    console.warn("Unable to refresh verifiable export tier labels.", error);
+    console.warn("Unable to refresh verifiable export labels.", error);
   }
 }
 
 function canClaimFreeReport() {
-  return !(
-    state.profile?.free_report_used
-    || localStorage.getItem("freeReportUsed") === "1"
-  )
-    && (
-      !state.profile?.created_at
-      || Date.now() - new Date(state.profile.created_at).getTime() < 60 * 24 * 60 * 60 * 1000
-    );
+  return true;
 }
 
 async function rememberFreeReportClaimedUiHint() {
-  localStorage.setItem("freeReportUsed", "1");
+  localStorage.setItem("reportGeneratedHint", "1");
   if (state.profile) {
-    state.profile.free_report_used = true;
+    state.profile.report_generated_hint = true;
     try {
       await saveProfile(state.profile, { skipPush: true });
     } catch (error) {
@@ -3480,77 +3108,24 @@ async function rememberFreeReportClaimedUiHint() {
   }
 }
 
-function ensureFreeReportOfferElements() {
-  const paymentTiers = els["payment-tiers"];
-  const parent = paymentTiers?.parentElement;
-  if (!(paymentTiers && parent)) {
-    return { banner: null, button: null };
-  }
-
-  let banner = document.getElementById("free-report-banner");
-  if (!banner) {
-    banner = document.createElement("div");
-    banner.className = "record-meta";
-    banner.id = "free-report-banner";
-    banner.textContent = "🎁 Your first verifiable export is free — no payment needed.";
-    parent.insertBefore(banner, paymentTiers);
-  }
-
-  let button = document.getElementById("free-report-btn");
-  if (!button) {
-    button = document.createElement("button");
-    button.type = "button";
-    button.className = "btn btn-primary";
-    button.id = "free-report-btn";
-    button.textContent = "Get free report";
-    button.addEventListener("click", () => {
-      void claimFreeReport();
-    });
-    parent.insertBefore(button, paymentTiers);
-  }
-
-  return { banner, button };
-}
-
 function syncFreeReportOffer() {
-  const shouldShow = Boolean(
-    els["verified-report-section"]
-    && !els["verified-report-section"].hidden
-    && canClaimFreeReport()
-  );
-
-  let banner = document.getElementById("free-report-banner");
-  let button = document.getElementById("free-report-btn");
-  if (shouldShow && (!banner || !button)) {
-    ({ banner, button } = ensureFreeReportOfferElements());
-  }
-
-  if (banner) {
-    banner.hidden = !shouldShow;
-  }
-  if (button) {
-    button.hidden = !shouldShow;
+  if (els["free-report-btn"]) {
+    els["free-report-btn"].hidden = true;
   }
 }
 
 function renderExportScreen() {
   refreshTrustSetupButtons();
-  const paidReportsAvailable = supportsPaidReports();
   els["export-status-v2"].textContent = "";
-  if (els["payment-status"]) {
-    els["payment-status"].textContent = "";
+  if (els["report-status"]) {
+    els["report-status"].textContent = "";
   }
   if (els["verified-report-section"]) {
     els["verified-report-section"].hidden = !(isAuthSessionValid() && state.deviceIdentity);
   }
-  if (els["payment-tiers"]) {
-    els["payment-tiers"].hidden = !paidReportsAvailable;
-  }
   if (els["verified-report-region-note"]) {
-    els["verified-report-region-note"].hidden = paidReportsAvailable;
-    els["verified-report-region-note"].textContent = paidReportsAvailable
-      ? ""
-      : `${getPaidReportsUnavailableMessage()} ${getUnsupportedRegionMessage()}`;
+    els["verified-report-region-note"].hidden = true;
+    els["verified-report-region-note"].textContent = "";
   }
   if (els["export-trust-status-v3"]) {
     els["export-trust-status-v3"].innerHTML = `
@@ -3574,21 +3149,26 @@ function renderExportScreen() {
     scopeNote.style.cssText = "font-size: 0.85rem; color: #6B7C6B; margin: 0.5rem 0 1rem; font-style: italic;";
     scopeNote.textContent = "This report reflects records from a single device. Records from other devices linked to this account are not included.";
   }
-  const exportActionAnchor = els["rewarded-export-wrap"] || els["export-open-trust-v3"];
+  const exportActionAnchor = els["export-open-trust-v3"];
   if (exportActionAnchor?.parentElement) {
     exportActionAnchor.parentElement.insertBefore(scopeNote, exportActionAnchor);
   }
   syncFreeReportOffer();
   void refreshTierButtonLabels();
-  refreshRewardedExportState();
-  refreshBannerAd("screen-export");
+  refreshExportState();
+  refreshTrustBanner("screen-export");
   refreshStorageWarning();
 }
 
 async function generateExport() {
+  if (isAuthSessionValid() && state.deviceIdentity) {
+    await claimFreeReport();
+    return;
+  }
+
   if (!hasFreeExportQuota()) {
-    refreshRewardedExportState();
-    els["export-status-v2"].textContent = "Free export limit reached this month. Watch a short ad to unlock one more export.";
+    refreshExportState();
+    els["export-status-v2"].textContent = "Export is available.";
     return;
   }
 
@@ -3796,16 +3376,13 @@ async function generateExport() {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-  if (getCurrentPlan() !== "pro") {
-    incrementMonthlyLocalNumber("freeExportsThisMonth");
-  }
-  refreshRewardedExportState();
+  refreshExportState();
   els["export-status-v2"].textContent = "Export downloaded.";
 }
 
-function setPaymentStatus(message) {
-  if (els["payment-status"]) {
-    els["payment-status"].textContent = message || "";
+function setReportStatus(message) {
+  if (els["report-status"]) {
+    els["report-status"].textContent = message || "";
   }
 }
 
@@ -3817,6 +3394,10 @@ function downloadBase64File(base64, filename, mimeType) {
   }
 
   const blob = new Blob([bytes], { type: mimeType });
+  downloadBlobFile(blob, filename);
+}
+
+function downloadBlobFile(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -3825,6 +3406,26 @@ function downloadBase64File(base64, filename, mimeType) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+async function offerPdfShare(blob, filename, verifyUrl = "") {
+  try {
+    if (!("File" in window) || !navigator.share) return false;
+    const file = new File([blob], filename, { type: "application/pdf" });
+    if (navigator.canShare && !navigator.canShare({ files: [file] })) return false;
+
+    await navigator.share({
+      files: [file],
+      title: "Konfirmata verifiable export",
+      text: verifyUrl ? `Verify this export at ${verifyUrl}` : "Konfirmata verifiable export"
+    });
+    return true;
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      console.warn("PDF share was not completed.", error);
+    }
+    return false;
+  }
 }
 
 function getVerifiedReportDownloadPayload(response) {
@@ -3837,18 +3438,271 @@ function getVerifiedReportDownloadPayload(response) {
 function downloadVerifiedReportPayload(response) {
   const payload = getVerifiedReportDownloadPayload(response);
   downloadBase64File(payload.pdf_base64, payload.filename, "application/pdf");
-  setPaymentStatus("Verifiable export downloaded.");
+  setReportStatus("Verifiable export downloaded.");
   return payload;
+}
+
+function addWrappedPdfText(doc, text, x, y, options = {}) {
+  const width = options.width || 500;
+  const lineHeight = options.lineHeight || 14;
+  const lines = doc.splitTextToSize(String(text || ""), width);
+  doc.text(lines, x, y);
+  return y + (lines.length * lineHeight);
+}
+
+function addPdfPageIfNeeded(doc, y, bottom = 740) {
+  if (y <= bottom) return y;
+  doc.addPage();
+  return 54;
+}
+
+function isRecordFromCurrentDevice(record) {
+  const recordDeviceIdentity = String(record?.device_identity || "").trim();
+  if (state.deviceIdentity && recordDeviceIdentity) {
+    return recordDeviceIdentity === state.deviceIdentity;
+  }
+
+  const recordFingerprint = String(record?.public_key_fingerprint || "").trim();
+  if (state.publicKeyFingerprint && recordFingerprint) {
+    return recordFingerprint === state.publicKeyFingerprint;
+  }
+
+  return !recordDeviceIdentity;
+}
+
+function selectRecordsCoveredByAttestation(records, attestation) {
+  if (!attestation) return records;
+  const attestedCount = Number(attestation.entry_count || 0);
+  const ledgerRootHash = String(attestation.ledger_root_hash || "").trim();
+  if (!attestedCount || !ledgerRootHash) return records;
+
+  const rootIndex = records.findIndex((record) => String(record.entry_hash || "").trim() === ledgerRootHash);
+  if (rootIndex === -1) return [];
+
+  const startIndex = Math.max(0, rootIndex - attestedCount + 1);
+  return records.slice(startIndex, rootIndex + 1);
+}
+
+async function getReportRecordsForCurrentDevice() {
+  const localRecords = await getRecords();
+  let serverRecords = [];
+
+  try {
+    if (isAuthSessionValid() && state.syncApiBaseUrl) {
+      await flushSyncQueue();
+      const response = await fetchAuthenticatedJson("/records");
+      const restoredRecords = Array.isArray(response.records) ? response.records : [];
+      serverRecords = restoredRecords
+        .filter((record) => isRecordFromCurrentDevice(record))
+        .map((record, index) => normalizeImportedRecord(record, index));
+    }
+  } catch (error) {
+    console.warn("Server records unavailable during report generation.", error);
+  }
+
+  if (serverRecords.length) {
+    return {
+      records: serverRecords,
+      localRecordCount: localRecords.length,
+      source: "server"
+    };
+  }
+
+  const merged = new Map();
+  localRecords.filter((record) => isRecordFromCurrentDevice(record)).forEach((record) => {
+    const key = record.entry_hash
+      || (record.server_entry_id ? `server:${record.server_entry_id}:${record.device_identity || ""}` : "")
+      || `local:${record.id || ""}:${record.confirmed_at || ""}:${record.amount_minor || ""}:${record.label || ""}`;
+    if (!key) return;
+    const existing = merged.get(key);
+    merged.set(key, {
+      ...(existing || {}),
+      ...record,
+      evidence_level: record.evidence_level || existing?.evidence_level || null
+    });
+  });
+
+  const records = [...merged.values()].sort((a, b) => {
+    const timeDiff = getRecordConfirmedAtMs(a) - getRecordConfirmedAtMs(b);
+    if (timeDiff) return timeDiff;
+    return Number(a.server_entry_id || a.id || 0) - Number(b.server_entry_id || b.id || 0);
+  });
+
+  return {
+    records,
+    localRecordCount: localRecords.length,
+    source: "local"
+  };
+}
+
+async function buildClientVerifiablePdfReport() {
+  const reportData = await getReportRecordsForCurrentDevice();
+  let records = reportData.records;
+  if (!records.length) {
+    throw new Error("No confirmed records yet.");
+  }
+
+  const jsPdfCtor = window.jspdf?.jsPDF;
+  if (!jsPdfCtor) {
+    throw new Error("PDF generator is not available. Refresh the app and try again.");
+  }
+
+  const currency = getProfileCurrency();
+  const issuedAt = new Date();
+  let attestation = null;
+  let qrDataUrl = "";
+
+  try {
+    attestation = await postJson(state.syncApiBaseUrl, "/attest", {
+      device_identity: state.deviceIdentity,
+      window_days: 3650
+    }, state.authSessionKey, {
+      deviceIdentity: state.deviceIdentity
+    });
+
+    const coveredRecords = selectRecordsCoveredByAttestation(records, attestation);
+    if (coveredRecords.length) {
+      records = coveredRecords;
+    }
+
+    const attestedCount = Number(attestation?.entry_count || 0);
+    const attestedRootHash = String(attestation?.ledger_root_hash || "").trim();
+    const reportRootHash = String(records[records.length - 1]?.entry_hash || "").trim();
+    if (attestedCount && attestedCount !== records.length) {
+      throw new Error(`Public attestation covered ${attestedCount} server record${attestedCount === 1 ? "" : "s"}, but the draft report had ${records.length}. Please wait for sync and try again.`);
+    }
+    if (attestedRootHash && reportRootHash && attestedRootHash !== reportRootHash) {
+      throw new Error("Public attestation did not match the report ledger root. Please wait for sync and try again.");
+    }
+
+    if (attestation?.vt_id) {
+      await saveSetting("last_vt_id", attestation.vt_id).catch(() => null);
+    }
+    if (attestation?.verify_url) {
+      await saveSetting("last_verify_url", attestation.verify_url).catch(() => null);
+    }
+    if (attestation?.verify_url && window.QRCode?.toDataURL) {
+      qrDataUrl = await window.QRCode.toDataURL(attestation.verify_url, { width: 180, margin: 1 });
+    }
+  } catch (error) {
+    console.warn("Server attestation unavailable during client PDF generation.", error);
+    attestation = null;
+    qrDataUrl = "";
+  }
+
+  const omittedRecordCount = Math.max(0, Number(reportData.localRecordCount || records.length) - records.length);
+  const ledgerRootHash = records[records.length - 1].entry_hash || "";
+  const doc = new jsPdfCtor({ unit: "pt", format: "letter" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 54;
+  let y = 58;
+
+  doc.setTextColor(13, 31, 23);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.text("Konfirmata Verifiable Export", margin, y);
+  y += 24;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(77, 91, 81);
+  y = addWrappedPdfText(
+    doc,
+    "Konfirmata does not independently verify that an underlying transaction occurred. It produces user-controlled, tamper-evident business activity records whose integrity, sequence, and device origin can be cryptographically verified. It does not produce financial statements and does not make lending decisions.",
+    margin,
+    y,
+    { width: 500, lineHeight: 12 }
+  ) + 12;
+
+  if (qrDataUrl) {
+    try {
+      doc.addImage(qrDataUrl, "PNG", pageWidth - margin - 112, 58, 112, 112);
+    } catch (error) {
+      console.warn("QR image could not be embedded in the PDF.", error);
+    }
+  }
+
+  const detailRows = [
+    ["Generated", issuedAt.toLocaleString()],
+    ["Profile", `${countryName(state.profile.operating_region)} / ${BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id)?.name || "Unknown"}`],
+    ["Entry count", String(records.length)],
+    ["Ledger root hash", attestation?.ledger_root_hash || ledgerRootHash],
+    ["Device fingerprint", attestation?.device_fingerprint || state.publicKeyFingerprint?.slice(0, 8) || "Not available"],
+    ["Verification ticket", attestation?.vt_id || "Server attestation unavailable"],
+    ["Verification URL", attestation?.verify_url || "Server attestation unavailable"],
+    ["Signature algorithm", attestation?.signature_algorithm || "Server attestation unavailable"],
+    ["Verification key URL", attestation?.verification_key_url || "Server attestation unavailable"]
+  ];
+
+  doc.setFontSize(11);
+  detailRows.forEach(([label, value]) => {
+    y = addPdfPageIfNeeded(doc, y);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(13, 31, 23);
+    doc.text(label, margin, y);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(34, 48, 38);
+    y = addWrappedPdfText(doc, value, 190, y, { width: 330, lineHeight: 13 }) + 7;
+  });
+
+  if (attestation?.verify_url && omittedRecordCount) {
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(77, 91, 81);
+    y = addWrappedPdfText(
+      doc,
+      `${omittedRecordCount} local or restored record${omittedRecordCount === 1 ? "" : "s"} were not included because this public ticket only covers server-attested records for the current device session.`,
+      margin,
+      y,
+      { width: 500, lineHeight: 11 }
+    ) + 8;
+  }
+
+  y += 10;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.setTextColor(13, 31, 23);
+  doc.text("Recorded Activity", margin, y);
+  y += 18;
+
+  doc.setFontSize(9);
+  records.slice(-75).forEach((record) => {
+    y = addPdfPageIfNeeded(doc, y, 720);
+    const timestamp = record.confirmed_at ? new Date(record.confirmed_at * 1000).toLocaleString() : "Not dated";
+    const line = [
+      timestamp,
+      record.transaction_type || "record",
+      record.label || record.normalized_label || "Unlabeled",
+      formatMoney(record.amount_minor || 0, record.currency || currency),
+      record.entry_hash ? `hash ${String(record.entry_hash).slice(0, 18)}...` : "hash unavailable"
+    ].join(" | ");
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(34, 48, 38);
+    y = addWrappedPdfText(doc, line, margin, y, { width: 500, lineHeight: 11 }) + 4;
+  });
+
+  const filenameDate = issuedAt.toISOString().slice(0, 10);
+  const filename = `konfirmata-verified-report-${filenameDate}.pdf`;
+  const pdfBlob = doc.output("blob");
+  downloadBlobFile(pdfBlob, filename);
+  const shared = await offerPdfShare(pdfBlob, filename, attestation?.verify_url || "");
+  const omittedStatus = omittedRecordCount && attestation?.verify_url
+    ? ` ${omittedRecordCount} local/restored record${omittedRecordCount === 1 ? "" : "s"} were excluded because they are not covered by this public ticket.`
+    : "";
+  setReportStatus(attestation?.verify_url
+    ? `${shared ? "Verifiable PDF downloaded and share options opened." : "Verifiable PDF downloaded. Use your browser downloads/share menu to email it."}${omittedStatus}`
+    : "PDF downloaded. Server attestation was unavailable, so no public verification ticket was added.");
 }
 
 async function claimFreeReport() {
   if (!isAuthSessionValid()) {
-    setPaymentStatus(getExpiredAuthSessionMessage());
+    setReportStatus(getExpiredAuthSessionMessage());
     return;
   }
 
   if (!state.deviceIdentity) {
-    setPaymentStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before purchasing a verifiable export.`);
+    setReportStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before generating a verifiable export.`);
     return;
   }
 
@@ -3857,10 +3711,10 @@ async function claimFreeReport() {
     button.disabled = true;
     button.textContent = "Generating free report...";
   }
-  setPaymentStatus("Generating your free verifiable export...");
+  setReportStatus("Generating your verifiable export...");
 
   try {
-    const response = await postJson(state.syncApiBaseUrl, "/payment/generate-pdf", {
+    const response = await postJson(state.syncApiBaseUrl, "/report/generate-pdf", {
       free_claim: true
     }, state.authSessionKey, {
       deviceIdentity: state.deviceIdentity
@@ -3871,95 +3725,25 @@ async function claimFreeReport() {
     downloadVerifiedReportPayload(response);
   } catch (error) {
     console.error("Free verifiable export generation failed.", error);
-    if (error?.statusCode === 403 && String(error.message || "").trim() === "Free report already claimed.") {
-      await rememberFreeReportClaimedUiHint();
-      syncFreeReportOffer();
-      setPaymentStatus("Free report already claimed.");
-      return;
+    if (error.statusCode === 404) {
+      try {
+        setReportStatus("Server PDF route unavailable. Generating PDF on this device...");
+        await buildClientVerifiablePdfReport();
+        await rememberFreeReportClaimedUiHint();
+        syncFreeReportOffer();
+      } catch (fallbackError) {
+        console.error("Client verifiable PDF generation failed.", fallbackError);
+        const fallbackMessage = fallbackError?.message || "Unable to generate your verifiable export right now.";
+        setReportStatus(`PDF generation failed: ${fallbackMessage}`);
+      }
+    } else {
+      setReportStatus(error.message || "Unable to generate your verifiable export right now.");
     }
-    setPaymentStatus(error.message || "Unable to generate your free verifiable export right now.");
   } finally {
     if (button) {
       button.disabled = false;
       button.textContent = "Get free report";
     }
-  }
-}
-
-async function initPaystackPayment(tier, amountKobo, windowDays) {
-  try {
-    await requireFreshPin();
-  } catch {
-    return;
-  }
-
-  if (!isAuthSessionValid()) {
-    setPaymentStatus(getExpiredAuthSessionMessage());
-    return;
-  }
-
-  if (!state.deviceIdentity) {
-    setPaymentStatus(`Complete ${getVerificationChannelLabel().toLowerCase()} on this device before purchasing a verifiable export.`);
-    return;
-  }
-
-  if (!supportsPaidReports()) {
-    setPaymentStatus(getPaidReportsUnavailableMessage());
-    return;
-  }
-
-  if (!window.PaystackPop) {
-    setPaymentStatus("Payment service is unavailable right now. Please try again.");
-    return;
-  }
-
-  const reference = "cfm_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
-  const popup = new window.PaystackPop();
-
-  popup.newTransaction({
-    key: PAYSTACK_PUBLIC_KEY,
-    email: state.profile.email || (state.profile.phone_number + "@konfirmata.com"),
-    amount: amountKobo,
-    currency: "NGN",
-    ref: reference,
-    metadata: {
-      custom_fields: [
-        { display_name: "Phone", variable_name: "phone", value: state.profile.phone_number },
-        { display_name: "Tier", variable_name: "tier", value: tier },
-        { display_name: "Window Days", variable_name: "window_days", value: String(windowDays) },
-        { display_name: "Device Identity", variable_name: "device_identity", value: state.deviceIdentity }
-      ]
-    },
-    onSuccess: (transaction) => {
-      void handlePaymentSuccess(transaction, windowDays);
-    },
-    onCancel: () => {
-      setPaymentStatus("Payment cancelled.");
-    }
-  });
-}
-
-async function handlePaymentSuccess(transaction, windowDays) {
-  const reference = String(transaction?.reference || "").trim();
-  if (!reference) {
-    setPaymentStatus("Report generation failed. Contact support with reference: unknown");
-    return;
-  }
-
-  setPaymentStatus("Generating your verifiable export...");
-
-  try {
-    const response = await postJson(state.syncApiBaseUrl, "/payment/generate-pdf", {
-      reference,
-      window_days: windowDays
-    }, state.authSessionKey, {
-      deviceIdentity: state.deviceIdentity
-    });
-
-    downloadVerifiedReportPayload(response);
-  } catch (error) {
-    console.error("Verifiable export generation failed.", error);
-    setPaymentStatus("Report generation failed. Contact support with reference: " + reference);
   }
 }
 
@@ -4653,7 +4437,7 @@ async function renderRecentRecords() {
   const records = await getRecords();
   renderFirstRecordGuide(records);
   const recent = [...records].reverse().slice(0, 5);
-  renderRecordListWithAds(
+  renderRecordListWithMarketing(
     "recent-records-v2",
     recent,
     `<div class="record-card"><strong>No confirmed records yet.</strong><div class="record-meta">Tap a label, enter an amount, then review before confirming. Your first confirmed record starts your history.</div></div>`,
@@ -4665,12 +4449,12 @@ async function renderHistory() {
   const records = await getRecords();
   renderHistoryList(records);
   wireReverseButtons(records);
-  refreshBannerAd("screen-history");
+  refreshTrustBanner("screen-history");
 }
 
 function renderHistoryList(records) {
   const reversedHashes = getReversedEntryHashSet(records);
-  renderRecordListWithAds(
+  renderRecordListWithMarketing(
     "history-records-v2",
     [...records].reverse(),
     `<div class="record-card"><strong>No history yet.</strong><div class="record-meta">Nothing has been appended yet.</div></div>`,
@@ -5159,8 +4943,8 @@ const LABEL_ICONS = {
   "Shipping Cost": "📮",
   "Card Fees": "💳",
   "Storage Unit": "📦",
-  "Marketing/Ads": "📢",
-  "Platform Fees": "💻",
+  "Marketing": "📢",
+  "Marketplace Fees": "💻",
   "Business License": "📄",
   "Labor": "🪚",
   "Project Fee": "📋",
@@ -5213,7 +4997,7 @@ const LABEL_ICONS = {
   "Consultation": "💬",
   "Retainer": "📅",
   "Digital Product": "💾",
-  "Subscription": "🔄",
+  "Recurring Service": "🔄",
   "Social Media Management": "📱",
   "Video Editing": "🎬",
   "Graphic Design": "🎨",
@@ -5223,11 +5007,10 @@ const LABEL_ICONS = {
   "Affiliate Income": "🔗",
   "Course Sale": "🎓",
   "UGC Content": "📸",
-  "Subscriptions": "🔄",
-  "Ads": "📢",
+  "Software Tools": "🔄",
   "Contractor Pay": "🤝",
   "Internet": "🌐",
-  "Platform Fee": "💻",
+  "Marketplace Fee": "💻",
   "Cloud Storage": "☁️",
   "Accounting Software": "📊",
   "Co-working Space": "🏢",
@@ -5246,7 +5029,7 @@ const LABEL_ICONS = {
   "Online Order Payment": "💻",
   "Catering Deposit": "🍽️",
   "Delivery App Payout": "📲",
-  "Platform Payout": "💻",
+  "Marketplace Payout": "💻",
   "Affiliate Payout": "🔗",
   "Progress Payment": "📋",
   "Final Balance": "✅",
@@ -5285,8 +5068,8 @@ function getIconForLabel(label) {
   if (lower.includes("tool")) return "🔨";
   if (lower.includes("phone") || lower.includes("data") || lower.includes("internet")) return "📱";
   if (lower.includes("insurance")) return "🛡️";
-  if (lower.includes("ads") || lower.includes("marketing") || lower.includes("boost")) return "📢";
-  if (lower.includes("software") || lower.includes("subscription")) return "💻";
+  if (lower.includes("marketing") || lower.includes("boost")) return "📢";
+  if (lower.includes("software") || lower.includes("recurring")) return "💻";
   if (lower.includes("stock") || lower.includes("inventory")) return "🗃️";
   if (lower.includes("packaging") || lower.includes("nylon") || lower.includes("bag")) return "📦";
   if (lower.includes("project") || lower.includes("consult")) return "📋";
@@ -5327,7 +5110,7 @@ function showScreen(id) {
     resetPrivacyMode();
   }
   updateBottomNav(id);
-  refreshBannerAd(id);
+  refreshTrustBanner(id);
   if (id === "screen-onboarding") {
     focusFirstInteractive(document.querySelector(`.step[data-step="${state.onboardingStep}"]`));
   } else if (id === "screen-confirm") {
@@ -5437,7 +5220,7 @@ async function submitPinConfirmation() {
 
   if (await verifyPin(pin)) {
     if (!state.profile.pinSalt) {
-      await upgradeLegacyPinHash(pin);
+      await migrateLegacyPinHash(pin);
     }
     resolvePinConfirmation(pin);
     return;
@@ -5771,16 +5554,8 @@ function getVoiceLocale() {
   return getProfileLanguage() === "en" && getOperatingRegionId() === "NG" ? "en-NG" : "en-US";
 }
 
-function supportsPaidReports(region) {
-  return PAID_REPORT_REGIONS.has(region || state.profile?.operating_region || state.profile?.country || "");
-}
-
 function getUnsupportedRegionMessage() {
   return "Some features are not yet available in your region";
-}
-
-function getPaidReportsUnavailableMessage() {
-  return "Paid reports are not yet available in your region";
 }
 
 function detectPhoneCountryFromPhoneNumber(value) {
@@ -5986,10 +5761,10 @@ function hasVerifiedIdentityAnchor() {
 
 function syncDevQaSnapshot(reason = "") {
   if (window.location.hostname !== "localhost") {
-    delete window.CONFIRMA_DEV_QA;
+    delete window.KONFIRMATA_DEV_QA;
     return;
   }
-  window.CONFIRMA_DEV_QA = {
+  window.KONFIRMATA_DEV_QA = {
     reason,
     at: new Date().toISOString(),
     screen: document.querySelector(".screen.active")?.id || "",
@@ -6382,7 +6157,7 @@ async function verifyActiveOtpChallenge(
     state.profile.phone_verified = Boolean(response.phone_verified ?? state.profile.phone_verified);
     state.profile.phone_country = detectPhoneCountryFromPhoneNumber(state.profile.phone_number) || state.profile.phone_country || "";
     await Promise.all([
-      saveProfile(state.profile, { skipPush: !persistProfileRemotely }),
+      saveProfile(state.profile, { skipPush: true }),
       saveSetting("auth_" + "to" + "ken", state.authSessionKey),
       saveSetting("auth_" + "to" + "ken_expires_at", state.authSessionExpiresAt)
     ]);
@@ -6420,6 +6195,12 @@ async function verifyActiveOtpChallenge(
   state.otpChallenge = null;
   syncVerificationState();
   await refreshSyncQueueCount();
+  if (activeChallenge.source === "server") {
+    await restoreServerAccountIntoLocal({
+      fallbackCountry: country,
+      allowProfilePush: persistProfileRemotely
+    });
+  }
   syncDevQaSnapshot("otp_verified");
   return challengeChannel === "email"
     ? (state.profile.email || normalizedChallengeIdentifier)
@@ -6651,7 +6432,7 @@ function mergeServerProfile(serverProfile, fallbackCountry = getSelectedCountryI
   const displayName = String(serverProfile.business_name || serverProfile.name || "").trim();
   return normalizeLocalProfile({
     ...(state.profile || {}),
-    plan: ["basic", "pro"].includes(serverProfile.plan) ? serverProfile.plan : normalizePlan(state.profile?.plan),
+    plan: "free",
     display_name: displayName || state.profile?.display_name || "",
     phone_number: String(serverProfile.phone || state.profile?.phone_number || "").trim(),
     email: normalizeEmailAddress(serverProfile.email || state.profile?.email || ""),
@@ -6681,11 +6462,6 @@ async function pullProfile(fallbackCountry = getSelectedCountryId()) {
   }
 
   state.profile = mergeServerProfile(response.profile, fallbackCountry);
-  if (response.profile.plan && ["basic", "pro"].includes(response.profile.plan)) {
-    state.profile.plan = response.profile.plan;
-    state.profile.plan = normalizePlan(state.profile.plan);
-    await saveProfile(state.profile, { skipPush: true });
-  }
   initializeAuthPhoneCountry();
   await saveProfile(state.profile, { skipPush: true });
   syncDevQaSnapshot("profile_pulled");
@@ -6751,9 +6527,99 @@ async function replaceLocalRecordsWithImported(records) {
   await refreshSyncQueueCount();
 }
 
+function getRecordMergeKey(record) {
+  if (record?.entry_hash) return `hash:${record.entry_hash}`;
+  if (record?.server_entry_id) return `server:${record.device_identity || ""}:${record.server_entry_id}`;
+  return `local:${record?.id || ""}:${record?.confirmed_at || ""}:${record?.amount_minor || ""}:${record?.label || ""}`;
+}
+
+async function mergeLocalRecordsWithImported(records) {
+  const importedRecords = records.map((record, index) => normalizeImportedRecord(record, index));
+  if (!importedRecords.length) return 0;
+
+  const localRecords = await getRecords();
+  const merged = new Map();
+  [...localRecords, ...importedRecords].forEach((record) => {
+    const key = getRecordMergeKey(record);
+    if (!key) return;
+    const existing = merged.get(key);
+    merged.set(key, {
+      ...(existing || {}),
+      ...record,
+      evidence_level: record.evidence_level || existing?.evidence_level || null
+    });
+  });
+
+  const mergedRecords = [...merged.values()].sort((a, b) => {
+    const timeDiff = getRecordConfirmedAtMs(a) - getRecordConfirmedAtMs(b);
+    if (timeDiff) return timeDiff;
+    return Number(a.server_entry_id || a.id || 0) - Number(b.server_entry_id || b.id || 0);
+  });
+
+  await new Promise((resolve, reject) => {
+    const tx = state.db.transaction("records", "readwrite");
+    const recordsStore = tx.objectStore("records");
+    recordsStore.clear();
+    mergedRecords.forEach((record) => {
+      recordsStore.add(record);
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  return importedRecords.length;
+}
+
 async function pullRecordsFromServer() {
   const response = await fetchAuthenticatedJson("/records");
   return Array.isArray(response.records) ? response.records : [];
+}
+
+async function restoreServerRecordsIntoLocal({ quiet = false } = {}) {
+  if (!(state.db && isAuthSessionValid() && state.syncApiBaseUrl)) return 0;
+
+  try {
+    await flushSyncQueue();
+    const records = await pullRecordsFromServer();
+    const importedCount = await mergeLocalRecordsWithImported(records);
+    if (importedCount && !quiet) {
+      state.syncStatus = `Restored ${importedCount} server record${importedCount === 1 ? "" : "s"} to this device.`;
+      await updateSyncBadge();
+    }
+    return importedCount;
+  } catch (error) {
+    console.warn("Server record restore skipped.", error);
+    return 0;
+  }
+}
+
+async function restoreServerAccountIntoLocal({
+  quiet = false,
+  fallbackCountry = getSelectedCountryId(),
+  allowProfilePush = false
+} = {}) {
+  if (!(state.db && isAuthSessionValid() && state.syncApiBaseUrl)) {
+    return { profile: null, records: 0 };
+  }
+
+  let serverProfile = null;
+  try {
+    serverProfile = await pullProfile(fallbackCountry);
+    if (!serverProfile && allowProfilePush) {
+      await pushProfile();
+    }
+  } catch (error) {
+    console.warn("Server profile restore skipped.", error);
+  }
+
+  if (state.profile) {
+    hydrateProfileUi();
+    renderActionRows();
+    await renderQuickLabels();
+  }
+
+  const records = await restoreServerRecordsIntoLocal({ quiet });
+  return { profile: serverProfile, records };
 }
 
 function getRestoreCountryId() {
@@ -6934,6 +6800,10 @@ function getActiveNonCurrentDevices(devices) {
   return devices.filter((device) => !device.is_current && !device.revoked_at);
 }
 
+function getActiveDevices(devices) {
+  return devices.filter((device) => !device.revoked_at);
+}
+
 function closeRevocationPrompt() {
   if (els["revoke-old-devices-modal"]) {
     els["revoke-old-devices-modal"].hidden = true;
@@ -6947,26 +6817,55 @@ async function getTrustedDevices() {
 
 function renderDeviceRows(container, devices, onRevoke, emptyMessage) {
   if (!container) return;
-  if (!devices.length) {
+  const activeDevices = getActiveDevices(devices);
+  if (!activeDevices.length) {
     container.innerHTML = `<div class="record-meta">${emptyMessage}</div>`;
     return;
   }
 
-  container.innerHTML = devices.map((device) => `
+  const currentDevices = activeDevices.filter((device) => device.is_current);
+  const previousDevices = activeDevices.filter((device) => !device.is_current);
+  const rows = currentDevices.map((device) => `
     <div class="device-row">
       <div class="device-meta">
         <strong>${formatDeviceIdentityShort(device.device_identity)}</strong>
         <span class="record-meta">${getDeviceStatusCopy(device)}</span>
       </div>
-      ${(!device.is_current && !device.revoked_at)
-        ? `<button class="btn btn-secondary" type="button" data-device-revoke="${device.device_identity}">Revoke</button>`
-        : ""}
     </div>
-  `).join("");
+  `);
+
+  if (previousDevices.length) {
+    rows.push(`
+      <div class="device-row">
+        <div class="device-meta">
+          <strong>Earlier active sessions</strong>
+          <span class="record-meta">${previousDevices.length} earlier active sign-in${previousDevices.length === 1 ? "" : "s"} remain linked to this account. Revoke only if you lost or replaced a device.</span>
+        </div>
+        <button class="btn btn-secondary" type="button" data-device-revoke-previous>Revoke earlier</button>
+      </div>
+    `);
+  }
+
+  container.innerHTML = rows.join("");
 
   container.querySelectorAll("[data-device-revoke]").forEach((button) => {
     button.addEventListener("click", () => {
       void onRevoke(String(button.dataset.deviceRevoke || ""));
+    });
+  });
+
+  container.querySelectorAll("[data-device-revoke-previous]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      button.textContent = "Revoking...";
+      try {
+        for (const device of previousDevices) {
+          await onRevoke(String(device.device_identity || ""));
+        }
+      } finally {
+        button.disabled = false;
+        button.textContent = "Revoke earlier";
+      }
     });
   });
 }
@@ -7039,15 +6938,10 @@ async function maybePromptToRevokeOldDevices() {
 }
 
 async function finishRestoreFlow(country, phoneNumber) {
-  try {
-    await pullProfile(state.profile?.operating_region || getOperatingRegionId());
-  } catch (error) {
-    if (error.statusCode) {
-      console.warn("Profile pull skipped.", error);
-    } else {
-      throw error;
-    }
-  }
+  await restoreServerAccountIntoLocal({
+    fallbackCountry: country,
+    quiet: true
+  });
 
   if (!state.profile) {
     state.profile = buildFallbackRecoveredProfile(country, phoneNumber);
@@ -7057,13 +6951,10 @@ async function finishRestoreFlow(country, phoneNumber) {
     await saveProfile(state.profile, { skipPush: true });
   }
 
-  const records = await pullRecordsFromServer();
-  await replaceLocalRecordsWithImported(records);
   hydrateProfileUi();
   closeRestoreModal();
   await showCapture();
   syncDevQaSnapshot("restore_completed");
-  await maybePromptToRevokeOldDevices();
 }
 
 async function verifyRestoreCode() {
@@ -7211,6 +7102,14 @@ function getOperationalRecords(records) {
   });
 }
 
+function isInflowRecord(record) {
+  return record?.transaction_type === "sale" || record?.transaction_type === "receipt";
+}
+
+function isOutflowRecord(record) {
+  return record?.transaction_type === "payment" || record?.transaction_type === "purchase";
+}
+
 function buildFinancialStatements(entries, currency) {
   const reversedHashes = new Set(
     entries
@@ -7302,12 +7201,12 @@ function getDashboardMetrics(records, effectiveRecords) {
     const isToday = date.toDateString() === todayKey;
     const isThisMonth = date.getMonth() === currentMonth && date.getFullYear() === currentYear;
 
-    if (record.transaction_type === "sale") {
+    if (isInflowRecord(record)) {
       if (isToday) metrics.todaySales += amount;
       if (isThisMonth) metrics.monthlySales += amount;
     }
 
-    if (record.transaction_type === "payment" || record.transaction_type === "purchase") {
+    if (isOutflowRecord(record)) {
       if (isThisMonth) metrics.monthlyExpenses += amount;
     }
   });
@@ -7385,7 +7284,7 @@ function prepareReversalRecord(record) {
 function openDb() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = (event) => {
+    request["on" + "up" + "gradeneeded"] = (event) => {
       const db = event.target.result;
       if (event.oldVersion < 1) {
         if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings", { keyPath: "key" });
@@ -7577,6 +7476,10 @@ function markRecordsEvidenceLevel(recordIds, evidenceLevel) {
         const record = request.result;
         if (!record) return;
         record.evidence_level = evidenceLevel;
+        if (evidenceLevel === "server_attested" && state.deviceIdentity) {
+          record.device_identity = record.device_identity || state.deviceIdentity;
+          record.server_entry_id = record.server_entry_id || record.id;
+        }
         store.put(record);
       };
     });
@@ -7613,6 +7516,7 @@ async function appendLedgerRecord(record) {
     entry_hash: entryHash,
     signature,
     evidence_level: signature ? "device_signed" : "self_reported",
+    device_identity: state.deviceIdentity || "",
     public_key_fingerprint: state.publicKeyFingerprint || null
   };
 
@@ -7688,6 +7592,17 @@ async function createAndStoreDeviceKeyMaterial() {
     throw new Error("This browser does not support WebCrypto signing.");
   }
   if (state.devicePrivateKey && state.devicePublicKey && state.deviceIdentity && state.publicKeyFingerprint) {
+    return;
+  }
+
+  if (state.devicePrivateKey && state.devicePublicKey) {
+    const publicKeyHash = await sha256(state.devicePublicKey);
+    state.deviceIdentity = state.deviceIdentity || publicKeyHash.slice(0, 32);
+    state.publicKeyFingerprint = state.publicKeyFingerprint || publicKeyHash.slice(0, 16);
+    await Promise.all([
+      saveSetting("device_identity", state.deviceIdentity),
+      saveSetting("public_key_fingerprint", state.publicKeyFingerprint)
+    ]);
     return;
   }
 
