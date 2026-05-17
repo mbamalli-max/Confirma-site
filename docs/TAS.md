@@ -1,16 +1,16 @@
 # Technical Architecture Specification (TAS)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.4.0
-**Date:** 2026-05-11
+**Version:** 3.5.0
+**Date:** 2026-05-17
 
 ---
 
 ## §1. System Overview
 
-Konfirmata is a financial identity infrastructure that converts informal business activity into cryptographically verifiable ledger records. The output is a bank-usable identity: a signed transaction history that can be verified offline from the text export and, when attested, checked offline with Konfirmata's published attestation verification key or cross-checked through the public verification portal.
+Konfirmata is business activity record infrastructure that converts informal business activity into cryptographically verifiable ledger records. The output is a user-controlled transaction history that can be verified offline from the text export and, when attested, checked offline with Konfirmata's published attestation verification key or cross-checked through the public verification portal.
 
-**Core thesis:** Ledger formation is always free. Payment gates only verified PDF export.
+**Core thesis:** Ledger formation and verified report export are free. The current production product has no paid tiers, payment checkout, rewarded ads, or scoring feature.
 
 ### Stack
 
@@ -23,7 +23,6 @@ Konfirmata is a financial identity infrastructure that converts informal busines
 | Verification portal | Static page | Vercel (`/verify/:vt_id`) |
 | Email delivery | Resend | SaaS |
 | SMS delivery | Termii (stub) | SaaS |
-| Payment processing | Paystack | SaaS (NG only) |
 
 ---
 
@@ -56,7 +55,7 @@ These form the integrity core. No code outside them may write to the IndexedDB `
 | `getRecords()` | `app-v3/app.js` | Canonical read path |
 | IndexedDB `records` store `.add()` | `app-v3/app.js` | Never called from outside `confirmationTransition` |
 
-Payment, sync, attestation, and export code must treat the ledger as read-only.
+Sync, attestation, report, and export code must treat the ledger as read-only.
 
 ---
 
@@ -164,15 +163,11 @@ Step 2 sets `operating_region`. They may differ. The operating-region step also 
 
 ### 4.5 Capability Separation
 
-Country selection **must not** infer payment availability, report eligibility, or feature access.
-Capability flags are derived exclusively from `operating_region`.
+Country selection **must not** block onboarding, report eligibility, or feature access. Capability flags are derived from `operating_region` only for local currency, label catalog relevance, and regional UI copy.
 
 ```js
-if (operating_region !== "NG") {
-  hidePaystackTiers();
-  enableFreeExportOnly();
-  // Show: "Some features are not yet available in your region"
-}
+enableTextExport();
+enableVerifiedPdfExportWhenAuthenticated();
 ```
 
 ### 4.6 Ledger Entry Schema (IndexedDB)
@@ -308,15 +303,15 @@ The private key remains non-extractable. Only the public key is converted from s
 3. Build header (metadata), rows (records), evidence summary, footer
 4. Download as `.txt` Blob
 
-**Paid PDF:**
-1. Paystack payment confirmed → webhook → `POST /payment/generate-pdf` (internal)
-2. Server fetches ledger entries for window, generates attestation
-3. `buildVerifiedReportPdf()` renders PDF via pdfkit
-4. PDF emailed via Resend, also returned in response
+**Verified PDF:**
+1. Authenticated user taps Generate verifiable PDF
+2. Client flushes sync queue, then calls `POST /report/generate-pdf` with `window_days: 0`
+3. Server fetches ledger entries for all device identities linked to the account, generates an `account_devices` attestation, and renders the PDF via pdfkit
+4. PDF is returned as `pdf_base64`; email delivery via Resend is best-effort when an email is available
 
 ### 4.12 Service Worker
 
-**Cache name:** `confirma-cache-v9`
+**Cache name:** `konfirmata-cache-v17`
 
 **Cached files:**
 - `/app/index.html`
@@ -509,8 +504,8 @@ Voice is always optional — keyboard/tap path remains available on every step.
 | `GET` | `/profile` | Bearer JWT | — | Fetch user profile |
 | `POST` | `/profile` | Bearer JWT | — | Upsert user profile |
 | `GET` | `/devices` | Bearer JWT | — | List devices for account |
-| `POST` | `/payment/webhook` | Paystack HMAC-SHA512 | — | Paystack charge.success handler |
-| `POST` | `/payment/generate-pdf` | Bearer JWT | — | Generate server-side verified PDF |
+| `GET` | `/records` | Bearer JWT | — | Restore server-synced records for the authenticated account |
+| `POST` | `/report/generate-pdf` | Bearer JWT | — | Generate free server-side verified PDF |
 
 ### 5.3 Database Schema
 
@@ -623,12 +618,15 @@ CREATE TABLE attestations (
   issued_at TIMESTAMPTZ DEFAULT NOW(),
   verify_url TEXT,
   entries JSONB,                         -- snapshot of entries for PDF generation
-  status TEXT DEFAULT 'VALID'            -- VALID | REVOKED
+  status TEXT DEFAULT 'VALID',           -- VALID | REVOKED
+  attestation_scope TEXT DEFAULT 'single_device',
+  scope_description TEXT
 );
 
 CREATE INDEX idx_attestations_device ON attestations (device_identity, issued_at DESC);
 
--- Payments
+-- Legacy payments table retained for historical compatibility. It is not used by
+-- the current free verified-report flow.
 CREATE TABLE payments (
   id BIGSERIAL PRIMARY KEY,
   phone_number TEXT NOT NULL,
@@ -659,7 +657,6 @@ CREATE TABLE schema_migrations (
 | Attestation server signature | ECDSA P-256, IEEE P1363 | `SERVER_ATTESTATION_PRIVATE_KEY_PEM` |
 | OTP hash | SHA-256(`"{identifier}:{code}"`) | — |
 | vt_id generation | `crypto.randomBytes(16).toString('hex')` | — |
-| Paystack webhook verification | HMAC-SHA512 | `PAYSTACK_SECRET_KEY` |
 
 ### 5.5 Fork Detection
 
@@ -716,8 +713,6 @@ TERMII_API_KEY=<key>            # SMS delivery (Termii)
 TERMII_SENDER_ID=Konfirmata
 RESEND_API_KEY=<key>            # email delivery
 RESEND_FROM_EMAIL=Konfirmata <noreply@konfirmata.com>
-PAYSTACK_SECRET_KEY=<key>       # webhook HMAC + verification
-PAYSTACK_PUBLIC_KEY=<key>       # frontend Paystack Inline
 VERIFY_BASE_URL=https://konfirmata.com
 VERIFICATION_KEY_URL=https://konfirmata.com/.well-known/verification-key.json
 CORS_ORIGINS=https://konfirmata.com,https://www.konfirmata.com
@@ -729,13 +724,15 @@ Server refuses to boot in production if `JWT_SECRET`, `SERVER_RECEIPT_SECRET`, o
 
 ## §6. Attestation System
 
-### 6.1 Issue Flow
+### 6.1 Single-Device Attestation Flow
 
 ```
 POST /attest (Bearer JWT)
   → Auth validated
   → Device verified (ACTIVE, not REVOKED)
-  → Query ledger_entries for device in window [NOW - window_days, NOW]
+  → Query ledger_entries for the requesting device
+      window_days = 0 means full device history
+      window_days > 0 means [NOW - window_days, NOW]
   → ledger_root_hash = entry_hash of last entry in window
   → entry_count = COUNT(entries)
   → vt_id = crypto.randomBytes(16).toString('hex')
@@ -751,7 +748,35 @@ POST /attest (Bearer JWT)
              verification_key_url }
 ```
 
-### 6.2 Verification Flow
+This flow is intentionally single-device scoped. It supports local text export and lightweight device-origin checks.
+
+### 6.2 Account-Device Report Attestation Flow
+
+```
+POST /report/generate-pdf (Bearer JWT)
+  → Auth validated
+  → Report device verified (ACTIVE, not REVOKED)
+  → Query ledger_entries joined to device_identities by auth.phone_number
+      window_days = 0 means full account-device history
+      window_days > 0 means account-device entries in [NOW - window_days, NOW]
+  → ORDER BY confirmed_at ASC, device_identity ASC, entry_id ASC
+  → ledger_root_hash = SHA-256 over each ordered "device_identity:entry_id:entry_hash" row
+  → vt_id = crypto.randomBytes(16).toString('hex')
+  → attestation_payload contains:
+      vt_id, report device fingerprint, ledger_root_hash, entry_count,
+      window_start, window_end, issued_at, status,
+      attestation_scope: "account_devices",
+      scope_description
+  → server_signature = ECDSA-P256-SHA256(attestation_payload, SERVER_ATTESTATION_PRIVATE_KEY_PEM)
+  → INSERT INTO attestations with attestation_scope + scope_description
+  → buildVerifiedReportPdf()
+  → Return { ok, pdf_base64, filename, vt_id }
+  → Best-effort Resend email with the PDF attached
+```
+
+The report device fingerprint identifies the device that generated the report. The transaction ledger identifies the device that recorded each included entry.
+
+### 6.3 Verification Flow
 
 ```
 GET /verify/:vt_id (public, rate-limited 100/min/IP)
@@ -765,7 +790,7 @@ GET /verify/:vt_id (public, rate-limited 100/min/IP)
   → Return {
       vt_id, attested_at, window_start, window_end, entry_count,
       fork_status, device_fingerprint (8 chars only), key_rotation_events,
-      attestation_scope: "single_device",
+      attestation_scope: stored scope or "single_device",
       scope_description: "...", attestation_payload, server_signature,
       signature_algorithm, verification_key_url,
       status: "VALID" | "FORKED" | "REVOKED" | "UNKNOWN"
@@ -774,62 +799,59 @@ GET /verify/:vt_id (public, rate-limited 100/min/IP)
 
 No PII returned. `phone_number` never in response. `device_identity` truncated to 8 chars.
 
-### 6.3 Verification Portal
+### 6.4 Verification Portal
 
 Static page at `website-v2/verify.html`, served at `/verify/:vt_id`
 
 - Extracts `vt_id` from `window.location.pathname` (last segment)
 - Calls `GET /verify/:vt_id` on load
 - Badge colors: VALID = `#52B788`, FORKED/REVOKED = `#B42318`, UNKNOWN = `#6B7C6B`
-- Displays: `attested_at`, window range, `entry_count`, `key_rotation_events`, `fork_status`, `device_fingerprint` (8 chars), scope description
+- Displays: `attested_at`, window range, `entry_count`, `key_rotation_events`, `fork_status`, report `device_fingerprint` (8 chars), scope description, ledger root hash, attestation payload, server signature, signature algorithm, and verification key URL
 
 ---
 
-## §7. Payment & PDF System
+## §7. Report & Export System
 
-### 7.1 Paystack Tiers (operating_region = NG only)
-
-| Tier | Price | Window |
-|---|---|---|
-| Bronze | ₦500 | 30 days |
-| Silver | ₦1,500 | 90 days |
-| Gold | ₦2,500 | Full history (`window_days = 0`) |
-
-Tier button labels dynamically show actual days of transaction history (e.g., "Gold — 347 days").
-
-### 7.2 Webhook Flow
+### 7.1 Verified PDF Flow
 
 ```
-POST /payment/webhook (Paystack charge.success)
-  → Verify x-paystack-signature HMAC-SHA512 FIRST — reject 400 if invalid
-  → Upsert payments row (idempotent via ON CONFLICT on paystack_reference)
-  → Call POST /attest (internal, pass db client for transaction threading)
-  → generateVerifiedReport(attestation, profile, db)
-  → buildVerifiedReportPdf({ attestation, businessName, phoneNumber, email, tier, ... })
-  → Send PDF via Resend email
-  → Update payments.pdf_generated = TRUE
+Client generateExport()
+  → if authenticated + device identity:
+      claimFreeReport()
+        → POST /report/generate-pdf { free_claim: true, window_days: 0 }
+        → X-Device-Identity header set to current device
+        → receive { ok, pdf_base64, filename, vt_id }
+        → download filename
+        → browser-native share sheet offered when available
+  → else:
+      generate local text export
 ```
 
-### 7.3 Free Report Claim
+`free_claim` is accepted as a compatibility flag only. The server does not enforce a lifetime claim limit in the current product.
+
+### 7.2 Server PDF Generation
 
 ```
-POST /payment/generate-pdf { free_claim: true }
-  → Wrap in withTransaction
-  → UPDATE profiles SET free_report_used = TRUE
-    WHERE phone_number = $1
-    AND COALESCE(free_report_used, FALSE) = FALSE
-  → If rowCount === 0: 403 { error: "Free report already claimed." }
-  → Generate PDF (same as paid, within same transaction)
-  → Return PDF as download or email
+POST /report/generate-pdf
+  → authenticateRequest()
+  → assert report device belongs to auth.phone_number and is ACTIVE
+  → getFreeReportContext(auth.phone_number)
+  → createAttestation(phoneNumber, reportDeviceIdentity, windowDays)
+      → getLedgerEntries(phoneNumber, windowDays)
+      → account-device ledger root hash
+      → attestation_scope = "account_devices"
+  → buildVerifiedReportPdf({ attestation, businessName, phoneNumber, email, tier: "free", amountKobo: 0 })
+  → sendVerifiedReportEmail() best-effort
+  → return PDF as Base64 for direct download
 ```
 
-Race-condition protected: claim-first pattern means two concurrent requests cannot both succeed.
+The active route lives in `server/src/routes/payment.js` for historical file-name compatibility, but the external API route is `/report/generate-pdf`.
 
-### 7.4 Free Text Export Contents
+### 7.3 Free Text Export Contents
 
 Client-generated by `generateExport()` in `app-v3/app.js`:
 
-- Header metadata, single-device scope note, sync/device status
+- Header metadata, local-device scope note, sync/device status
 - User contact details unmasked because this is the user's own export
 - Income statement and monthly cash flow sections
 - Full transaction ledger appendix with per-entry verification bundle:
@@ -841,6 +863,7 @@ Client-generated by `generateExport()` in `app-v3/app.js`:
 - Evidence summary
 - Integrity data: ledger root hash, verification status, optional `vt_id`, optional `verify_url`, optional QR code data URL
 - `DEVICE PUBLIC KEY (ECDSA P-256)` section appended after integrity data
+- Best-effort `POST /attest` with `window_days: 0` appends a single-device `vt_id`, `verify_url`, and QR code data URL when available
 
 Public key export rules:
 - Source: stored device public key from `settings.device_public_key`
@@ -850,7 +873,7 @@ Public key export rules:
 - Failure mode: never fail the export; append `Public Key: Not available — key storage error`
 - Do not change signing logic, hash-chain computation, `verify_url`, QR generation, or IndexedDB write paths
 
-### 7.5 PDF Contents
+### 7.4 PDF Contents
 
 Server-generated via pdfkit:
 
@@ -858,8 +881,10 @@ Server-generated via pdfkit:
 - Business name
 - Masked phone (`maskPhone()`) and email (`maskEmail()`)
 - Report date range
-- Tier label
+- Tier label fixed to `free`
 - Entry count
+- Report device fingerprint
+- Scope: Account devices
 - Evidence summary ("145 of 150 entries server-attested")
 - Status badge: VALID
 
@@ -873,7 +898,7 @@ Server-generated via pdfkit:
 - Month-by-month bar breakdown
 
 **Transaction ledger (appendix):**
-- All entries in window: date, label, type, amount
+- All account-device entries in window: entry id, device fingerprint, type, label, amount, date, signed
 - Currency formatted per profile currency
 
 **Footer:**
@@ -883,46 +908,27 @@ Server-generated via pdfkit:
 - `verification_key_url`
 - `vt_id`
 - QR code pointing to `verify_url`
-- Device fingerprint (8 chars)
-- `attestation_scope: "single_device"` disclaimer
+- Report device fingerprint (8 chars)
+- `attestation_scope: "account_devices"` and scope description
 - Patent notice: USPTO Provisional 63/987,858
 
-### 7.6 Masking Policy
+### 7.5 Masking Policy
 
 | Export type | Phone | Email |
 |---|---|---|
 | User's own text export | Full (unmasked) | Full (unmasked) |
-| Lender-facing PDF | `maskPhone()` | `maskEmail()` |
+| Institution-facing PDF | `maskPhone()` | `maskEmail()` |
 | Verification portal | Not shown | Not shown |
 
 `maskPhone("+2348031234567")` → `"+234****4567"`
 `maskEmail("john.doe@example.com")` → `"j***e@example.com"`
 
-### 7.7 Rewarded Export Flow
+### 7.6 Current Monetization Boundary
 
-Users have a fixed monthly quota of **3 free text exports** (`MONTHLY_FREE_EXPORT_LIMIT = 3`). When exhausted, they can watch a rewarded ad to unlock one additional export for that calendar month.
-
-**Quota functions (all in `app.js`):**
-
-| Function | Description |
-|---|---|
-| `getMonthlyFreeExportCount()` | Returns free text exports used this calendar month (IndexedDB settings) |
-| `getRewardedExportCount()` | Returns ad-unlocked exports remaining this month |
-| `hasFreeExportQuota()` | `true` if free or rewarded quota remains |
-| `shouldOfferRewardedExport()` | `true` when free quota exhausted and rewarded ad is available |
-| `refreshRewardedExportState()` | Updates UI to show rewarded button when applicable |
-| `unlockRewardedExport()` | Increments rewarded count after successful ad completion |
-
-**Flow:**
-1. User taps Export → `hasFreeExportQuota()` checked
-2. Quota exhausted → `shouldOfferRewardedExport()` checked
-3. Rewarded available → ad modal shown (`rewarded-ad-modal` with countdown timer)
-4. Ad countdown completes → `unlockRewardedExport()` → export proceeds
-5. No rewarded available → error shown, export blocked
-
-**UI elements:** `rewarded-export-wrap`, `rewarded-export-button`, `rewarded-ad-modal`, `rewarded-ad-slot`, `rewarded-ad-countdown`, `rewarded-ad-complete`
-
-**Constraint:** This system is client-side only. The server does not track export counts — quota is stored in IndexedDB `settings`.
+- `hasFreeExportQuota()` returns `true`
+- `canClaimFreeReport()` returns `true`
+- Verified PDF generation does not require a payment reference, paid tier, ad completion, or lifetime claim flag
+- Old quota helper names may remain in code for compatibility, but they must not gate export availability
 
 ---
 
@@ -953,6 +959,8 @@ Users have a fixed monthly quota of **3 free text exports** (`MONTHLY_FREE_EXPOR
 ### 8.3 Schema Guards (in account.js)
 
 `ensureAccountRecoverySchema()` runs on first request to `/profile` routes. It applies `ADD COLUMN IF NOT EXISTS` for all profile columns — a safety net for databases that predate the migration runner. It is idempotent and safe to run repeatedly.
+
+`ensureReportAttestationColumns()` runs before verified report generation. It applies `ADD COLUMN IF NOT EXISTS` for `attestations.attestation_scope` and `attestations.scope_description` so account-device report attestations can be stored safely on older databases.
 
 ---
 
@@ -1145,29 +1153,30 @@ Routing via `vercel.json` `routes` array (not `rewrites`).
 
 ## §14. Security Constraints
 
-1. **Webhook HMAC verified before any action** — reject Paystack payloads before processing if HMAC-SHA512 invalid
-2. **PDF generated server-side only** — never client-side
+1. **No payment webhook in active flow** — report generation must not depend on a payment provider callback
+2. **Institution-facing verified PDF generated server-side only** — never via client-side jsPDF
 3. **vt_id is `crypto.randomBytes(16)`** — never sequential, never `Math.random()`
 4. **GET /verify/:vt_id returns no PII** — no phone_number, device_identity truncated to 8 chars
 5. **Rate limiting:** OTP request = 5/hr per phone, OTP verify = 5 failures/15min, verify portal = 100/min per IP
 6. **ALLOW_DEV_OTP must be false in production** before real user onboarding
-7. **Payment gate is strictly pre-PDF** — never pre-confirmation. `confirmationTransition()` must never be gated
+7. **No monetization gate** — `confirmationTransition()`, sync, text export, and verified PDF export must never be gated by payment, paid tier, or ad completion
 8. **Country selection is global** — do not block onboarding for unsupported regions
 9. **Capability flags derive from `operating_region` only** — never from `phone_country`
 10. **Language is independent** — default to English when no local pack exists
 11. **IDOR protection on device rotation** — ownership verified before transaction
 12. **IDOR protection on sync** — device ownership + revocation checked before upsert
 13. **OTP timing-safe comparison** — `crypto.timingSafeEqual` used, not `!==`
-14. **Race condition protection on free report** — claim-first transaction, not check-then-claim
-15. **window_days capped at 365** — no unbounded DB query via user input
+14. **Account-device report ownership** — `/report/generate-pdf` must query entries only through device identities linked to `auth.phone_number`
+15. **window_days capped at 365 except full-history sentinel** — `window_days = 0` means full history; positive values are capped
 16. **CORS allowlist** — no wildcard origin
 17. **JWT secrets required** — server exits on boot if `JWT_SECRET` or `SERVER_RECEIPT_SECRET` empty
 18. **Replay protection** — `UNIQUE INDEX` on `ledger_entries(entry_hash)`
-19. **Phone/email masked in lender PDF** — full PII only in user's own text export
-20. **Free report server-enforced** — `free_report_used` flag in DB, not only in localStorage
+19. **Phone/email masked in institution-facing PDF** — full PII only in user's own text export
+20. **Verified PDF is free** — no lifetime claim flag, payment reference, paid-tier state, or ad state may block report generation
 21. **`ALLOW_DEV_OTP` hard-blocked in production** — server calls `process.exit(1)` at startup if both `DATABASE_SSL=true` and `ALLOW_DEV_OTP=true` are set simultaneously. Prevents OTP bypass against a production database.
 22. **Free export public key is public-only** — embed SPKI public key only; private key remains non-extractable and must never be exported.
 23. **Export availability survives key-read errors** — public key retrieval failure must not block `.txt` export generation.
+24. **Account-device attestation scope is explicit** — report attestations store and return `attestation_scope: "account_devices"` and a human-readable `scope_description`.
 
 ---
 
@@ -1177,12 +1186,14 @@ Routing via `vercel.json` `routes` array (not `rewrites`).
 |---|---|---|
 | 1.0 | 2026-03-22 | Initial spec, Phases 0–1.5A |
 | 1.5 | 2026-03-25 | Phase 1.5B complete — sync server, fork detection |
-| 2.0 | 2026-03-28 | Phases 1.5C + 1.5D complete — attestation, Paystack PDF, deployment |
+| 2.0 | 2026-03-28 | Phases 1.5C + 1.5D complete — attestation, server-side PDF, deployment |
 | 2.1 | 2026-04-04 | Global availability model — full country selector, decoupled dimensions |
 | 3.0 | 2026-04-04 | Full rewrite — 17-task security hardening complete: IDOR, OTP, race conditions, CORS, JWT secrets, masking, replay protection, evidence hierarchy, schema migrations, device scope labels |
-| 3.1 | 2026-04-11 | **New sections:** §4.13 Voice Input System (NLP parsing, voice locale, voice correction system); §7.6 Rewarded Export Flow. **Schema:** `received_at TIMESTAMPTZ` on ledger_entries (migration 005); `voice_corrections` IndexedDB store documented. **Security:** SC-21 ALLOW_DEV_OTP hard-block; `extractable: false` corrected in §4.8 keypair snippet. **Onboarding:** country selector updated to searchable input with locale auto-detection. **Financial statements:** `getRecordConfirmedAtMs` `created_at` fallback documented. |
+| 3.1 | 2026-04-11 | **New sections:** §4.13 Voice Input System (NLP parsing, voice locale, voice correction system); rewarded export flow documented at the time. **Schema:** `received_at TIMESTAMPTZ` on ledger_entries (migration 005); `voice_corrections` IndexedDB store documented. **Security:** SC-21 ALLOW_DEV_OTP hard-block; `extractable: false` corrected in §4.8 keypair snippet. **Onboarding:** country selector updated to searchable input with locale auto-detection. **Financial statements:** `getRecordConfirmedAtMs` `created_at` fallback documented. |
 | 3.2 | 2026-04-12 | **New section:** §4.15 Onboarding Voice Input — mic icon on every onboarding step, fuzzy-match speak-to-select, TTS readback per step type. Reuses `getVoiceLocale()`, `speakConfirmationCopy()`, `startSpeechMatch()` pattern. |
 | 3.3 | 2026-04-27 | **Free export offline verification:** `generateExport()` embeds the device ECDSA P-256 public key as Base64 SPKI after integrity data, enabling independent signature verification without server contact. Documents graceful key-storage failure behavior and public-only export constraint. |
 | 3.3.1 | 2026-04-30 | **Doc accuracy pass:** service worker cache name updated to `confirma-cache-v7`; environment template port updated to `8787` to match server `.env`. |
 | 3.3.2 | 2026-05-10 | **Onboarding recovery + runtime parity:** onboarding country selectors documented as searchable card grids; operating-region continue CTA (`#operating-region-next`) documented. **Local preview:** runtime `<base>` rewrite documented for `file://` and raw local HTTP preview. **Service worker:** cache name updated to `confirma-cache-v9`, `icon-mask.svg` added to precache list, navigation fetch updated to network-first with cached shell fallback, and activate behavior documented as window refresh/navigation to clear stale shells after redeploy. |
 | 3.4.0 | 2026-05-11 | **Offline verification hardening:** free text export now emits per-entry verification bundles (`entry_hash`, `prev_entry_hash`, `signature_base64`, `signature_message_utf8`, `canonical_payload_utf8`). **Attestations:** new server attestations use ECDSA P-256 signatures and publish the verification key at `/.well-known/verification-key.json`, while the verify endpoint retains legacy HMAC fallback for older reports. **Doc accuracy:** canonical signing string and entry-signing snippets corrected to match the live implementation that signs the UTF-8 `entry_hash` message. |
+| 3.4.1 | 2026-05-11 | **Production smoke test passed.** Per-entry offline verification export confirmed live (commit 6a62ddc): `prev_entry_hash`, `signature_base64`, `signature_message_utf8`, `canonical_payload_utf8_begin/end` present in text export. Server attestation `GET /verify/:vt_id` → `status: VALID`, `fork_status: NORMAL`, `signature_algorithm: ECDSA_P256_SHA256_P1363`. PDF footer confirmed carrying all four attestation fields. `/.well-known/verification-key.json` live and consistent. Full end-to-end path verified: OTP → record → confirm → export → verify URL → VALID. |
+| 3.5.0 | 2026-05-17 | **Free account-device verified reports:** current product has no active payment, ad, or paid-tier gate. `/report/generate-pdf` returns a free server-side PDF with `account_devices` attestation scope, full-history `window_days: 0`, account-linked device entries, device fingerprint column in the ledger, and direct download plus best-effort email. **Verification page:** displays ledger root hash, report device fingerprint, attestation scope, payload, server signature, signature algorithm, and verification key URL. **Service worker:** cache name updated to `konfirmata-cache-v17`. |
