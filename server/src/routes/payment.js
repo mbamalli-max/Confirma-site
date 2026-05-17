@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import { Readable } from "node:stream";
 import { authenticateRequest } from "../auth-utils.js";
 import { buildAttestationEnvelope } from "../attestation-signing.js";
 import { query, withTransaction } from "../db.js";
@@ -10,7 +9,7 @@ const PATENT_NOTICE = "Protected under USPTO Provisional Application 63/987,858.
 let resendModulePromise = null;
 let pdfkitModulePromise = null;
 let qrCodeModulePromise = null;
-let paymentProfileColumnsReady = false;
+let reportProfileColumnsReady = false;
 
 async function getResendClient(apiKey) {
   if (!apiKey) return null;
@@ -43,35 +42,10 @@ function parseWindowDays(value, fallback = 30) {
   return Math.min(365, Math.floor(parsed));
 }
 
-function getMetadataFields(metadata) {
-  const customFields = Array.isArray(metadata?.custom_fields) ? metadata.custom_fields : [];
-  return customFields.reduce((accumulator, field) => {
-    const key = String(field?.variable_name || "").trim();
-    if (key) accumulator[key] = field?.value;
-    return accumulator;
-  }, {});
-}
-
-function safeCompareHex(expectedHex, providedHex) {
-  if (!expectedHex || !providedHex) return false;
-  if (expectedHex.length !== providedHex.length) return false;
-
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(expectedHex, "hex"),
-      Buffer.from(providedHex, "hex")
-    );
-  } catch (error) {
-    return false;
-  }
-}
-
 function formatMoney(amountMinor, currency = "NGN") {
-  const amount = Number(amountMinor || 0) / 100;
-  if (currency === "USD") {
-    return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-  return `₦${amount.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // Use ISO currency codes rather than glyphs: PDFKit's built-in Helvetica
+  // cannot render the ₦ (Naira) sign, which previously produced garbage output.
+  return fmt(amountMinor, currency);
 }
 
 function formatDateTime(value) {
@@ -316,54 +290,10 @@ async function getKeyRotationCount(deviceIdentity, db = null) {
   return result.rows[0]?.rotation_count || 0;
 }
 
-async function upsertPaymentRecord(payment) {
-  await query(
-    `
-      INSERT INTO payments (
-        phone_number,
-        device_identity,
-        reference,
-        amount_kobo,
-        tier,
-        window_days,
-        paystack_status,
-        vt_id,
-        completed_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      ON CONFLICT (reference)
-      DO UPDATE SET
-        phone_number = EXCLUDED.phone_number,
-        device_identity = EXCLUDED.device_identity,
-        amount_kobo = EXCLUDED.amount_kobo,
-        tier = EXCLUDED.tier,
-        window_days = EXCLUDED.window_days,
-        paystack_status = EXCLUDED.paystack_status,
-        vt_id = COALESCE(EXCLUDED.vt_id, payments.vt_id),
-        completed_at = COALESCE(EXCLUDED.completed_at, payments.completed_at)
-    `,
-    [
-      payment.phone_number,
-      payment.device_identity,
-      payment.reference,
-      payment.amount_kobo,
-      payment.tier,
-      payment.window_days,
-      payment.paystack_status,
-      payment.vt_id || null,
-      payment.completed_at || null
-    ]
-  );
-}
-
-async function ensurePaymentProfileColumns() {
-  if (paymentProfileColumnsReady) return;
+async function ensureReportProfileColumns() {
+  if (reportProfileColumnsReady) return;
 
   await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS phone_number TEXT`);
-  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan TEXT`);
-  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan_activated_at TIMESTAMPTZ`);
-  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS free_report_used BOOLEAN DEFAULT FALSE`);
-  await query(`UPDATE profiles SET free_report_used = FALSE WHERE free_report_used IS NULL`);
   await query(
     `
       UPDATE profiles p
@@ -374,11 +304,11 @@ async function ensurePaymentProfileColumns() {
     `
   );
 
-  paymentProfileColumnsReady = true;
+  reportProfileColumnsReady = true;
 }
 
 async function ensureProfileRowForPhone(phoneNumber) {
-  await ensurePaymentProfileColumns();
+  await ensureReportProfileColumns();
   await query(
     `
       INSERT INTO profiles (
@@ -407,20 +337,11 @@ async function getFreeReportContext(phoneNumber) {
       SELECT
         u.email,
         COALESCE(p.business_name, p.name, '') AS business_name,
-        COALESCE(p.free_report_used, FALSE) AS free_report_used,
         (
           SELECT MIN(di.created_at)
           FROM device_identities di
           WHERE di.phone_number = u.phone_number
-        ) AS first_device_created_at,
-        EXISTS (
-          SELECT 1
-          FROM payments pay
-          WHERE pay.phone_number = u.phone_number
-            AND pay.vt_id IS NOT NULL
-            AND COALESCE(pay.paystack_status, '') = 'success'
-            AND COALESCE(pay.amount_kobo, 0) > 0
-        ) AS has_paid_report
+        ) AS first_device_created_at
       FROM users u
       LEFT JOIN profiles p
         ON p.user_id = u.id
@@ -432,117 +353,129 @@ async function getFreeReportContext(phoneNumber) {
   return result.rows[0] || null;
 }
 
-function canUseFreeReport(context) {
-  const accountCreatedAtMs = Date.parse(String(context?.first_device_created_at || ""));
-  const qualifiesByAge = Number.isNaN(accountCreatedAtMs)
-    ? true
-    : Date.now() - accountCreatedAtMs < 60 * 24 * 60 * 60 * 1000;
-  return qualifiesByAge || !context?.has_paid_report;
-}
+const REPORT = {
+  ink: "#0F1A10",
+  dark: "#0D1F17",
+  green: "#2D6A4F",
+  accent: "#52B788",
+  muted: "#6B7C6B",
+  faint: "#9DB4A6",
+  line: "#D8E1DA",
+  soft: "#EAF1EC",
+  panel: "#F4F7F5",
+  white: "#FFFFFF"
+};
+const REPORT_LEFT = 50;
+const REPORT_RIGHT = 545;
+const REPORT_WIDTH = REPORT_RIGHT - REPORT_LEFT;
+const REPORT_BAND_H = 64;
+const REPORT_BOTTOM = 778;
 
-async function activatePlan(phoneNumber, tier) {
-  const normalizedTier = String(tier || "").trim().toLowerCase();
-  if (!(normalizedTier === "basic" || normalizedTier === "pro")) return;
-
-  await ensurePaymentProfileColumns();
-
-  const updateResult = await query(
-    `
-      UPDATE profiles
-      SET plan = $1,
-          plan_activated_at = NOW()
-      WHERE phone_number = $2
-    `,
-    [normalizedTier, phoneNumber]
-  );
-
-  if (updateResult.rowCount) return;
-
-  await query(
-    `
-      INSERT INTO profiles (
-        user_id,
-        phone_number,
-        plan,
-        plan_activated_at,
-        updated_at
-      )
-      SELECT
-        u.id,
-        u.phone_number,
-        $2,
-        NOW(),
-        NOW()
-      FROM users u
-      WHERE u.phone_number = $1
-      ON CONFLICT (user_id)
-      DO UPDATE SET
-        phone_number = EXCLUDED.phone_number,
-        plan = EXCLUDED.plan,
-        plan_activated_at = EXCLUDED.plan_activated_at,
-        updated_at = NOW()
-    `,
-    [phoneNumber, normalizedTier]
-  );
-}
-
-function drawStatusBadge(doc, x, y, text) {
+function drawReportBand(doc, pageLabel) {
   doc.save();
-  doc.roundedRect(x, y, 90, 28, 14).fillAndStroke("#E8F5E9", "#52B788");
-  doc.fillColor("#1B4332").fontSize(11).text(text, x, y + 8, {
-    width: 90,
-    align: "center"
-  });
+  doc.rect(0, 0, doc.page.width, REPORT_BAND_H).fill(REPORT.dark);
+  doc.roundedRect(REPORT_LEFT, 18, 28, 28, 6).fill(REPORT.accent);
+  doc.fillColor(REPORT.dark).font("Helvetica-Bold").fontSize(15)
+    .text("K", REPORT_LEFT, 24.5, { width: 28, align: "center" });
+  doc.fillColor(REPORT.white).font("Helvetica-Bold").fontSize(13)
+    .text("KONFIRMATA", REPORT_LEFT + 38, 21, { characterSpacing: 0.5 });
+  doc.fillColor(REPORT.faint).font("Helvetica").fontSize(8)
+    .text("Server-Attested Business Activity Ledger", REPORT_LEFT + 38, 38);
+  doc.fillColor(REPORT.faint).font("Helvetica-Bold").fontSize(8.5)
+    .text(String(pageLabel || "").toUpperCase(), REPORT_RIGHT - 220, 30, {
+      width: 220, align: "right", characterSpacing: 1
+    });
   doc.restore();
 }
 
-function drawEntryTableHeader(doc, y) {
-  doc
-    .fontSize(10)
-    .fillColor("#6B7C6B")
-    .text("ID", 50, y)
-    .text("Type", 92, y)
-    .text("Label", 160, y)
-    .text("Amount", 325, y)
-    .text("Date", 408, y)
-    .text("Signed", 500, y);
-
-  doc
-    .moveTo(50, y + 16)
-    .lineTo(545, y + 16)
-    .strokeColor("#D4CDB8")
-    .stroke();
-}
-
-function drawEntryPageFooter(doc, runningTotal, currency) {
-  doc
-    .fontSize(10)
-    .fillColor("#1B2F1F")
-    .text(`Running total: ${formatMoney(runningTotal, currency)}`, 50, doc.page.height - 54, {
-      width: 495,
-      align: "right"
+function drawReportStatusBadge(doc, x, y, status) {
+  const ok = String(status || "VALID").toUpperCase() === "VALID";
+  const palette = ok
+    ? { bg: "#E8F5EC", border: "#52B788", fg: "#1B4332" }
+    : { bg: "#FBEDED", border: "#D98C8C", fg: "#7A2E2E" };
+  const w = 96;
+  const h = 30;
+  doc.save();
+  doc.roundedRect(x, y, w, h, 15).fillAndStroke(palette.bg, palette.border);
+  doc.fillColor(palette.fg).font("Helvetica-Bold").fontSize(11)
+    .text(String(status || "VALID").toUpperCase(), x, y + 9.5, {
+      width: w, align: "center", characterSpacing: 1
     });
+  doc.restore();
 }
 
-function drawPatentFooter(doc, options = {}) {
-  const { y = doc.page.height - 90, fontSize = 9, lineGap = 2, color = "#6B7C6B" } = options;
-  doc.font("Helvetica").fontSize(fontSize).fillColor(color).text(PATENT_NOTICE, 50, y, {
-    width: 495,
-    lineGap
-  });
+function drawReportSectionTitle(doc, y, kicker, title, sub) {
+  doc.fillColor(REPORT.green).font("Helvetica-Bold").fontSize(8.5)
+    .text(String(kicker).toUpperCase(), REPORT_LEFT, y, { characterSpacing: 1 });
+  doc.fillColor(REPORT.ink).font("Helvetica-Bold").fontSize(18)
+    .text(String(title), REPORT_LEFT, y + 13);
+  let endY = y + 38;
+  if (sub) {
+    doc.fillColor(REPORT.muted).font("Helvetica").fontSize(9.5)
+      .text(String(sub), REPORT_LEFT, endY);
+    endY += 16;
+  }
+  doc.moveTo(REPORT_LEFT, endY).lineTo(REPORT_RIGHT, endY)
+    .strokeColor(REPORT.line).lineWidth(1).stroke();
+  return endY + 18;
 }
 
-function drawStatementRow(doc, y, label, value, options = {}) {
-  const { bold = false, emphasized = false } = options;
-  const labelFont = emphasized ? 13 : 11;
-  const valueFont = emphasized ? 13 : 11;
-  doc.font(bold || emphasized ? "Helvetica-Bold" : "Helvetica").fontSize(labelFont).fillColor("#0F1A10").text(label, 50, y, {
-    width: 260
+function drawReportDetailRow(doc, x, y, width, label, value) {
+  doc.font("Helvetica-Bold").fontSize(7.5).fillColor(REPORT.muted)
+    .text(String(label).toUpperCase(), x, y, { width, characterSpacing: 0.5 });
+  doc.font("Helvetica").fontSize(10.5).fillColor(REPORT.ink)
+    .text(String(value == null || value === "" ? "—" : value), x, y + 11, { width });
+}
+
+function drawReportStatementRow(doc, y, label, value, opts = {}) {
+  const { strong = false, total = false } = opts;
+  if (total) {
+    doc.save();
+    doc.rect(REPORT_LEFT, y - 6, REPORT_WIDTH, 28).fill(REPORT.soft);
+    doc.restore();
+  }
+  const font = strong || total ? "Helvetica-Bold" : "Helvetica";
+  const size = total ? 12 : 10.5;
+  const pad = total ? 12 : 0;
+  const textY = total ? y + 1 : y;
+  doc.font(font).fontSize(size).fillColor(REPORT.ink)
+    .text(String(label), REPORT_LEFT + pad, textY, { width: 320 });
+  doc.font(font).fontSize(size).fillColor(total ? REPORT.green : REPORT.ink)
+    .text(String(value), REPORT_LEFT, textY, { width: REPORT_WIDTH - pad, align: "right" });
+}
+
+function drawReportTableHeader(doc, y, columns) {
+  doc.save();
+  doc.rect(REPORT_LEFT, y - 5, REPORT_WIDTH, 22).fill(REPORT.soft);
+  doc.restore();
+  doc.font("Helvetica-Bold").fontSize(8).fillColor(REPORT.green);
+  columns.forEach((col) => {
+    doc.text(col.label.toUpperCase(), col.x, y + 1, {
+      width: col.width, align: col.align || "left", characterSpacing: 0.5
+    });
   });
-  doc.font(bold || emphasized ? "Helvetica-Bold" : "Helvetica").fontSize(valueFont).fillColor("#0F1A10").text(value, 350, y, {
-    width: 195,
-    align: "right"
-  });
+  return y + 22;
+}
+
+function drawReportIntegrityField(doc, y, label, value, mono) {
+  const text = String(value == null ? "—" : value);
+  doc.font("Helvetica-Bold").fontSize(7.5).fillColor(REPORT.muted)
+    .text(String(label).toUpperCase(), REPORT_LEFT, y, { characterSpacing: 0.5 });
+  const valueY = y + 12;
+  if (mono) {
+    doc.font("Courier").fontSize(8.5);
+    const h = doc.heightOfString(text, { width: REPORT_WIDTH - 20, lineGap: 2 });
+    doc.save();
+    doc.roundedRect(REPORT_LEFT, valueY - 6, REPORT_WIDTH, h + 14, 4).fill(REPORT.panel);
+    doc.restore();
+    doc.font("Courier").fontSize(8.5).fillColor(REPORT.ink)
+      .text(text, REPORT_LEFT + 10, valueY, { width: REPORT_WIDTH - 20, lineGap: 2 });
+    return valueY + h + 14 + 12;
+  }
+  doc.font("Helvetica").fontSize(10).fillColor(REPORT.ink);
+  const h = doc.heightOfString(text, { width: REPORT_WIDTH });
+  doc.text(text, REPORT_LEFT, valueY, { width: REPORT_WIDTH });
+  return valueY + h + 14;
 }
 
 async function buildVerifiedReportPdf({
@@ -557,7 +490,7 @@ async function buildVerifiedReportPdf({
 }) {
   const PDFDocument = await getPdfDocumentConstructor();
   const QRCode = await getQrCodeModule();
-  const doc = new PDFDocument({ size: "A4", margin: 50 });
+  const doc = new PDFDocument({ size: "A4", margin: 50, bufferPages: true });
   const chunks = [];
 
   const pdfReady = new Promise((resolve, reject) => {
@@ -566,7 +499,7 @@ async function buildVerifiedReportPdf({
     doc.on("error", reject);
   });
 
-  const qrBuffer = await QRCode.toBuffer(attestation.verify_url, { width: 200, margin: 1 });
+  const qrBuffer = await QRCode.toBuffer(attestation.verify_url, { width: 240, margin: 1 });
   const entries = attestation.entries;
   const reportCurrency = entries[0]?.payload?.currency || "NGN";
   const statements = computeFinancialStatements(entries, reportCurrency);
@@ -590,11 +523,22 @@ async function buildVerifiedReportPdf({
     ? `${formatDateOnly(new Date(statements.dateRange.start * 1000))} to ${formatDateOnly(new Date(statements.dateRange.end * 1000))}`
     : "No confirmed entries";
 
-  doc.fontSize(24).fillColor("#1B2F1F").text("Konfirmata Verified Report", 50, 60);
-  doc.fontSize(13).fillColor("#6B7C6B").text("Server-Attested Business Activity Ledger", 50, 96);
+  // ---------- PAGE 1 — COVER ----------
+  drawReportBand(doc, "Verified Report");
 
-  let infoY = 150;
-  const coverRows = [
+  doc.fillColor(REPORT.green).font("Helvetica-Bold").fontSize(8.5)
+    .text("PUBLIC INTEGRITY RECORD", REPORT_LEFT, 88, { characterSpacing: 1 });
+  doc.fillColor(REPORT.ink).font("Helvetica-Bold").fontSize(22)
+    .text("Verified Report", REPORT_LEFT, 101);
+  drawReportStatusBadge(doc, REPORT_RIGHT - 96, 94, attestation.status || "VALID");
+
+  doc.moveTo(REPORT_LEFT, 138).lineTo(REPORT_RIGHT, 138)
+    .strokeColor(REPORT.line).lineWidth(1).stroke();
+
+  doc.fillColor(REPORT.green).font("Helvetica-Bold").fontSize(8.5)
+    .text("REPORT DETAILS", REPORT_LEFT, 156, { characterSpacing: 1 });
+
+  const detailRows = [
     ["Business", businessName || "Not provided"],
     ["Phone", maskPhone(phoneNumber)],
     ["Email", email ? maskEmail(email) : "Not provided"],
@@ -607,170 +551,228 @@ async function buildVerifiedReportPdf({
     ["Amount paid", formatMoney(amountKobo, "NGN")],
     ["Window days", windowDays === 0 ? "Full history" : String(windowDays)]
   ];
-
-  coverRows.forEach(([label, value]) => {
-    doc.fontSize(10).fillColor("#6B7C6B").text(label.toUpperCase(), 50, infoY);
-    doc.fontSize(12).fillColor("#0F1A10").text(String(value), 50, infoY + 14, { width: 260 });
-    infoY += 42;
+  let detailY = 178;
+  detailRows.forEach(([label, value]) => {
+    drawReportDetailRow(doc, REPORT_LEFT, detailY, 270, label, value);
+    detailY += 30;
   });
 
-  const evidenceSummaryY = infoY + 10;
-  drawStatusBadge(doc, 50, evidenceSummaryY, "VALID");
-  doc.font("Helvetica-Bold").fontSize(12).fillColor("#1B2F1F").text("Evidence Summary", 50, evidenceSummaryY + 34);
-  doc.font("Helvetica").fontSize(10).fillColor("#0F1A10");
-  [
-    `Total entries: ${totalEvidenceEntries}`,
-    `Server-attested: ${evidenceCounts.server_attested}`,
-    `Device-signed: ${evidenceCounts.device_signed}`,
-    `Self-reported: ${evidenceCounts.self_reported}`,
-    `${attestedEntries} of ${totalEvidenceEntries} entries (${attestedPercent}%) have server attestation.`
-  ].forEach((line, index) => {
-    doc.text(line, 50, evidenceSummaryY + 54 + (index * 16), { width: 280 });
+  const cardX = 350;
+  const cardW = 195;
+  doc.save();
+  doc.roundedRect(cardX, 156, cardW, 212, 8).lineWidth(1).fillAndStroke(REPORT.white, REPORT.line);
+  doc.restore();
+  doc.image(qrBuffer, cardX + (cardW - 132) / 2, 172, { width: 132 });
+  doc.fillColor(REPORT.muted).font("Helvetica-Bold").fontSize(7.5)
+    .text("SCAN TO VERIFY ONLINE", cardX, 314, { width: cardW, align: "center", characterSpacing: 1 });
+  doc.fillColor(REPORT.green).font("Helvetica").fontSize(7.5)
+    .text(attestation.verify_url, cardX + 12, 330, { width: cardW - 24, align: "center", lineGap: 1 });
+
+  const evY = 380;
+  doc.save();
+  doc.roundedRect(cardX, evY, cardW, 128, 8).fill(REPORT.soft);
+  doc.restore();
+  doc.fillColor(REPORT.green).font("Helvetica-Bold").fontSize(8.5)
+    .text("EVIDENCE SUMMARY", cardX + 14, evY + 14, { characterSpacing: 1 });
+  const evidenceLines = [
+    ["Total entries", String(totalEvidenceEntries)],
+    ["Server-attested", String(evidenceCounts.server_attested)],
+    ["Device-signed", String(evidenceCounts.device_signed)],
+    ["Self-reported", String(evidenceCounts.self_reported)]
+  ];
+  let evLineY = evY + 34;
+  evidenceLines.forEach(([label, value]) => {
+    doc.font("Helvetica").fontSize(9).fillColor(REPORT.muted)
+      .text(label, cardX + 14, evLineY, { width: cardW - 28 });
+    doc.font("Helvetica-Bold").fontSize(9).fillColor(REPORT.ink)
+      .text(value, cardX + 14, evLineY, { width: cardW - 28, align: "right" });
+    evLineY += 16;
   });
+  doc.font("Helvetica").fontSize(8).fillColor(REPORT.muted)
+    .text(`${attestedEntries} of ${totalEvidenceEntries} entries (${attestedPercent}%) carry server attestation.`,
+      cardX + 14, evLineY + 4, { width: cardW - 28, lineGap: 1 });
 
-  doc.image(qrBuffer, 380, 150, { width: 120 });
-  doc.fontSize(10).fillColor("#6B7C6B").text("Verification URL", 380, 284);
-  doc.fontSize(10).fillColor("#1B2F1F").text(attestation.verify_url, 380, 300, {
-    width: 140
-  });
+  const scopeY = 528;
+  doc.save();
+  doc.roundedRect(REPORT_LEFT, scopeY, REPORT_WIDTH, 58, 6).fill(REPORT.panel);
+  doc.restore();
+  doc.fillColor(REPORT.green).font("Helvetica-Bold").fontSize(8)
+    .text("WHAT THIS REPORT CONFIRMS", REPORT_LEFT + 14, scopeY + 12, { characterSpacing: 0.8 });
+  doc.fillColor(REPORT.muted).font("Helvetica").fontSize(8.5)
+    .text("This report confirms that the listed business activity records carry a valid Konfirmata server attestation and that their integrity, sequence, and device origin can be cryptographically verified. It does not independently verify that an underlying transaction occurred.",
+      REPORT_LEFT + 14, scopeY + 26, { width: REPORT_WIDTH - 28, lineGap: 1.5 });
 
-  drawPatentFooter(doc);
-
+  // ---------- PAGE 2 — FINANCIAL SUMMARY ----------
   doc.addPage();
-  doc.font("Helvetica-Bold").fontSize(18).fillColor("#1B2F1F").text("Income Statement", 50, 50);
-  doc.font("Helvetica").fontSize(10).fillColor("#6B7C6B").text(`Period: ${periodLabel}`, 50, 74);
-  doc.moveTo(50, 94).lineTo(545, 94).strokeColor("#D4CDB8").stroke();
+  drawReportBand(doc, "Financial Summary");
+  let y = drawReportSectionTitle(doc, 88, "Section 1", "Income Statement", `Period: ${periodLabel}`);
 
-  let statementY = 116;
-  drawStatementRow(doc, statementY, "Revenue (Sales)", fmt(statements.incomeStatement.grossRevenue, reportCurrency));
-  statementY += 24;
-  drawStatementRow(doc, statementY, "Other Receipts", fmt(statements.incomeStatement.otherIncome, reportCurrency));
-  statementY += 22;
-  doc.moveTo(50, statementY).lineTo(545, statementY).strokeColor("#D4CDB8").stroke();
-  statementY += 12;
-  drawStatementRow(doc, statementY, "Total Inflows", fmt(totalInflows, reportCurrency), { bold: true });
-  statementY += 34;
-  drawStatementRow(doc, statementY, "Cost of Goods / Purchases", fmt(statements.incomeStatement.costOfGoods, reportCurrency));
-  statementY += 24;
-  drawStatementRow(doc, statementY, "Operating Expenses", fmt(statements.incomeStatement.operatingExpenses, reportCurrency));
-  statementY += 22;
-  doc.moveTo(50, statementY).lineTo(545, statementY).strokeColor("#D4CDB8").stroke();
-  statementY += 12;
-  drawStatementRow(doc, statementY, "Total Outflows", fmt(totalOutflows, reportCurrency), { bold: true });
-  statementY += 34;
-  drawStatementRow(doc, statementY, "NET INCOME", fmt(statements.incomeStatement.netIncome, reportCurrency), { emphasized: true });
-  drawPatentFooter(doc);
-
-  doc.addPage();
-  doc.font("Helvetica-Bold").fontSize(18).fillColor("#1B2F1F").text("Monthly Cash Flow", 50, 50);
-  doc.font("Helvetica").fontSize(10).fillColor("#6B7C6B").text(`Period: ${periodLabel}`, 50, 74);
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(10)
-    .fillColor("#6B7C6B")
-    .text("Month", 50, 104)
-    .text("Inflows", 180, 104, { width: 110, align: "right" })
-    .text("Outflows", 305, 104, { width: 110, align: "right" })
-    .text("Net Cash", 435, 104, { width: 110, align: "right" });
-  doc.moveTo(50, 120).lineTo(545, 120).strokeColor("#D4CDB8").stroke();
-
-  let cashFlowY = 136;
-  doc.font("Helvetica").fontSize(10).fillColor("#0F1A10");
-  statements.cashFlowByMonth.forEach((row) => {
-    doc
-      .text(row.month, 50, cashFlowY, { width: 90 })
-      .text(fmt(row.inflows, reportCurrency), 180, cashFlowY, { width: 110, align: "right" })
-      .text(fmt(row.outflows, reportCurrency), 305, cashFlowY, { width: 110, align: "right" })
-      .text(fmt(row.net, reportCurrency), 435, cashFlowY, { width: 110, align: "right" });
-    cashFlowY += 20;
-  });
-
-  doc.moveTo(50, cashFlowY).lineTo(545, cashFlowY).strokeColor("#D4CDB8").stroke();
-  cashFlowY += 12;
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(10)
-    .fillColor("#0F1A10")
-    .text("TOTAL", 50, cashFlowY, { width: 90 })
-    .text(fmt(cashFlowTotals.inflows, reportCurrency), 180, cashFlowY, { width: 110, align: "right" })
-    .text(fmt(cashFlowTotals.outflows, reportCurrency), 305, cashFlowY, { width: 110, align: "right" })
-    .text(fmt(cashFlowTotals.net, reportCurrency), 435, cashFlowY, { width: 110, align: "right" });
-  drawPatentFooter(doc);
-
-  doc.addPage();
-  doc.font("Helvetica-Bold").fontSize(18).fillColor("#1B2F1F").text("Appendix: Full Transaction Ledger", 50, 50);
-  doc.font("Helvetica").fontSize(10).fillColor("#6B7C6B").text("Oldest to newest confirmed entries", 50, 74);
-
-  let y = 100;
-  let runningTotal = 0;
-  let entryPageNumber = 1;
-
-  drawEntryTableHeader(doc, y);
+  drawReportStatementRow(doc, y, "Revenue (Sales)", fmt(statements.incomeStatement.grossRevenue, reportCurrency));
+  y += 22;
+  drawReportStatementRow(doc, y, "Other Receipts", fmt(statements.incomeStatement.otherIncome, reportCurrency));
+  y += 20;
+  doc.moveTo(REPORT_LEFT, y).lineTo(REPORT_RIGHT, y).strokeColor(REPORT.line).lineWidth(1).stroke();
+  y += 12;
+  drawReportStatementRow(doc, y, "Total Inflows", fmt(totalInflows, reportCurrency), { strong: true });
   y += 26;
+  drawReportStatementRow(doc, y, "Cost of Goods / Purchases", fmt(statements.incomeStatement.costOfGoods, reportCurrency));
+  y += 22;
+  drawReportStatementRow(doc, y, "Operating Expenses", fmt(statements.incomeStatement.operatingExpenses, reportCurrency));
+  y += 20;
+  doc.moveTo(REPORT_LEFT, y).lineTo(REPORT_RIGHT, y).strokeColor(REPORT.line).lineWidth(1).stroke();
+  y += 12;
+  drawReportStatementRow(doc, y, "Total Outflows", fmt(totalOutflows, reportCurrency), { strong: true });
+  y += 30;
+  drawReportStatementRow(doc, y, "Net Income", fmt(statements.incomeStatement.netIncome, reportCurrency), { total: true });
+  y += 54;
+
+  y = drawReportSectionTitle(doc, y, "Section 2", "Monthly Cash Flow", null);
+  const cashColumns = [
+    { label: "Month", x: REPORT_LEFT, width: 120, align: "left" },
+    { label: "Inflows", x: 180, width: 110, align: "right" },
+    { label: "Outflows", x: 300, width: 110, align: "right" },
+    { label: "Net Cash", x: 420, width: 125, align: "right" }
+  ];
+  y = drawReportTableHeader(doc, y, cashColumns) + 6;
+  if (statements.cashFlowByMonth.length === 0) {
+    doc.font("Helvetica").fontSize(9.5).fillColor(REPORT.muted)
+      .text("No confirmed cash flow in this period.", REPORT_LEFT, y);
+    y += 20;
+  } else {
+    statements.cashFlowByMonth.forEach((row, index) => {
+      if (index % 2 === 1) {
+        doc.save();
+        doc.rect(REPORT_LEFT, y - 4, REPORT_WIDTH, 20).fill(REPORT.panel);
+        doc.restore();
+      }
+      doc.font("Helvetica").fontSize(9.5).fillColor(REPORT.ink)
+        .text(row.month, cashColumns[0].x, y, { width: cashColumns[0].width })
+        .text(fmt(row.inflows, reportCurrency), cashColumns[1].x, y, { width: cashColumns[1].width, align: "right" })
+        .text(fmt(row.outflows, reportCurrency), cashColumns[2].x, y, { width: cashColumns[2].width, align: "right" })
+        .text(fmt(row.net, reportCurrency), cashColumns[3].x, y, { width: cashColumns[3].width, align: "right" });
+      y += 20;
+    });
+  }
+  doc.moveTo(REPORT_LEFT, y).lineTo(REPORT_RIGHT, y).strokeColor(REPORT.line).lineWidth(1).stroke();
+  y += 8;
+  doc.save();
+  doc.rect(REPORT_LEFT, y - 4, REPORT_WIDTH, 24).fill(REPORT.soft);
+  doc.restore();
+  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(REPORT.ink)
+    .text("TOTAL", cashColumns[0].x + 6, y + 3, { width: cashColumns[0].width });
+  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(REPORT.green)
+    .text(fmt(cashFlowTotals.inflows, reportCurrency), cashColumns[1].x, y + 3, { width: cashColumns[1].width, align: "right" })
+    .text(fmt(cashFlowTotals.outflows, reportCurrency), cashColumns[2].x, y + 3, { width: cashColumns[2].width, align: "right" })
+    .text(fmt(cashFlowTotals.net, reportCurrency), cashColumns[3].x, y + 3, { width: cashColumns[3].width, align: "right" });
+
+  // ---------- PAGE 3 — TRANSACTION LEDGER ----------
+  doc.addPage();
+  drawReportBand(doc, "Transaction Ledger");
+  const ledgerColumns = [
+    { label: "ID", x: REPORT_LEFT, width: 34, align: "left" },
+    { label: "Type", x: 86, width: 66, align: "left" },
+    { label: "Label", x: 154, width: 150, align: "left" },
+    { label: "Amount", x: 306, width: 96, align: "right" },
+    { label: "Date", x: 406, width: 96, align: "right" },
+    { label: "Signed", x: 506, width: 39, align: "right" }
+  ];
+  let ly = drawReportSectionTitle(doc, 88, "Appendix", "Transaction Ledger", "All confirmed entries, oldest to newest");
+  ly = drawReportTableHeader(doc, ly, ledgerColumns) + 6;
+  let runningTotal = 0;
 
   entries.forEach((entry, index) => {
+    if (ly > REPORT_BOTTOM - 40) {
+      doc.addPage();
+      drawReportBand(doc, "Transaction Ledger");
+      ly = drawReportSectionTitle(doc, 88, "Appendix", "Transaction Ledger (continued)", null);
+      ly = drawReportTableHeader(doc, ly, ledgerColumns) + 6;
+    }
     const payload = entry.payload || {};
     const amountMinor = Number(payload.amount_minor || 0);
     runningTotal += amountMinor;
-
-    if (y > doc.page.height - 90) {
-      drawEntryPageFooter(doc, runningTotal, reportCurrency);
-      doc.addPage();
-      entryPageNumber += 1;
-      doc.font("Helvetica-Bold").fontSize(18).fillColor("#1B2F1F").text("Appendix: Full Transaction Ledger", 50, 50);
-      doc.font("Helvetica").fontSize(10).fillColor("#6B7C6B").text(`Continued - page ${entryPageNumber}`, 50, 74);
-      y = 100;
-      drawEntryTableHeader(doc, y);
-      y += 26;
+    if (index % 2 === 1) {
+      doc.save();
+      doc.rect(REPORT_LEFT, ly - 4, REPORT_WIDTH, 20).fill(REPORT.panel);
+      doc.restore();
     }
-
-    doc
-      .fontSize(9)
-      .fillColor("#0F1A10")
-      .text(String(payload.id || entry.entry_id || index + 1), 50, y, { width: 36 })
-      .text(truncateText(payload.transaction_type || "", 11), 92, y, { width: 62 })
-      .text(truncateText(payload.label || payload.normalized_label || "", 30), 160, y, { width: 155 })
-      .text(formatMoney(amountMinor, payload.currency || reportCurrency), 325, y, { width: 74 })
-      .text(formatDateTime(entry.confirmed_at), 408, y, { width: 84 })
-      .text(payload.signature ? "Yes" : "No", 500, y, { width: 45 });
-
-    y += 18;
+    doc.font("Helvetica").fontSize(8.5).fillColor(REPORT.ink)
+      .text(String(payload.id || entry.entry_id || index + 1), ledgerColumns[0].x, ly, { width: ledgerColumns[0].width })
+      .text(truncateText(payload.transaction_type || "", 11), ledgerColumns[1].x, ly, { width: ledgerColumns[1].width })
+      .text(truncateText(payload.label || payload.normalized_label || "", 30), ledgerColumns[2].x, ly, { width: ledgerColumns[2].width })
+      .text(formatMoney(amountMinor, payload.currency || reportCurrency), ledgerColumns[3].x, ly, { width: ledgerColumns[3].width, align: "right" })
+      .text(formatDateOnly(entry.confirmed_at), ledgerColumns[4].x, ly, { width: ledgerColumns[4].width, align: "right" })
+      .text(payload.signature ? "Yes" : "No", ledgerColumns[5].x, ly, { width: ledgerColumns[5].width, align: "right" });
+    ly += 20;
   });
 
-  drawEntryPageFooter(doc, runningTotal, reportCurrency);
+  doc.moveTo(REPORT_LEFT, ly).lineTo(REPORT_RIGHT, ly).strokeColor(REPORT.line).lineWidth(1).stroke();
+  ly += 8;
+  doc.save();
+  doc.rect(REPORT_LEFT, ly - 4, REPORT_WIDTH, 24).fill(REPORT.soft);
+  doc.restore();
+  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(REPORT.ink)
+    .text("RUNNING TOTAL", REPORT_LEFT + 6, ly + 3, { width: 200 });
+  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(REPORT.green)
+    .text(formatMoney(runningTotal, reportCurrency), REPORT_LEFT, ly + 3, { width: REPORT_WIDTH - 6, align: "right" });
 
+  // ---------- PAGE 4 — INTEGRITY & VERIFICATION ----------
   doc.addPage();
-  doc.fontSize(20).fillColor("#1B2F1F").text("Integrity Footer", 50, 60);
-  doc.fontSize(11).fillColor("#6B7C6B").text("Attestation and verification details", 50, 92);
+  drawReportBand(doc, "Integrity & Verification");
+  let iy = drawReportSectionTitle(doc, 88, "Cryptographic Record", "Integrity & Verification",
+    "Compare these values against the public verification page.");
 
-  const footerRows = [
-    ["Ledger Root Hash", attestation.ledger_root_hash],
-    ["Attestation Payload (canonical JSON)", attestation.attestation_payload],
-    ["Attestation Signature (ECDSA P-256)", attestation.server_signature],
-    ["Signature Algorithm", attestation.signature_algorithm || "ECDSA_P256_SHA256_P1363"],
-    ["Verification Key URL", attestation.verification_key_url || `${VERIFY_BASE_URL}/.well-known/verification-key.json`],
-    ["Attestation Timestamp", formatDateTime(attestation.issued_at)],
-    ["Device Fingerprint", attestation.device_fingerprint],
-    ["Key Rotation Events", String(keyRotationEvents)],
-    ["Verification Ticket", attestation.vt_id],
-    ["Verification URL", attestation.verify_url]
+  const integrityFields = [
+    ["Ledger root hash", attestation.ledger_root_hash, true],
+    ["Attestation payload (canonical JSON)", attestation.attestation_payload, true],
+    ["Attestation signature (ECDSA P-256)", attestation.server_signature, true],
+    ["Signature algorithm", attestation.signature_algorithm || "ECDSA_P256_SHA256_P1363", false],
+    ["Verification key URL", attestation.verification_key_url || `${VERIFY_BASE_URL}/.well-known/verification-key.json`, false],
+    ["Attestation timestamp", formatDateTime(attestation.issued_at), false],
+    ["Device fingerprint", attestation.device_fingerprint, false],
+    ["Key rotation events", String(keyRotationEvents), false],
+    ["Verification ticket", attestation.vt_id, true],
+    ["Verification URL", attestation.verify_url, false]
   ];
 
-  let footerY = 140;
-  footerRows.forEach(([label, value]) => {
-    const stringValue = String(value);
-    const valueHeight = doc.heightOfString(stringValue, { width: 495 });
-    doc.fontSize(10).fillColor("#6B7C6B").text(label.toUpperCase(), 50, footerY);
-    doc.fontSize(11).fillColor("#0F1A10").text(stringValue, 50, footerY + 14, {
-      width: 495
-    });
-    footerY += 28 + valueHeight;
+  integrityFields.forEach(([label, value, mono]) => {
+    if (iy + (mono ? 74 : 36) > REPORT_BOTTOM) {
+      doc.addPage();
+      drawReportBand(doc, "Integrity & Verification");
+      iy = drawReportSectionTitle(doc, 88, "Cryptographic Record", "Integrity & Verification (continued)", null);
+    }
+    iy = drawReportIntegrityField(doc, iy, label, value, mono);
   });
 
-  doc.fontSize(10).fillColor("#0F1A10").text(PATENT_NOTICE, 50, footerY + 18, {
-    width: 495,
-    lineGap: 4
-  });
+  if (iy + 56 > REPORT_BOTTOM) {
+    doc.addPage();
+    drawReportBand(doc, "Integrity & Verification");
+    iy = 88;
+  }
+  doc.moveTo(REPORT_LEFT, iy + 2).lineTo(REPORT_RIGHT, iy + 2)
+    .strokeColor(REPORT.line).lineWidth(1).stroke();
+  doc.font("Helvetica").fontSize(7.5).fillColor(REPORT.muted)
+    .text(PATENT_NOTICE, REPORT_LEFT, iy + 12, { width: REPORT_WIDTH, lineGap: 2 });
+
+  // ---------- PAGE FOOTERS ----------
+  const pageRange = doc.bufferedPageRange();
+  for (let i = 0; i < pageRange.count; i += 1) {
+    doc.switchToPage(pageRange.start + i);
+    // Drawing in the bottom margin would otherwise make PDFKit append a blank page.
+    doc.page.margins.bottom = 0;
+    const fy = doc.page.height - 38;
+    doc.save();
+    doc.moveTo(REPORT_LEFT, fy).lineTo(REPORT_RIGHT, fy)
+      .strokeColor(REPORT.line).lineWidth(1).stroke();
+    doc.font("Helvetica").fontSize(7).fillColor(REPORT.muted)
+      .text("Konfirmata Verified Report  ·  USPTO Provisional Application 63/987,858", REPORT_LEFT, fy + 8, {
+        width: 380, lineBreak: false
+      });
+    doc.font("Helvetica-Bold").fontSize(7).fillColor(REPORT.muted)
+      .text(`Page ${i + 1} of ${pageRange.count}`, REPORT_RIGHT - 120, fy + 8, {
+        width: 120, align: "right", lineBreak: false
+      });
+    doc.restore();
+  }
 
   doc.end();
 
@@ -856,186 +858,19 @@ async function sendVerifiedReportEmail({ email, filename, pdfBuffer, vtId, verif
 }
 
 export async function registerPaymentRoutes(app) {
-  app.addHook("preParsing", async (request, reply, payload) => {
-    const isWebhookRequest = request.method === "POST" && String(request.url || "").split("?")[0] === "/payment/webhook";
-    if (!isWebhookRequest) {
-      return payload;
-    }
-
-    const chunks = [];
-    for await (const chunk of payload) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    const raw = Buffer.concat(chunks);
-    request.rawBody = raw;
-    return Readable.from(raw);
-  });
-
-  app.post("/payment/webhook", async (request, reply) => {
-    if (!process.env.PAYSTACK_SECRET_KEY) {
-      return reply.code(500).send({ error: "PAYSTACK_SECRET_KEY is not configured." });
-    }
-
-    const providedSignature = String(request.headers["x-paystack-signature"] || "").trim();
-    const expectedSignature = crypto
-      .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
-      .update(request.rawBody || Buffer.from(""))
-      .digest("hex");
-
-    if (!providedSignature || !safeCompareHex(expectedSignature, providedSignature)) {
-      return reply.code(401).send({ error: "Invalid Paystack signature." });
-    }
-
-    try {
-      const event = request.body || JSON.parse(String(request.rawBody || ""));
-      if (event?.event === "charge.success") {
-        const metadataFields = getMetadataFields(event.data?.metadata);
-        const phoneNumber = String(metadataFields.phone || "").trim();
-        const deviceIdentity = String(metadataFields.device_identity || "").trim();
-        const tier = String(metadataFields.tier || "unknown").trim().toLowerCase();
-        const windowDays = parseWindowDays(metadataFields.window_days, 30);
-
-        if (phoneNumber && deviceIdentity && event.data?.reference) {
-          await upsertPaymentRecord({
-            phone_number: phoneNumber,
-            device_identity: deviceIdentity,
-            reference: String(event.data.reference),
-            amount_kobo: Number(event.data.amount || 0),
-            tier,
-            window_days: windowDays,
-            paystack_status: String(event.data.status || "success"),
-            vt_id: null,
-            completed_at: event.data?.paid_at || new Date().toISOString()
-          });
-
-          if (tier === "basic" || tier === "pro") {
-            await activatePlan(phoneNumber, tier);
-          }
-        }
-      }
-    } catch (error) {
-      request.log.error({ err: error }, "Payment webhook processing failed after signature verification.");
-    }
-
-    return reply.code(200).send({ ok: true });
-  });
-
-  app.post("/payment/generate-pdf", async (request, reply) => {
+  app.post("/report/generate-pdf", async (request, reply) => {
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
-    const freeClaim = request.body?.free_claim === true;
-    const reference = String(request.body?.reference || "").trim();
     const requestedWindowDays = parseWindowDays(request.body?.window_days, 90);
-
-    if (freeClaim) {
-      const deviceIdentity = String(auth.device_identity || request.headers["x-device-identity"] || "").trim();
-      if (!deviceIdentity) {
-        return reply.code(400).send({ error: "device_identity is required." });
-      }
-
-      const freeReportContext = await getFreeReportContext(auth.phone_number);
-      if (!freeReportContext) {
-        return reply.code(404).send({ error: "User account not found." });
-      }
-
-      if (!canUseFreeReport(freeReportContext)) {
-        return reply.code(403).send({ error: "Free report unavailable for this account." });
-      }
-
-      try {
-        await assertActiveDevice(auth.phone_number, deviceIdentity);
-      } catch (error) {
-        return reply.code(error.statusCode || 500).send({ error: error.message });
-      }
-
-      let report;
-      try {
-        report = await withTransaction(async (client) => {
-          const claimResult = await client.query(
-            `
-              UPDATE profiles
-              SET free_report_used = TRUE
-              WHERE phone_number = $1
-                AND COALESCE(free_report_used, FALSE) = FALSE
-            `,
-            [auth.phone_number]
-          );
-
-          if (!claimResult.rowCount) {
-            throw Object.assign(new Error("Free report already claimed."), { statusCode: 403 });
-          }
-
-          return generateVerifiedReport({
-            phoneNumber: auth.phone_number,
-            deviceIdentity,
-            businessName: String(freeReportContext.business_name || "").trim(),
-            email: String(freeReportContext.email || "").trim(),
-            tier: "free",
-            windowDays: requestedWindowDays,
-            amountKobo: 0,
-            db: client
-          });
-        });
-      } catch (error) {
-        return reply.code(error.statusCode || 500).send({ error: error.message || "Unable to generate free report." });
-      }
-
-      sendVerifiedReportEmail({
-        email: String(freeReportContext.email || "").trim(),
-        filename: report.filename,
-        pdfBuffer: report.pdfBuffer,
-        vtId: report.attestation.vt_id,
-        verifyUrl: report.attestation.verify_url
-      }).catch((error) => {
-        request.log.error({ err: error }, "Verified report email delivery failed.");
-      });
-
-      return {
-        ok: true,
-        pdf_base64: report.pdfBuffer.toString("base64"),
-        filename: report.filename,
-        vt_id: report.attestation.vt_id
-      };
-    }
-
-    if (!reference) {
-      return reply.code(400).send({ error: "reference is required." });
-    }
-
-    if (!process.env.PAYSTACK_SECRET_KEY) {
-      return reply.code(500).send({ error: "PAYSTACK_SECRET_KEY is not configured." });
-    }
-
-    let verification;
-    try {
-      verification = await fetch(
-        `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`
-          }
-        }
-      );
-    } catch (error) {
-      return reply.code(502).send({ error: "Unable to verify payment right now." });
-    }
-
-    const result = await verification.json().catch(() => ({}));
-    if (!result.data || result.data.status !== "success") {
-      return reply.code(402).send({ error: "Payment not confirmed" });
-    }
-
-    const metadataFields = getMetadataFields(result.data.metadata);
-    const deviceIdentity = String(metadataFields.device_identity || "").trim();
-    const tier = String(metadataFields.tier || "custom").trim();
-    const effectiveWindowDays = parseWindowDays(
-      metadataFields.window_days ?? requestedWindowDays,
-      requestedWindowDays
-    );
-
+    const deviceIdentity = String(auth.device_identity || request.headers["x-device-identity"] || "").trim();
     if (!deviceIdentity) {
-      return reply.code(400).send({ error: "device_identity is required in payment metadata." });
+      return reply.code(400).send({ error: "device_identity is required." });
+    }
+
+    const freeReportContext = await getFreeReportContext(auth.phone_number);
+    if (!freeReportContext) {
+      return reply.code(404).send({ error: "User account not found." });
     }
 
     try {
@@ -1044,41 +879,26 @@ export async function registerPaymentRoutes(app) {
       return reply.code(error.statusCode || 500).send({ error: error.message });
     }
 
-    const email = String(
-      result.data.customer?.email
-      || metadataFields.email
-      || ""
-    ).trim();
-    const businessName = String(
-      metadataFields.display_name
-      || metadataFields.business_name
-      || result.data.customer?.first_name
-      || ""
-    ).trim();
-    const report = await generateVerifiedReport({
-      phoneNumber: auth.phone_number,
-      deviceIdentity,
-      businessName,
-      email,
-      tier,
-      windowDays: effectiveWindowDays,
-      amountKobo: Number(result.data.amount || 0)
-    });
-
-    await upsertPaymentRecord({
-      phone_number: auth.phone_number,
-      device_identity: deviceIdentity,
-      reference,
-      amount_kobo: Number(result.data.amount || 0),
-      tier,
-      window_days: effectiveWindowDays,
-      paystack_status: String(result.data.status || "success"),
-      vt_id: report.attestation.vt_id,
-      completed_at: result.data.paid_at || new Date().toISOString()
-    });
+    let report;
+    try {
+      report = await withTransaction(async (client) => {
+        return generateVerifiedReport({
+          phoneNumber: auth.phone_number,
+          deviceIdentity,
+          businessName: String(freeReportContext.business_name || "").trim(),
+          email: String(freeReportContext.email || "").trim(),
+          tier: "free",
+          windowDays: requestedWindowDays,
+          amountKobo: 0,
+          db: client
+        });
+      });
+    } catch (error) {
+      return reply.code(error.statusCode || 500).send({ error: error.message || "Unable to generate report." });
+    }
 
     sendVerifiedReportEmail({
-      email,
+      email: String(freeReportContext.email || "").trim(),
       filename: report.filename,
       pdfBuffer: report.pdfBuffer,
       vtId: report.attestation.vt_id,
