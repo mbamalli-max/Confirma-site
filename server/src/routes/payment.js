@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 import { authenticateRequest } from "../auth-utils.js";
-import { buildAttestationEnvelope } from "../attestation-signing.js";
+import {
+  ACCOUNT_DEVICES_ATTESTATION_SCOPE,
+  ACCOUNT_DEVICES_ATTESTATION_SCOPE_DESCRIPTION,
+  buildAttestationEnvelope
+} from "../attestation-signing.js";
 import { query, withTransaction } from "../db.js";
 import { maskPhone, maskEmail } from "../utils/mask.js";
 
@@ -11,6 +15,7 @@ let resendModulePromise = null;
 let pdfkitModulePromise = null;
 let qrCodeModulePromise = null;
 let reportProfileColumnsReady = false;
+let reportAttestationColumnsReady = false;
 
 async function getResendClient(apiKey) {
   if (!apiKey) return null;
@@ -192,37 +197,81 @@ async function getDeviceRecord(deviceIdentity) {
   return result.rows[0] || null;
 }
 
-async function getLedgerEntries(deviceIdentity, windowDays, db = null) {
+async function ensureReportAttestationColumns(db = null) {
+  const runner = db || { query };
+  if (!db && reportAttestationColumnsReady) return;
+  await runner.query(`ALTER TABLE attestations ADD COLUMN IF NOT EXISTS attestation_scope TEXT`);
+  await runner.query(`ALTER TABLE attestations ADD COLUMN IF NOT EXISTS scope_description TEXT`);
+  if (!db) reportAttestationColumnsReady = true;
+}
+
+function getEntryDeviceFingerprint(entry) {
+  return String(entry?.device_identity || "").slice(0, 8) || "unknown";
+}
+
+function computeAccountLedgerRootHash(entries) {
+  const digest = crypto.createHash("sha256");
+  for (const entry of entries) {
+    digest.update([
+      String(entry.device_identity || ""),
+      String(entry.entry_id || ""),
+      String(entry.entry_hash || "")
+    ].join(":"));
+    digest.update("\n");
+  }
+  return `sha256:${digest.digest("hex")}`;
+}
+
+async function getLedgerEntries(phoneNumber, windowDays, db = null) {
   const runner = db || { query };
   if (windowDays === 0) {
     const result = await runner.query(
       `
-        SELECT entry_id, entry_hash, confirmed_at, evidence_level, payload
-        FROM ledger_entries
-        WHERE device_identity = $1
-        ORDER BY entry_id ASC
+        SELECT
+          le.device_identity,
+          le.entry_id,
+          le.entry_hash,
+          le.confirmed_at,
+          le.evidence_level,
+          le.public_key_fingerprint,
+          le.payload
+        FROM ledger_entries le
+        INNER JOIN device_identities di
+          ON di.device_identity = le.device_identity
+        WHERE di.phone_number = $1
+        ORDER BY le.confirmed_at ASC, le.device_identity ASC, le.entry_id ASC
       `,
-      [deviceIdentity]
+      [phoneNumber]
     );
     return result.rows;
   }
 
   const result = await runner.query(
     `
-      SELECT entry_id, entry_hash, confirmed_at, evidence_level, payload
-      FROM ledger_entries
-      WHERE device_identity = $1
-        AND confirmed_at >= NOW() - ($2 || ' days')::interval
-      ORDER BY entry_id ASC
+      SELECT
+        le.device_identity,
+        le.entry_id,
+        le.entry_hash,
+        le.confirmed_at,
+        le.evidence_level,
+        le.public_key_fingerprint,
+        le.payload
+      FROM ledger_entries le
+      INNER JOIN device_identities di
+        ON di.device_identity = le.device_identity
+      WHERE di.phone_number = $1
+        AND le.confirmed_at >= NOW() - ($2 || ' days')::interval
+      ORDER BY le.confirmed_at ASC, le.device_identity ASC, le.entry_id ASC
     `,
-    [deviceIdentity, String(windowDays)]
+    [phoneNumber, String(windowDays)]
   );
   return result.rows;
 }
 
 async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = null) {
   const runner = db || { query };
-  const entries = await getLedgerEntries(deviceIdentity, windowDays, runner);
+  await ensureReportAttestationColumns(runner);
+  const entries = await getLedgerEntries(phoneNumber, windowDays, runner);
 
   if (!entries.length) {
     const error = new Error("No entries in this window.");
@@ -231,7 +280,7 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = n
   }
 
   const entryCount = entries.length;
-  const ledgerRootHash = entries[entryCount - 1].entry_hash;
+  const ledgerRootHash = computeAccountLedgerRootHash(entries);
   const windowStart = new Date(entries[0].confirmed_at);
   const windowEnd = new Date(entries[entryCount - 1].confirmed_at);
   const vtId = crypto.randomBytes(16).toString("hex");
@@ -244,7 +293,9 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = n
     window_start: windowStart.toISOString(),
     window_end: windowEnd.toISOString(),
     issued_at: issuedAt.toISOString(),
-    status: "VALID"
+    status: "VALID",
+    attestation_scope: ACCOUNT_DEVICES_ATTESTATION_SCOPE,
+    scope_description: ACCOUNT_DEVICES_ATTESTATION_SCOPE_DESCRIPTION
   });
 
   await runner.query(
@@ -259,9 +310,11 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = n
         entry_count,
         server_signature,
         status,
-        issued_at
+        issued_at,
+        attestation_scope,
+        scope_description
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'VALID', $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'VALID', $9, $10, $11)
     `,
     [
       attestation.vt_id,
@@ -272,7 +325,9 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = n
       attestation.window_end,
       attestation.entry_count,
       attestation.server_signature,
-      attestation.issued_at
+      attestation.issued_at,
+      attestation.attestation_scope,
+      attestation.scope_description
     ]
   );
 
@@ -282,11 +337,20 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = n
   };
 }
 
-async function getKeyRotationCount(deviceIdentity, db = null) {
+async function getKeyRotationCount(phoneNumber, db = null) {
   const runner = db || { query };
   const result = await runner.query(
-    `SELECT COUNT(*)::int AS rotation_count FROM key_rotation_events WHERE old_device_identity = $1 OR new_device_identity = $1`,
-    [deviceIdentity]
+    `
+      SELECT COUNT(*)::int AS rotation_count
+      FROM key_rotation_events
+      WHERE old_device_identity IN (
+        SELECT device_identity FROM device_identities WHERE phone_number = $1
+      )
+      OR new_device_identity IN (
+        SELECT device_identity FROM device_identities WHERE phone_number = $1
+      )
+    `,
+    [phoneNumber]
   );
   return result.rows[0]?.rotation_count || 0;
 }
@@ -548,7 +612,8 @@ async function buildVerifiedReportPdf({
     ["Tier", tier ? tier[0].toUpperCase() + tier.slice(1) : "Unknown"],
     ["Report date range", `${formatDateOnly(attestation.window_start)} to ${formatDateOnly(attestation.window_end)}`],
     ["Generated", formatDateTime(attestation.issued_at)],
-    ["Device fingerprint", attestation.device_fingerprint],
+    ["Report device", attestation.device_fingerprint],
+    ["Scope", "Account devices"],
     ["Entry count", String(attestation.entry_count)],
     ["Verification ticket", attestation.vt_id],
     ["Amount paid", formatMoney(amountKobo, "NGN")],
@@ -602,7 +667,7 @@ async function buildVerifiedReportPdf({
   doc.fillColor(REPORT.green).font("Helvetica-Bold").fontSize(8)
     .text("WHAT THIS REPORT CONFIRMS", REPORT_LEFT + 14, scopeY + 12, { characterSpacing: 0.8 });
   doc.fillColor(REPORT.muted).font("Helvetica").fontSize(8.5)
-    .text("This report confirms that the listed business activity records carry a valid Konfirmata server attestation and that their integrity, sequence, and device origin can be cryptographically verified. It does not independently verify that an underlying transaction occurred.",
+    .text("This report confirms that the listed account-linked business activity records carry a valid Konfirmata server attestation and that their integrity, sequence, and device origin can be cryptographically verified. It does not independently verify that an underlying transaction occurred.",
       REPORT_LEFT + 14, scopeY + 26, { width: REPORT_WIDTH - 28, lineGap: 1.5 });
 
   // ---------- PAGE 2 — FINANCIAL SUMMARY ----------
@@ -672,14 +737,15 @@ async function buildVerifiedReportPdf({
   doc.addPage();
   drawReportBand(doc, "Transaction Ledger");
   const ledgerColumns = [
-    { label: "ID", x: REPORT_LEFT, width: 34, align: "left" },
-    { label: "Type", x: 86, width: 66, align: "left" },
-    { label: "Label", x: 154, width: 150, align: "left" },
-    { label: "Amount", x: 306, width: 96, align: "right" },
-    { label: "Date", x: 406, width: 96, align: "right" },
-    { label: "Signed", x: 506, width: 39, align: "right" }
+    { label: "ID", x: REPORT_LEFT, width: 30, align: "left" },
+    { label: "Device", x: 82, width: 58, align: "left" },
+    { label: "Type", x: 144, width: 56, align: "left" },
+    { label: "Label", x: 204, width: 112, align: "left" },
+    { label: "Amount", x: 318, width: 82, align: "right" },
+    { label: "Date", x: 404, width: 86, align: "right" },
+    { label: "Signed", x: 500, width: 45, align: "right" }
   ];
-  let ly = drawReportSectionTitle(doc, 88, "Appendix", "Transaction Ledger", "All confirmed entries, oldest to newest");
+  let ly = drawReportSectionTitle(doc, 88, "Appendix", "Transaction Ledger", "All confirmed account entries, oldest to newest");
   ly = drawReportTableHeader(doc, ly, ledgerColumns) + 6;
   let runningTotal = 0;
 
@@ -700,11 +766,12 @@ async function buildVerifiedReportPdf({
     }
     doc.font("Helvetica").fontSize(8.5).fillColor(REPORT.ink)
       .text(String(payload.id || entry.entry_id || index + 1), ledgerColumns[0].x, ly, { width: ledgerColumns[0].width })
-      .text(truncateText(payload.transaction_type || "", 11), ledgerColumns[1].x, ly, { width: ledgerColumns[1].width })
-      .text(truncateText(payload.label || payload.normalized_label || "", 30), ledgerColumns[2].x, ly, { width: ledgerColumns[2].width })
-      .text(formatMoney(amountMinor, payload.currency || reportCurrency), ledgerColumns[3].x, ly, { width: ledgerColumns[3].width, align: "right" })
-      .text(formatDateOnly(entry.confirmed_at), ledgerColumns[4].x, ly, { width: ledgerColumns[4].width, align: "right" })
-      .text(payload.signature ? "Yes" : "No", ledgerColumns[5].x, ly, { width: ledgerColumns[5].width, align: "right" });
+      .text(getEntryDeviceFingerprint(entry), ledgerColumns[1].x, ly, { width: ledgerColumns[1].width })
+      .text(truncateText(payload.transaction_type || "", 10), ledgerColumns[2].x, ly, { width: ledgerColumns[2].width })
+      .text(truncateText(payload.label || payload.normalized_label || "", 22), ledgerColumns[3].x, ly, { width: ledgerColumns[3].width })
+      .text(formatMoney(amountMinor, payload.currency || reportCurrency), ledgerColumns[4].x, ly, { width: ledgerColumns[4].width, align: "right" })
+      .text(formatDateOnly(entry.confirmed_at), ledgerColumns[5].x, ly, { width: ledgerColumns[5].width, align: "right" })
+      .text(payload.signature ? "Yes" : "No", ledgerColumns[6].x, ly, { width: ledgerColumns[6].width, align: "right" });
     ly += 20;
   });
 
@@ -731,7 +798,8 @@ async function buildVerifiedReportPdf({
     ["Signature algorithm", attestation.signature_algorithm || "ECDSA_P256_SHA256_P1363", false],
     ["Verification key URL", attestation.verification_key_url || `${VERIFY_BASE_URL}/.well-known/verification-key.json`, false],
     ["Attestation timestamp", formatDateTime(attestation.issued_at), false],
-    ["Device fingerprint", attestation.device_fingerprint, false],
+    ["Attestation scope", attestation.scope_description || ACCOUNT_DEVICES_ATTESTATION_SCOPE_DESCRIPTION, false],
+    ["Report device fingerprint", attestation.device_fingerprint, false],
     ["Key rotation events", String(keyRotationEvents), false],
     ["Verification ticket", attestation.vt_id, true],
     ["Verification URL", attestation.verify_url, false]
@@ -816,7 +884,7 @@ async function generateVerifiedReport({
   db = null
 }) {
   const attestation = await createAttestation(phoneNumber, deviceIdentity, windowDays, db);
-  const keyRotationEvents = await getKeyRotationCount(deviceIdentity, db);
+  const keyRotationEvents = await getKeyRotationCount(phoneNumber, db);
   const filename = `konfirmata-verified-report-${new Date().toISOString().slice(0, 10)}.pdf`;
   const pdfBuffer = await buildVerifiedReportPdf({
     attestation,

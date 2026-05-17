@@ -3147,7 +3147,7 @@ function renderExportScreen() {
     scopeNote = document.createElement("p");
     scopeNote.id = exportScopeNoteId;
     scopeNote.style.cssText = "font-size: 0.85rem; color: #6B7C6B; margin: 0.5rem 0 1rem; font-style: italic;";
-    scopeNote.textContent = "This report reflects records from a single device. Records from other devices linked to this account are not included.";
+    scopeNote.textContent = "This report reflects server-synced records from device identities linked to this account. The ledger lists the device used for each entry.";
   }
   const exportActionAnchor = els["export-open-trust-v3"];
   if (exportActionAnchor?.parentElement) {
@@ -3332,7 +3332,7 @@ async function generateExport() {
 
   const output = [
     "KONFIRMATA V3 EXPORT",
-    "Note: This report reflects records from a single device only.",
+    "Note: This local export reflects records available on this device.",
     `Generated: ${new Date().toLocaleString()}`,
     `Profile: ${countryName(state.profile.operating_region)} / ${BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id)?.name || "Unknown"}`,
     state.profile.display_name ? `Name: ${state.profile.display_name}` : null,

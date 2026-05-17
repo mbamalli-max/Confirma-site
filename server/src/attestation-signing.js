@@ -3,6 +3,8 @@ import { config } from "./config.js";
 
 export const ATTESTATION_SCOPE = "single_device";
 export const ATTESTATION_SCOPE_DESCRIPTION = "This report reflects records from a single device only.";
+export const ACCOUNT_DEVICES_ATTESTATION_SCOPE = "account_devices";
+export const ACCOUNT_DEVICES_ATTESTATION_SCOPE_DESCRIPTION = "This report reflects records from device identities linked to the authenticated account. The report device fingerprint identifies the device that generated the report; each ledger row identifies the device used to record that entry.";
 export const ATTESTATION_SIGNATURE_ALGORITHM = "ECDSA_P256_SHA256_P1363";
 export const LEGACY_ATTESTATION_SIGNATURE_ALGORITHM = "HMAC_SHA256_LEGACY";
 
@@ -123,6 +125,8 @@ export function buildAttestationEnvelope(fields) {
   const windowEndIso = new Date(fields.window_end).toISOString();
   const deviceFingerprint = String(fields.device_fingerprint || deviceIdentity.slice(0, 8));
   const verifyUrl = String(fields.verify_url || `${config.verifyBaseUrl}/verify/${vtId}`);
+  const attestationScope = String(fields.attestation_scope || ATTESTATION_SCOPE);
+  const scopeDescription = String(fields.scope_description || ATTESTATION_SCOPE_DESCRIPTION);
   const attestationPayload = buildAttestationPayload({
     vt_id: vtId,
     device_fingerprint: deviceFingerprint,
@@ -132,8 +136,8 @@ export function buildAttestationEnvelope(fields) {
     window_end: windowEndIso,
     issued_at: issuedAtIso,
     status: fields.status || "VALID",
-    attestation_scope: ATTESTATION_SCOPE,
-    scope_description: ATTESTATION_SCOPE_DESCRIPTION
+    attestation_scope: attestationScope,
+    scope_description: scopeDescription
   });
   return {
     vt_id: vtId,
@@ -145,8 +149,8 @@ export function buildAttestationEnvelope(fields) {
     window_end: windowEndIso,
     issued_at: issuedAtIso,
     status: String(fields.status || "VALID"),
-    attestation_scope: ATTESTATION_SCOPE,
-    scope_description: ATTESTATION_SCOPE_DESCRIPTION,
+    attestation_scope: attestationScope,
+    scope_description: scopeDescription,
     verify_url: verifyUrl,
     verification_key_url: getVerificationKeyUrl(),
     signature_algorithm: ATTESTATION_SIGNATURE_ALGORITHM,

@@ -20,7 +20,10 @@ export async function registerAttestRoutes(app) {
     if (!auth) return reply;
 
     const deviceIdentity = String(request.body?.device_identity || "").trim();
-    const windowDays = Number(request.body?.window_days) || 30;
+    const parsedWindowDays = Number(request.body?.window_days);
+    const windowDays = Number.isFinite(parsedWindowDays) && parsedWindowDays >= 0
+      ? Math.min(365, Math.floor(parsedWindowDays))
+      : 30;
 
     if (!deviceIdentity) {
       return reply.code(400).send({ error: "device_identity is required." });
@@ -45,17 +48,27 @@ export async function registerAttestRoutes(app) {
       return reply.code(403).send({ error: "Device has been revoked." });
     }
 
-    // Query ledger entries in the window
-    const entriesResult = await query(
-      `
-        SELECT entry_hash, confirmed_at
-        FROM ledger_entries
-        WHERE device_identity = $1
-          AND confirmed_at >= NOW() - ($2 || ' days')::interval
-        ORDER BY entry_id ASC
-      `,
-      [deviceIdentity, String(windowDays)]
-    );
+    // Query ledger entries in the window. window_days=0 means full device history.
+    const entriesResult = windowDays === 0
+      ? await query(
+        `
+          SELECT entry_hash, confirmed_at
+          FROM ledger_entries
+          WHERE device_identity = $1
+          ORDER BY entry_id ASC
+        `,
+        [deviceIdentity]
+      )
+      : await query(
+        `
+          SELECT entry_hash, confirmed_at
+          FROM ledger_entries
+          WHERE device_identity = $1
+            AND confirmed_at >= NOW() - ($2 || ' days')::interval
+          ORDER BY entry_id ASC
+        `,
+        [deviceIdentity, String(windowDays)]
+      );
 
     if (entriesResult.rows.length === 0) {
       return reply.code(400).send({ error: "No entries in this window." });
@@ -120,13 +133,39 @@ export async function registerAttestRoutes(app) {
     }
 
     if (vtId === "demo") {
-      return {
-        status: "VALID",
+      const issuedAt = new Date();
+      const windowStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const verificationKeyMetadata = getVerificationKeyMetadata();
+      const demoAttestation = buildAttestationEnvelope({
         vt_id: "demo",
-        attested_at: new Date().toISOString(),
-        window_start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-        window_end: new Date().toISOString(),
+        device_identity: "demo-device-7f3a91c2b8d4450fa02c9e01",
+        device_fingerprint: "7f3a91c2",
+        ledger_root_hash: "sha256:demo-ledger-root-8d6b5b0a2e3f4c9d1a7b6e5c4d3f2a1b",
         entry_count: 47,
+        window_start: windowStart.toISOString(),
+        window_end: issuedAt.toISOString(),
+        issued_at: issuedAt.toISOString(),
+        status: "VALID",
+        verify_url: "https://konfirmata.com/verify/demo"
+      });
+
+      return {
+        status: demoAttestation.status,
+        vt_id: demoAttestation.vt_id,
+        attested_at: demoAttestation.issued_at,
+        device_fingerprint: demoAttestation.device_fingerprint,
+        ledger_root_hash: demoAttestation.ledger_root_hash,
+        window_start: demoAttestation.window_start,
+        window_end: demoAttestation.window_end,
+        entry_count: demoAttestation.entry_count,
+        key_rotation_events: 0,
+        fork_status: "NORMAL",
+        attestation_scope: demoAttestation.attestation_scope,
+        scope_description: demoAttestation.scope_description,
+        server_signature: demoAttestation.server_signature,
+        attestation_payload: demoAttestation.attestation_payload,
+        signature_algorithm: verificationKeyMetadata.signature_algorithm,
+        verification_key_url: verificationKeyMetadata.verification_key_url,
         is_demo: true
       };
     }
@@ -150,7 +189,9 @@ export async function registerAttestRoutes(app) {
       window_start: attestation.window_start,
       window_end: attestation.window_end,
       issued_at: attestation.issued_at,
-      status: attestation.status
+      status: attestation.status,
+      attestation_scope: attestation.attestation_scope || ATTESTATION_SCOPE,
+      scope_description: attestation.scope_description || ATTESTATION_SCOPE_DESCRIPTION
     });
 
     const verificationKeyMetadata = getVerificationKeyMetadata();
@@ -201,8 +242,8 @@ export async function registerAttestRoutes(app) {
       entry_count: Number(attestation.entry_count || 0),
       key_rotation_events: rotationResult.rows[0]?.rotation_count || 0,
       fork_status: forkStatus,
-      attestation_scope: ATTESTATION_SCOPE,
-      scope_description: ATTESTATION_SCOPE_DESCRIPTION,
+      attestation_scope: attestation.attestation_scope || ATTESTATION_SCOPE,
+      scope_description: attestation.scope_description || ATTESTATION_SCOPE_DESCRIPTION,
       server_signature: attestation.server_signature,
       attestation_payload: attestationPayload,
       signature_algorithm: signatureAlgorithm,

@@ -77,8 +77,12 @@
             <div class="status-value mono-value" id="ledger-root-hash">Loading</div>
           </article>
           <article class="status-block">
-            <span class="status-label">Device fingerprint</span>
+            <span class="status-label">Report device fingerprint</span>
             <div class="status-value mono-value" id="device-fingerprint">Loading</div>
+          </article>
+          <article class="status-block">
+            <span class="status-label">Attestation scope</span>
+            <div class="status-value" id="attestation-scope">Loading</div>
           </article>
           <article class="status-block">
             <span class="status-label">Signature algorithm</span>
@@ -183,6 +187,7 @@
       return {
         ledger_root_hash: "sha256:demo-ledger-root-8d6b5b0a2e3f4c9d1a7b6e5c4d3f2a1b",
         device_fingerprint: "7f3a91c2",
+        scope_description: "Demo account-linked business activity record.",
         signature_algorithm: "ECDSA_P256_SHA256_P1363",
         verification_key_url: "https://konfirmata.com/.well-known/verification-key.json"
       };
@@ -193,6 +198,7 @@
       const payload = parseAttestationPayload(data);
       setText("ledger-root-hash", data?.ledger_root_hash || payload.ledger_root_hash || fallback.ledger_root_hash);
       setText("device-fingerprint", data?.device_fingerprint || payload.device_fingerprint || fallback.device_fingerprint);
+      setText("attestation-scope", data?.scope_description || payload.scope_description || fallback.scope_description);
       setText("signature-algorithm", data?.signature_algorithm || fallback.signature_algorithm);
       setLink("verification-key-url", data?.verification_key_url || fallback.verification_key_url);
     }
