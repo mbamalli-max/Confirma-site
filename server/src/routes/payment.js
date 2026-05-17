@@ -817,7 +817,7 @@ async function generateVerifiedReport({
 }) {
   const attestation = await createAttestation(phoneNumber, deviceIdentity, windowDays, db);
   const keyRotationEvents = await getKeyRotationCount(deviceIdentity, db);
-  const filename = `confirma-verified-report-${new Date().toISOString().slice(0, 10)}.pdf`;
+  const filename = `konfirmata-verified-report-${new Date().toISOString().slice(0, 10)}.pdf`;
   const pdfBuffer = await buildVerifiedReportPdf({
     attestation,
     businessName,
@@ -865,7 +865,7 @@ export async function registerPaymentRoutes(app) {
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
-    const requestedWindowDays = parseWindowDays(request.body?.window_days, 90);
+    const requestedWindowDays = parseWindowDays(request.body?.window_days, 0);
     const deviceIdentity = String(auth.device_identity || request.headers["x-device-identity"] || "").trim();
     if (!deviceIdentity) {
       return reply.code(400).send({ error: "device_identity is required." });

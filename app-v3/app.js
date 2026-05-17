@@ -3715,7 +3715,8 @@ async function claimFreeReport() {
 
   try {
     const response = await postJson(state.syncApiBaseUrl, "/report/generate-pdf", {
-      free_claim: true
+      free_claim: true,
+      window_days: 0
     }, state.authSessionKey, {
       deviceIdentity: state.deviceIdentity
     });
