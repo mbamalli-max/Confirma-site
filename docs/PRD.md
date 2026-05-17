@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.5.0
+**Version:** 3.5.1
 **Date:** 2026-05-17
 
 ---
@@ -252,7 +252,8 @@ Voice uses the same locale (`getVoiceLocale()`), TTS engine (`speakConfirmationC
 - Server-generated via pdfkit
 - Available for authenticated users at no charge
 - Calls `POST /report/generate-pdf` with `window_days: 0`
-- Contains: business cover page (masked PII), income statement, monthly cash flow, full account-device ledger, device column per row, evidence summary, QR code + verify URL, attestation payload, server signature, verification key URL, and patent notice
+- Contains: business cover page (masked PII), activity summary, monthly cash flow view, full account-device ledger, device column per row, evidence summary, QR code + verify URL, attestation payload, server signature, verification key URL, and patent notice
+- Mixed-currency reports show activity totals and ledger totals per currency without conversion or combination
 - Server sends the PDF as a direct download response and attempts email delivery when a recovery email and `RESEND_API_KEY` are available
 
 **Scope disclaimer** (both export types):
@@ -503,8 +504,10 @@ The current app has no paid tiers, no payment checkout, no payment processor int
 - Server-generated PDF via `POST /report/generate-pdf`
 - Client sends `window_days: 0` to request full account-device history
 - Filename: `konfirmata-verified-report-{YYYY-MM-DD}.pdf`
-- PDF contains: cover page (masked phone/email), income statement, cash flow, full account-device ledger appendix, evidence summary, attestation payload, ECDSA attestation signature, verification key URL, QR code, verify URL, patent notice
+- PDF contains: cover page (masked phone/email), activity summary, monthly cash flow view, full account-device ledger appendix, evidence summary, attestation payload, ECDSA attestation signature, verification key URL, QR code, verify URL, patent notice
 - Ledger rows include a device fingerprint column so institutions can see which account-linked device recorded each entry
+- Ledger references prefix the per-device entry id with the short device code to avoid duplicate-looking ids in multi-device reports
+- Mixed-currency reports show totals per currency without conversion or combination
 - Direct download is returned in the API response; email delivery is best-effort when an email address and `RESEND_API_KEY` are available
 
 ### 11.3 Attestation Scopes

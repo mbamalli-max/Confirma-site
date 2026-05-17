@@ -183,6 +183,26 @@ function computeFinancialStatements(entries, currency) {
   };
 }
 
+function getEntryCurrency(entry, fallbackCurrency = "NGN") {
+  return String(entry?.payload?.currency || entry?.currency || fallbackCurrency || "NGN").toUpperCase();
+}
+
+function groupEntriesByCurrency(entries, fallbackCurrency = "NGN") {
+  const grouped = new Map();
+  entries.forEach((entry) => {
+    const currency = getEntryCurrency(entry, fallbackCurrency);
+    if (!grouped.has(currency)) grouped.set(currency, []);
+    grouped.get(currency).push(entry);
+  });
+  return [...grouped.entries()].sort(([currencyA], [currencyB]) => currencyA.localeCompare(currencyB));
+}
+
+function formatLedgerEntryRef(entry, payload, index) {
+  const devicePrefix = getEntryDeviceFingerprint(entry).slice(0, 4) || "unk";
+  const entryId = payload?.id || entry?.entry_id || index + 1;
+  return `${devicePrefix}-${entryId}`;
+}
+
 function truncateText(value, maxLength) {
   const text = String(value ?? "");
   if (text.length <= maxLength) return text;
@@ -569,7 +589,14 @@ async function buildVerifiedReportPdf({
   const qrBuffer = await QRCode.toBuffer(attestation.verify_url, { width: 240, margin: 1 });
   const entries = attestation.entries;
   const reportCurrency = entries[0]?.payload?.currency || "NGN";
-  const statements = computeFinancialStatements(entries, reportCurrency);
+  const overallStatements = computeFinancialStatements(entries, reportCurrency);
+  const currencyGroups = groupEntriesByCurrency(entries, reportCurrency);
+  const mixedCurrency = currencyGroups.length > 1;
+  const statementsByCurrency = currencyGroups.map(([currency, currencyEntries]) => ({
+    currency,
+    statements: computeFinancialStatements(currencyEntries, currency)
+  }));
+  const statements = statementsByCurrency[0]?.statements || overallStatements;
   const evidenceCounts = { self_reported: 0, device_signed: 0, server_attested: 0, corroborated: 0 };
   entries.forEach((entry) => {
     const level = entry.evidence_level || "self_reported";
@@ -586,8 +613,8 @@ async function buildVerifiedReportPdf({
     totals.net += month.net;
     return totals;
   }, { inflows: 0, outflows: 0, net: 0 });
-  const periodLabel = statements.dateRange.start && statements.dateRange.end
-    ? `${formatDateOnly(new Date(statements.dateRange.start * 1000))} to ${formatDateOnly(new Date(statements.dateRange.end * 1000))}`
+  const periodLabel = overallStatements.dateRange.start && overallStatements.dateRange.end
+    ? `${formatDateOnly(new Date(overallStatements.dateRange.start * 1000))} to ${formatDateOnly(new Date(overallStatements.dateRange.end * 1000))}`
     : "No confirmed entries";
 
   // ---------- PAGE 1 — COVER ----------
@@ -616,7 +643,7 @@ async function buildVerifiedReportPdf({
     ["Scope", "Account devices"],
     ["Entry count", String(attestation.entry_count)],
     ["Verification ticket", attestation.vt_id],
-    ["Amount paid", formatMoney(amountKobo, "NGN")],
+    ["Report fee", amountKobo ? formatMoney(amountKobo, "NGN") : "Free"],
     ["Window days", windowDays === 0 ? "Full history" : String(windowDays)]
   ];
   let detailY = 178;
@@ -670,84 +697,137 @@ async function buildVerifiedReportPdf({
     .text("This report confirms that the listed account-linked business activity records carry a valid Konfirmata server attestation and that their integrity, sequence, and device origin can be cryptographically verified. It does not independently verify that an underlying transaction occurred.",
       REPORT_LEFT + 14, scopeY + 26, { width: REPORT_WIDTH - 28, lineGap: 1.5 });
 
-  // ---------- PAGE 2 — FINANCIAL SUMMARY ----------
+  // ---------- PAGE 2 — ACTIVITY SUMMARY ----------
   doc.addPage();
-  drawReportBand(doc, "Financial Summary");
-  let y = drawReportSectionTitle(doc, 88, "Section 1", "Income Statement", `Period: ${periodLabel}`);
+  drawReportBand(doc, "Activity Summary");
+  let y = drawReportSectionTitle(doc, 88, "Section 1", "Inflow / Outflow Summary", `Period: ${periodLabel}`);
 
-  drawReportStatementRow(doc, y, "Revenue (Sales)", fmt(statements.incomeStatement.grossRevenue, reportCurrency));
-  y += 22;
-  drawReportStatementRow(doc, y, "Other Receipts", fmt(statements.incomeStatement.otherIncome, reportCurrency));
-  y += 20;
-  doc.moveTo(REPORT_LEFT, y).lineTo(REPORT_RIGHT, y).strokeColor(REPORT.line).lineWidth(1).stroke();
-  y += 12;
-  drawReportStatementRow(doc, y, "Total Inflows", fmt(totalInflows, reportCurrency), { strong: true });
-  y += 26;
-  drawReportStatementRow(doc, y, "Cost of Goods / Purchases", fmt(statements.incomeStatement.costOfGoods, reportCurrency));
-  y += 22;
-  drawReportStatementRow(doc, y, "Operating Expenses", fmt(statements.incomeStatement.operatingExpenses, reportCurrency));
-  y += 20;
-  doc.moveTo(REPORT_LEFT, y).lineTo(REPORT_RIGHT, y).strokeColor(REPORT.line).lineWidth(1).stroke();
-  y += 12;
-  drawReportStatementRow(doc, y, "Total Outflows", fmt(totalOutflows, reportCurrency), { strong: true });
-  y += 30;
-  drawReportStatementRow(doc, y, "Net Income", fmt(statements.incomeStatement.netIncome, reportCurrency), { total: true });
-  y += 54;
-
-  y = drawReportSectionTitle(doc, y, "Section 2", "Monthly Cash Flow", null);
-  const cashColumns = [
-    { label: "Month", x: REPORT_LEFT, width: 120, align: "left" },
-    { label: "Inflows", x: 180, width: 110, align: "right" },
-    { label: "Outflows", x: 300, width: 110, align: "right" },
-    { label: "Net Cash", x: 420, width: 125, align: "right" }
-  ];
-  y = drawReportTableHeader(doc, y, cashColumns) + 6;
-  if (statements.cashFlowByMonth.length === 0) {
+  if (mixedCurrency) {
     doc.font("Helvetica").fontSize(9.5).fillColor(REPORT.muted)
-      .text("No confirmed cash flow in this period.", REPORT_LEFT, y);
-    y += 20;
-  } else {
-    statements.cashFlowByMonth.forEach((row, index) => {
+      .text("Mixed currencies detected. Amounts are shown per currency and are not converted or combined.",
+        REPORT_LEFT, y, { width: REPORT_WIDTH });
+    y += 26;
+    const summaryColumns = [
+      { label: "Currency", x: REPORT_LEFT, width: 70, align: "left" },
+      { label: "Inflows", x: 166, width: 110, align: "right" },
+      { label: "Outflows", x: 292, width: 110, align: "right" },
+      { label: "Net Activity", x: 418, width: 127, align: "right" }
+    ];
+    y = drawReportTableHeader(doc, y, summaryColumns) + 6;
+    statementsByCurrency.forEach(({ currency, statements: currencyStatements }, index) => {
+      const currencyInflows = currencyStatements.incomeStatement.grossRevenue + currencyStatements.incomeStatement.otherIncome;
+      const currencyOutflows = currencyStatements.incomeStatement.costOfGoods + currencyStatements.incomeStatement.operatingExpenses;
       if (index % 2 === 1) {
         doc.save();
         doc.rect(REPORT_LEFT, y - 4, REPORT_WIDTH, 20).fill(REPORT.panel);
         doc.restore();
       }
       doc.font("Helvetica").fontSize(9.5).fillColor(REPORT.ink)
-        .text(row.month, cashColumns[0].x, y, { width: cashColumns[0].width })
-        .text(fmt(row.inflows, reportCurrency), cashColumns[1].x, y, { width: cashColumns[1].width, align: "right" })
-        .text(fmt(row.outflows, reportCurrency), cashColumns[2].x, y, { width: cashColumns[2].width, align: "right" })
-        .text(fmt(row.net, reportCurrency), cashColumns[3].x, y, { width: cashColumns[3].width, align: "right" });
+        .text(currency, summaryColumns[0].x, y, { width: summaryColumns[0].width })
+        .text(fmt(currencyInflows, currency), summaryColumns[1].x, y, { width: summaryColumns[1].width, align: "right" })
+        .text(fmt(currencyOutflows, currency), summaryColumns[2].x, y, { width: summaryColumns[2].width, align: "right" })
+        .text(fmt(currencyInflows - currencyOutflows, currency), summaryColumns[3].x, y, { width: summaryColumns[3].width, align: "right" });
+      y += 20;
+    });
+    y += 34;
+  } else {
+    drawReportStatementRow(doc, y, "Recorded Sales Inflows", fmt(statements.incomeStatement.grossRevenue, reportCurrency));
+    y += 22;
+    drawReportStatementRow(doc, y, "Other Recorded Inflows", fmt(statements.incomeStatement.otherIncome, reportCurrency));
+    y += 20;
+    doc.moveTo(REPORT_LEFT, y).lineTo(REPORT_RIGHT, y).strokeColor(REPORT.line).lineWidth(1).stroke();
+    y += 12;
+    drawReportStatementRow(doc, y, "Total Recorded Inflows", fmt(totalInflows, reportCurrency), { strong: true });
+    y += 26;
+    drawReportStatementRow(doc, y, "Recorded Purchase Outflows", fmt(statements.incomeStatement.costOfGoods, reportCurrency));
+    y += 22;
+    drawReportStatementRow(doc, y, "Recorded Operating Outflows", fmt(statements.incomeStatement.operatingExpenses, reportCurrency));
+    y += 20;
+    doc.moveTo(REPORT_LEFT, y).lineTo(REPORT_RIGHT, y).strokeColor(REPORT.line).lineWidth(1).stroke();
+    y += 12;
+    drawReportStatementRow(doc, y, "Total Recorded Outflows", fmt(totalOutflows, reportCurrency), { strong: true });
+    y += 30;
+    drawReportStatementRow(doc, y, "Net Recorded Activity", fmt(statements.incomeStatement.netIncome, reportCurrency), { total: true });
+    y += 54;
+  }
+
+  y = drawReportSectionTitle(doc, y, "Section 2", "Monthly Cash Flow", null);
+  const cashColumns = mixedCurrency
+    ? [
+      { label: "Month", x: REPORT_LEFT, width: 80, align: "left" },
+      { label: "Currency", x: 138, width: 60, align: "left" },
+      { label: "Inflows", x: 206, width: 95, align: "right" },
+      { label: "Outflows", x: 314, width: 95, align: "right" },
+      { label: "Net Cash", x: 422, width: 123, align: "right" }
+    ]
+    : [
+      { label: "Month", x: REPORT_LEFT, width: 120, align: "left" },
+      { label: "Inflows", x: 180, width: 110, align: "right" },
+      { label: "Outflows", x: 300, width: 110, align: "right" },
+      { label: "Net Cash", x: 420, width: 125, align: "right" }
+    ];
+  const cashRows = mixedCurrency
+    ? statementsByCurrency.flatMap(({ currency, statements: currencyStatements }) =>
+      currencyStatements.cashFlowByMonth.map((row) => ({ ...row, currency }))
+    ).sort((rowA, rowB) => rowA.month.localeCompare(rowB.month) || rowA.currency.localeCompare(rowB.currency))
+    : statements.cashFlowByMonth.map((row) => ({ ...row, currency: reportCurrency }));
+  y = drawReportTableHeader(doc, y, cashColumns) + 6;
+  if (cashRows.length === 0) {
+    doc.font("Helvetica").fontSize(9.5).fillColor(REPORT.muted)
+      .text("No confirmed cash flow in this period.", REPORT_LEFT, y);
+    y += 20;
+  } else {
+    cashRows.forEach((row, index) => {
+      if (index % 2 === 1) {
+        doc.save();
+        doc.rect(REPORT_LEFT, y - 4, REPORT_WIDTH, 20).fill(REPORT.panel);
+        doc.restore();
+      }
+      doc.font("Helvetica").fontSize(9.5).fillColor(REPORT.ink);
+      if (mixedCurrency) {
+        doc.text(row.month, cashColumns[0].x, y, { width: cashColumns[0].width })
+          .text(row.currency, cashColumns[1].x, y, { width: cashColumns[1].width })
+          .text(fmt(row.inflows, row.currency), cashColumns[2].x, y, { width: cashColumns[2].width, align: "right" })
+          .text(fmt(row.outflows, row.currency), cashColumns[3].x, y, { width: cashColumns[3].width, align: "right" })
+          .text(fmt(row.net, row.currency), cashColumns[4].x, y, { width: cashColumns[4].width, align: "right" });
+      } else {
+        doc.text(row.month, cashColumns[0].x, y, { width: cashColumns[0].width })
+          .text(fmt(row.inflows, reportCurrency), cashColumns[1].x, y, { width: cashColumns[1].width, align: "right" })
+          .text(fmt(row.outflows, reportCurrency), cashColumns[2].x, y, { width: cashColumns[2].width, align: "right" })
+          .text(fmt(row.net, reportCurrency), cashColumns[3].x, y, { width: cashColumns[3].width, align: "right" });
+      }
       y += 20;
     });
   }
   doc.moveTo(REPORT_LEFT, y).lineTo(REPORT_RIGHT, y).strokeColor(REPORT.line).lineWidth(1).stroke();
-  y += 8;
-  doc.save();
-  doc.rect(REPORT_LEFT, y - 4, REPORT_WIDTH, 24).fill(REPORT.soft);
-  doc.restore();
-  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(REPORT.ink)
-    .text("TOTAL", cashColumns[0].x + 6, y + 3, { width: cashColumns[0].width });
-  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(REPORT.green)
-    .text(fmt(cashFlowTotals.inflows, reportCurrency), cashColumns[1].x, y + 3, { width: cashColumns[1].width, align: "right" })
-    .text(fmt(cashFlowTotals.outflows, reportCurrency), cashColumns[2].x, y + 3, { width: cashColumns[2].width, align: "right" })
-    .text(fmt(cashFlowTotals.net, reportCurrency), cashColumns[3].x, y + 3, { width: cashColumns[3].width, align: "right" });
+  if (!mixedCurrency) {
+    y += 8;
+    doc.save();
+    doc.rect(REPORT_LEFT, y - 4, REPORT_WIDTH, 24).fill(REPORT.soft);
+    doc.restore();
+    doc.font("Helvetica-Bold").fontSize(9.5).fillColor(REPORT.ink)
+      .text("TOTAL", cashColumns[0].x + 6, y + 3, { width: cashColumns[0].width });
+    doc.font("Helvetica-Bold").fontSize(9.5).fillColor(REPORT.green)
+      .text(fmt(cashFlowTotals.inflows, reportCurrency), cashColumns[1].x, y + 3, { width: cashColumns[1].width, align: "right" })
+      .text(fmt(cashFlowTotals.outflows, reportCurrency), cashColumns[2].x, y + 3, { width: cashColumns[2].width, align: "right" })
+      .text(fmt(cashFlowTotals.net, reportCurrency), cashColumns[3].x, y + 3, { width: cashColumns[3].width, align: "right" });
+  }
 
   // ---------- PAGE 3 — TRANSACTION LEDGER ----------
   doc.addPage();
   drawReportBand(doc, "Transaction Ledger");
   const ledgerColumns = [
-    { label: "ID", x: REPORT_LEFT, width: 30, align: "left" },
-    { label: "Device", x: 82, width: 58, align: "left" },
-    { label: "Type", x: 144, width: 56, align: "left" },
-    { label: "Label", x: 204, width: 112, align: "left" },
+    { label: "Ref", x: REPORT_LEFT, width: 46, align: "left" },
+    { label: "Device", x: 100, width: 58, align: "left" },
+    { label: "Type", x: 162, width: 54, align: "left" },
+    { label: "Label", x: 220, width: 96, align: "left" },
     { label: "Amount", x: 318, width: 82, align: "right" },
     { label: "Date", x: 404, width: 86, align: "right" },
     { label: "Signed", x: 500, width: 45, align: "right" }
   ];
   let ly = drawReportSectionTitle(doc, 88, "Appendix", "Transaction Ledger", "All confirmed account entries, oldest to newest");
   ly = drawReportTableHeader(doc, ly, ledgerColumns) + 6;
-  let runningTotal = 0;
+  const ledgerTotalsByCurrency = new Map();
 
   entries.forEach((entry, index) => {
     if (ly > REPORT_BOTTOM - 40) {
@@ -758,32 +838,45 @@ async function buildVerifiedReportPdf({
     }
     const payload = entry.payload || {};
     const amountMinor = Number(payload.amount_minor || 0);
-    runningTotal += amountMinor;
+    const entryCurrency = getEntryCurrency(entry, reportCurrency);
+    ledgerTotalsByCurrency.set(entryCurrency, (ledgerTotalsByCurrency.get(entryCurrency) || 0) + amountMinor);
     if (index % 2 === 1) {
       doc.save();
       doc.rect(REPORT_LEFT, ly - 4, REPORT_WIDTH, 20).fill(REPORT.panel);
       doc.restore();
     }
     doc.font("Helvetica").fontSize(8.5).fillColor(REPORT.ink)
-      .text(String(payload.id || entry.entry_id || index + 1), ledgerColumns[0].x, ly, { width: ledgerColumns[0].width })
+      .text(formatLedgerEntryRef(entry, payload, index), ledgerColumns[0].x, ly, { width: ledgerColumns[0].width })
       .text(getEntryDeviceFingerprint(entry), ledgerColumns[1].x, ly, { width: ledgerColumns[1].width })
       .text(truncateText(payload.transaction_type || "", 10), ledgerColumns[2].x, ly, { width: ledgerColumns[2].width })
       .text(truncateText(payload.label || payload.normalized_label || "", 22), ledgerColumns[3].x, ly, { width: ledgerColumns[3].width })
-      .text(formatMoney(amountMinor, payload.currency || reportCurrency), ledgerColumns[4].x, ly, { width: ledgerColumns[4].width, align: "right" })
+      .text(formatMoney(amountMinor, entryCurrency), ledgerColumns[4].x, ly, { width: ledgerColumns[4].width, align: "right" })
       .text(formatDateOnly(entry.confirmed_at), ledgerColumns[5].x, ly, { width: ledgerColumns[5].width, align: "right" })
       .text(payload.signature ? "Yes" : "No", ledgerColumns[6].x, ly, { width: ledgerColumns[6].width, align: "right" });
     ly += 20;
   });
 
+  const ledgerTotals = [...ledgerTotalsByCurrency.entries()].sort(([currencyA], [currencyB]) => currencyA.localeCompare(currencyB));
+  if (ly > REPORT_BOTTOM - ((ledgerTotals.length + 1) * 22 + 20)) {
+    doc.addPage();
+    drawReportBand(doc, "Transaction Ledger");
+    ly = drawReportSectionTitle(doc, 88, "Appendix", "Transaction Ledger totals", null);
+  }
   doc.moveTo(REPORT_LEFT, ly).lineTo(REPORT_RIGHT, ly).strokeColor(REPORT.line).lineWidth(1).stroke();
   ly += 8;
   doc.save();
-  doc.rect(REPORT_LEFT, ly - 4, REPORT_WIDTH, 24).fill(REPORT.soft);
+  doc.rect(REPORT_LEFT, ly - 4, REPORT_WIDTH, 24 + Math.max(0, ledgerTotals.length - 1) * 20).fill(REPORT.soft);
   doc.restore();
   doc.font("Helvetica-Bold").fontSize(9.5).fillColor(REPORT.ink)
-    .text("RUNNING TOTAL", REPORT_LEFT + 6, ly + 3, { width: 200 });
-  doc.font("Helvetica-Bold").fontSize(9.5).fillColor(REPORT.green)
-    .text(formatMoney(runningTotal, reportCurrency), REPORT_LEFT, ly + 3, { width: REPORT_WIDTH - 6, align: "right" });
+    .text(ledgerTotals.length > 1 ? "TOTAL RECORDED AMOUNTS BY CURRENCY" : "TOTAL RECORDED AMOUNT",
+      REPORT_LEFT + 6, ly + 3, { width: 260 });
+  ledgerTotals.forEach(([currency, amountMinor], index) => {
+    doc.font("Helvetica-Bold").fontSize(9.5).fillColor(REPORT.green)
+      .text(formatMoney(amountMinor, currency), REPORT_LEFT, ly + 3 + (index * 20), {
+        width: REPORT_WIDTH - 6,
+        align: "right"
+      });
+  });
 
   // ---------- PAGE 4 — INTEGRITY & VERIFICATION ----------
   doc.addPage();
