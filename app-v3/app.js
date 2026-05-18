@@ -3744,9 +3744,11 @@ async function claimFreeReport() {
     downloadVerifiedReportPayload(response);
   } catch (error) {
     console.error("Free verifiable export generation failed.", error);
-    if (error.statusCode === 404) {
+    if (error.statusCode === 404 || error.statusCode == null) {
       try {
-        setReportStatus("Server PDF route unavailable. Generating PDF on this device...");
+        setReportStatus(error.statusCode == null
+          ? "You appear to be offline. Generating PDF on this device..."
+          : "Server PDF route unavailable. Generating PDF on this device...");
         await buildClientVerifiablePdfReport();
         await rememberFreeReportClaimedUiHint();
         syncFreeReportOffer();
