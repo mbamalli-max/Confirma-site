@@ -1,7 +1,7 @@
 # Technical Architecture Specification (TAS)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.5.3
+**Version:** 3.5.5
 **Date:** 2026-05-18
 
 ---
@@ -941,6 +941,15 @@ Server-generated via pdfkit:
 - Verified PDF generation does not require a payment reference, paid tier, ad completion, or lifetime claim flag
 - Old quota helper names may remain in code for compatibility, but they must not gate export availability
 
+### 7.7 Client Fallback PDF
+
+`buildClientVerifiablePdfReport()` (`app-v3/app.js`) renders a PDF client-side via jsPDF. It is a fallback, not the institutional-grade report.
+
+- **Single call site / trigger:** `claimFreeReport()` invokes it only when `POST /report/generate-pdf` throws with `statusCode === 404`. Network/offline failures and other status codes do not trigger it.
+- **Optional attestation:** the fallback calls `POST /attest` (single-device scope). On success the PDF embeds a single-device `vt_id`, verify URL, signature algorithm, and verification key URL; on failure those fields read as unavailable.
+- **Labeling:** title "Konfirmata Activity Export - Device-Generated Fallback"; filename `konfirmata-activity-export-fallback-{YYYY-MM-DD}.pdf`; a prominent notice states it is a device-generated fallback and not the account-level `account_devices` server-attested report. The transaction-boundary disclaimer is retained.
+- jsPDF (`vendor/jspdf.umd.min.js`) remains loaded and service-worker precached to support this path.
+
 ---
 
 ## §8. Migration System
@@ -1186,7 +1195,7 @@ Routing via `vercel.json` `routes` array (not `rewrites`).
 ## §14. Security Constraints
 
 1. **No payment webhook in active flow** — report generation must not depend on a payment provider callback
-2. **Institution-facing verified PDF generated server-side only** — never via client-side jsPDF
+2. **Verified PDF is server-generated; client jsPDF is a labeled fallback** — the server-attested report is produced only by `POST /report/generate-pdf`. A client-side jsPDF PDF is permitted only as a fallback when the server route is unavailable (currently triggered on an HTTP 404 from that route); it must be labeled as a non-account-attested fallback, must be distinct from the server report by title and filename, and must keep the transaction-boundary disclaimer. See §7.7.
 3. **vt_id is `crypto.randomBytes(16)`** — never sequential, never `Math.random()`
 4. **GET /verify/:vt_id returns no PII** — no phone_number, device_identity truncated to 8 chars
 5. **Rate limiting:** OTP request = 5/hr per phone, OTP verify = 5 failures/15min, verify portal = 100/min per IP
@@ -1232,3 +1241,4 @@ Routing via `vercel.json` `routes` array (not `rewrites`).
 | 3.5.1 | 2026-05-17 | **PDF boundary alignment:** server-generated reports now use Activity Summary / Inflow-Outflow language instead of accounting-statement labels, use Net Recorded Activity wording, show mixed-currency totals per currency without conversion or combination, and prefix multi-device row references with the short device code. |
 | 3.5.2 | 2026-05-18 | **NIW boundary confirmed in production.** PDF output verified against petition technical boundary: no "Income Statement", "Financial Summary", or "Net Income" in any export path. Cover page field renamed `REPORT FEE: Free` (was `AMOUNT PAID: NGN 0.00`). Mixed-currency per-currency totals and `ddb6-1` row reference format confirmed in live user-generated report. All export paths (`/report/generate-pdf`, `/attest` in text export, client fallback) send `window_days: 0`. PDF filename confirmed as `konfirmata-verified-report-{YYYY-MM-DD}.pdf`. |
 | 3.5.3 | 2026-05-18 | **Voice and fuzzy-match improvements** (commit `8e158b7`). Voice capture now waits for `isFinal` before parsing; shows interim transcript while listening. Safari `en-US` override removed — both voice paths use `getVoiceLocale()`. `parseNaturalTransaction` extended: `5k`/`thousand` amounts, amount-before-label phrasing, quantity-prefix cleanup (`3 bags of rice` → `rice`), Pidgin pronoun placeholder (`am`/`it`/`them` → empty label). `rankLabels` now uses Levenshtein edit-distance (+18) and Soundex phonetic (+12) scoring per token — short tokens no longer spuriously match longer label words. `startSpeechMatch` offers "Use as a custom label" fallback when no strong match found. Rendered label results are HTML-escaped. All learned signals remain device-local; no cross-user aggregation. §12 updated with full scoring table and speech-search flow. |
+| 3.5.5 | 2026-05-18 | **Client fallback PDF reconciled with spec.** SC-2 and PRD SC-15 amended: the absolute "server-side only / no jsPDF" language is replaced with a trust hierarchy — the institutional-grade report is generated only by `POST /report/generate-pdf` (`account_devices` attestation), and a client-rendered jsPDF PDF is permitted only as a fallback when that route returns HTTP 404. New §7.7 (TAS) / §11.5 (PRD) document `buildClientVerifiablePdfReport()`, its 404-only trigger, the optional single-device `/attest` embed, and labeling rules. App: fallback PDF retitled "Konfirmata Activity Export - Device-Generated Fallback", filename changed to `konfirmata-activity-export-fallback-{date}.pdf`, and a prominent in-document notice added stating it is not the account-level server-attested report. Fallback trigger remains 404-only (broadening to offline/network errors deferred to a later cycle). |

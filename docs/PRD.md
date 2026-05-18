@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.5.4
+**Version:** 3.5.5
 **Date:** 2026-05-18
 
 ---
@@ -528,6 +528,15 @@ The current app has no paid tiers, no payment checkout, no payment processor int
 - Returns **no PII** — phone number never exposed, device identity truncated
 - Supports both `single_device` and `account_devices` attestation scopes
 
+### 11.5 Client Fallback PDF
+
+`buildClientVerifiablePdfReport()` in `app-v3/app.js` renders a PDF on the device using jsPDF. It is a fallback path only and is never the institutional-grade verified report.
+
+- **Trigger:** invoked solely from `claimFreeReport()` when `POST /report/generate-pdf` returns HTTP 404 (server PDF route unavailable). Other failures — including offline/network errors and non-404 status codes — do not currently trigger it.
+- **Attestation:** the fallback still attempts a single-device `POST /attest`. When that succeeds, the PDF embeds a single-device `vt_id`, verify URL, and signature. When it fails, the PDF carries no attestation.
+- **Not equivalent to the server report:** the fallback is never the account-level server-attested report. It is titled "Konfirmata Activity Export - Device-Generated Fallback", uses the filename `konfirmata-activity-export-fallback-{YYYY-MM-DD}.pdf`, and carries a prominent notice stating it is a device-generated fallback and not the `POST /report/generate-pdf` report.
+- **Boundary disclaimer:** the transaction-boundary disclaimer is retained in full.
+
 ---
 
 ## §12. Security & Privacy Constraints
@@ -546,7 +555,7 @@ The current app has no paid tiers, no payment checkout, no payment processor int
 12. **CORS allowlist**: Only konfirmata.com and localhost in dev. No wildcard.
 13. **JWT secrets required**: Server refuses to boot in production without `JWT_SECRET` and `SERVER_RECEIPT_SECRET`.
 14. **No payment webhook in active product flow**: payment-provider webhooks must not be required for report generation.
-15. **PDF server-side only**: Never client-side generated. No jsPDF.
+15. **Verified report is server-generated; client PDF is a labeled fallback**: The institutional-grade verified report is generated only by `POST /report/generate-pdf` and carries an `account_devices` server attestation. A client-rendered PDF (jsPDF) is permitted *only* as a fallback when the server PDF route is unavailable (currently triggered on an HTTP 404 from that route). The fallback PDF must be visibly labeled as a device-generated fallback copy, must use a distinct title and filename from the server report, must not be presented as equivalent to it, and must retain the transaction-boundary disclaimer. When the fallback embeds a single-device `/attest` ticket it may state that, but must not claim account-level server attestation. See §11.5.
 16. **vt_id is `crypto.randomBytes(16)`**: Never sequential, never `Math.random()`.
 17. **Dev OTP hard-blocked in production**: `ALLOW_DEV_OTP=true` is prohibited when `DATABASE_SSL=true`. Server refuses to start if both flags are active simultaneously.
 
