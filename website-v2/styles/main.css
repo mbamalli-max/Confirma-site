@@ -849,13 +849,14 @@ li {
 
 @media (max-width: 920px) {
   .site-header {
-    overflow-x: auto;
+    flex-wrap: wrap;
   }
 
   .site-nav {
-    flex-wrap: nowrap;
+    width: 100%;
+    flex-wrap: wrap;
     justify-content: flex-start;
-    white-space: nowrap;
+    gap: 0.5rem 0.9rem;
   }
 
   .trust-strip,

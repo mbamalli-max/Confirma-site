@@ -1,14 +1,14 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.5.3
+**Version:** 3.5.4
 **Date:** 2026-05-18
 
 ---
 
 ## §1. Product Overview
 
-Konfirmata is a mobile-first Progressive Web App (PWA) that converts informal business activity into cryptographically verifiable financial records. It is designed for small business operators, traders, and informal economy participants who need a bank-usable transaction history but have no access to traditional bookkeeping infrastructure.
+Konfirmata is a mobile-first Progressive Web App (PWA) that helps users create user-confirmed, tamper-evident business activity records whose integrity, sequence, and device origin can be cryptographically verified. It is designed for small business operators, traders, and informal economy participants who need durable, portable records of their business activity but have no access to traditional bookkeeping infrastructure.
 
 ### Core Thesis
 
@@ -602,12 +602,12 @@ The current app has no paid tiers, no payment checkout, no payment processor int
 - [x] Account-device verified PDF deployed — confirmed 2026-05-17 with `account_devices` attestation scope, full-history `window_days: 0`, device column in the ledger, and 12 entries shown in the user-generated report
 
 ### UX (In Progress)
-- [ ] Phone normalization: NG `08099840666` → `+2348099840666`, US `2678867271` → `+12678867271`
+- [x] Phone normalization implemented and wired into the OTP and account-restore flows for NG, US, GH, KE, and ZA (`normalizePhoneNumber` in `app-v3/app.js`); e.g. NG `08099840666` → `+2348099840666`, US `2678867271` → `+12678867271`
 - [x] Searchable country selector with locale auto-detection (2026-04-11)
 - [x] Onboarding country-grid recovery shipped in production; operating-region step now has an explicit continue path (2026-05-10)
 - [x] Restore-account link moved above the country list (2026-05-17)
 - [x] Trusted-device restore copy softened: older active sign-ins are grouped as earlier active sessions with a revoke-earlier action (2026-05-17)
-- [ ] Language selector in Settings (English-only currently; UI toggle pending)
+- [x] Language selector UI present in Settings (`#settings-language-select`); `SUPPORTED_LANGUAGES` is currently English-only, so the control offers a single option until additional language packs are added
 - [ ] Country-aware state/region placeholder in onboarding step 6
 
 ### Identity
