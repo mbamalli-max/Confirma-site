@@ -650,6 +650,7 @@ const state = {
   lastVoiceTranscript: "",
   lastVoiceCaptureContext: "",
   lastVoiceLearnedCorrection: "",
+  pendingVoiceParse: null,
   pinConfirmResolver: null,
   pinConfirmWrongMessage: "",
   pinRecoveryReturnScreen: "screen-capture",
@@ -781,6 +782,9 @@ function cacheElements() {
     "revoke-old-devices-modal", "revoke-old-devices-list", "revoke-old-devices-skip",
     "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
     "voice-example-v2", "voice-announce",
+    "voice-review-transcript", "voice-review-understood-row", "voice-review-understood",
+    "voice-review-missing-row", "voice-review-missing", "voice-review-message",
+    "voice-review-suggestions", "voice-review-manual", "voice-review-cancel",
     "bottom-nav-v2", "sync-status-badge", "sync-dot", "sync-label", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-preferred-edit-v2", "settings-preferred-editor", "settings-preferred-grid", "settings-preferred-done-v2",
@@ -880,6 +884,8 @@ function wireEvents() {
   document.getElementById("prepare-confirmation").addEventListener("click", prepareConfirmation);
   document.getElementById("confirm-append").addEventListener("click", confirmAppend);
   document.getElementById("back-to-capture").addEventListener("click", () => showScreen("screen-capture"));
+  document.getElementById("voice-review-manual").addEventListener("click", handleVoiceReviewManual);
+  document.getElementById("voice-review-cancel").addEventListener("click", cancelVoiceReview);
   document.getElementById("open-history").addEventListener("click", async () => {
     await renderHistory();
     showScreen("screen-history");
@@ -3977,12 +3983,10 @@ function handleQuickTextRecord() {
     return;
   }
   const parsed = parseNaturalTransaction(input);
-  if (!parsed) {
-    setVoiceRecordError(`Could not understand that. Try: ${getCurrentCaptureExample()}.`);
-    return;
+  const routed = routeCapturedTransaction(input, (parsed && parsed.amountMinor) ? parsed : null, "text");
+  if (routed) {
+    els["quick-text-input-v2"].value = "";
   }
-  applyParsedTransactionToCapture(parsed);
-  els["quick-text-input-v2"].value = "";
 }
 
 const NATURAL_AMOUNT_PATTERN = "([0-9]+(?:\\.[0-9]+)?\\s*(?:k|thousand)?)";
@@ -4173,13 +4177,7 @@ async function startVoiceRecordShortcut() {
     const transcript = speech.transcript;
     const corrected = await applyVoiceCorrections(transcript);
     const parsed = parseNaturalTransaction(corrected);
-    if (!parsed || !parsed.amountMinor) {
-      clearPendingVoiceTranscript();
-      setVoiceRecordError(`Could not understand that. Try: ${getCurrentCaptureExample()}.`);
-    } else {
-      rememberVoiceTranscript(transcript, "capture");
-      applyParsedTransactionToCapture(parsed, { announce: true });
-    }
+    routeCapturedTransaction(transcript, (parsed && parsed.amountMinor) ? parsed : null, "voice");
     try {
       recognition.stop();
     } catch (error) {
@@ -4373,13 +4371,160 @@ function findBestLabelForAction(labelQuery, actionContext) {
   return ranked[0]?.score ? ranked[0].item : null;
 }
 
+// ── Voice Phase 2 — missing-field clarification ─────────────────────
+// Borrowing/loan language Konfirmata has no record type for. Detected only
+// on a failed parse; never mapped into an existing action category.
+const UNSUPPORTED_INTENT_PATTERN = /\b(?:borrow|borrows|borrowed|borrowing|loan|loans|loaned|lend|lends|lent|lending|repay|repaid|repayment|owe|owed|owing|debt)\b/i;
+// Score floor at which an auto-matched label is trusted without asking.
+// Below it (close-spelling 18 / phonetic 12 / no match 0) the review card opens.
+const CONFIDENT_LABEL_SCORE = 22;
+
+function detectUnsupportedIntent(transcript) {
+  const text = String(transcript || "");
+  return UNSUPPORTED_INTENT_PATTERN.test(text) && /[0-9]/.test(text);
+}
+
+function rankLabelCandidates(labelQuery, actionContext) {
+  const catalog = getCatalogForProfileAction(actionContext);
+  const normalizedQuery = normalizeText(labelQuery);
+  const ranked = catalog
+    .map((item) => {
+      const match = scoreLabelTextMatch(normalizedQuery, item);
+      const preferred = (state.profile?.preferred_labels || []).includes(item.display_name) ? 8 : 0;
+      return { item, score: match.score + preferred };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.item.display_name.localeCompare(b.item.display_name));
+  const best = ranked[0] || null;
+  return {
+    confident: !!(best && best.score >= CONFIDENT_LABEL_SCORE),
+    label: best ? best.item : null,
+    candidates: ranked.slice(0, 3).map((entry) => entry.item)
+  };
+}
+
+// Single entry point for both voice and typed capture. Returns true when the
+// input was routed (to the capture form or the review card), false on a
+// genuine unparseable failure.
+function routeCapturedTransaction(transcript, parsed, source) {
+  setVoiceRecordError("");
+  if (!parsed) {
+    if (source === "voice") clearPendingVoiceTranscript();
+    if (detectUnsupportedIntent(transcript)) {
+      openVoiceReview({ mode: "unsupported", transcript, source });
+      return true;
+    }
+    setVoiceRecordError(`Could not understand that. Try: ${getCurrentCaptureExample()}.`);
+    return false;
+  }
+  const match = rankLabelCandidates(parsed.labelQuery, parsed.action);
+  if (match.confident) {
+    if (source === "voice") rememberVoiceTranscript(transcript, "capture");
+    applyParsedTransactionToCapture(parsed, { label: match.label, announce: source === "voice" });
+    return true;
+  }
+  // Missing or low-confidence label — ask before populating the capture form.
+  if (source === "voice") clearPendingVoiceTranscript();
+  openVoiceReview({ mode: "clarify", transcript, parsed, suggestions: match.candidates, source });
+  return true;
+}
+
+function openVoiceReview(opts) {
+  state.pendingVoiceParse = opts;
+  renderVoiceReview();
+  showScreen("screen-voice-review");
+}
+
+function renderVoiceReview() {
+  const pending = state.pendingVoiceParse;
+  if (!pending) return;
+  els["voice-review-transcript"].textContent = pending.transcript || "";
+  els["voice-review-suggestions"].innerHTML = "";
+  const isUnsupported = pending.mode === "unsupported";
+  els["voice-review-understood-row"].hidden = isUnsupported;
+  els["voice-review-missing-row"].hidden = isUnsupported;
+
+  if (isUnsupported) {
+    els["voice-review-message"].textContent = "This looks like a borrowing or loan-related entry. Konfirmata does not yet support a dedicated record type for borrowing.";
+    els["voice-review-manual"].textContent = "Choose a supported category";
+    return;
+  }
+
+  const parsed = pending.parsed;
+  const currency = getProfileCurrency();
+  const actionWord = { sale: "Sale", purchase: "Purchase", payment: "Payment", receipt: "Receipt" }[parsed.action] || "Transaction";
+  els["voice-review-understood"].textContent = `${actionWord} · ${formatMoney(parsed.amountMinor || 0, currency)}`;
+  els["voice-review-missing"].textContent = "Label / category";
+  els["voice-review-message"].textContent = "Choose the label that fits, or pick one manually.";
+  els["voice-review-manual"].textContent = "Choose manually";
+
+  const fragment = document.createDocumentFragment();
+  (pending.suggestions || []).forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ranked-item";
+    button.innerHTML = `<strong>${item.icon || "🏷️"} ${escapeHtml(item.display_name)}</strong><span>${escapeHtml(friendlyActionLabel(parsed.action))}</span>`;
+    button.addEventListener("click", () => resolveVoiceReview({ label: item }));
+    fragment.appendChild(button);
+  });
+  const customTerm = String(parsed.labelQuery || "").trim();
+  if (customTerm) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ranked-item";
+    button.innerHTML = `<strong>⭐ ${escapeHtml(customTerm)}</strong><span>Use as a custom label</span>`;
+    button.addEventListener("click", () => { void resolveVoiceReviewWithCustomLabel(customTerm); });
+    fragment.appendChild(button);
+  }
+  els["voice-review-suggestions"].appendChild(fragment);
+}
+
+function resolveVoiceReview(resolution) {
+  const pending = state.pendingVoiceParse;
+  if (!pending || pending.mode !== "clarify") return;
+  state.pendingVoiceParse = null;
+  if (pending.source === "voice") rememberVoiceTranscript(pending.transcript, "capture");
+  applyParsedTransactionToCapture(pending.parsed, {
+    label: resolution.label,
+    announce: pending.source === "voice"
+  });
+  // Learn only from an explicit label choice made in the review card.
+  if (resolution.label) void maybeLearnVoiceCorrection();
+}
+
+async function resolveVoiceReviewWithCustomLabel(term) {
+  const pending = state.pendingVoiceParse;
+  if (!pending || pending.mode !== "clarify") return;
+  const item = await createUserCustomLabel(term);
+  resolveVoiceReview({ label: item });
+}
+
+function handleVoiceReviewManual() {
+  const pending = state.pendingVoiceParse;
+  if (!pending) return;
+  if (pending.mode === "unsupported") {
+    cancelVoiceReview();
+    return;
+  }
+  resolveVoiceReview({ label: null });
+}
+
+function cancelVoiceReview() {
+  state.pendingVoiceParse = null;
+  clearPendingVoiceTranscript();
+  setVoiceRecordError("");
+  showScreen("screen-capture");
+}
+
 function applyParsedTransactionToCapture(parsed, options = {}) {
   setVoiceRecordError("");
   state.currentAction = parsed.action;
   state.profile.last_action = parsed.action;
   renderActionRows();
 
-  const label = findBestLabelForAction(parsed.labelQuery, parsed.action);
+  const label = ("label" in options)
+    ? options.label
+    : findBestLabelForAction(parsed.labelQuery, parsed.action);
   if (label) {
     state.selectedLabel = label;
     els["selected-label-chip"].textContent = `${label.icon || "🏷️"} ${label.display_name} selected`;

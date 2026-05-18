@@ -453,6 +453,35 @@
       </div>
     </section>
 
+    <section class="screen" id="screen-voice-review">
+      <header class="topbar">
+        <div>
+          <strong>Check this before recording</strong>
+          <span>Konfirmata shows what it heard before anything is saved.</span>
+        </div>
+      </header>
+      <div class="panel voice-review-card">
+        <div class="voice-review-row">
+          <span class="voice-review-key">I heard</span>
+          <span class="voice-review-value" id="voice-review-transcript"></span>
+        </div>
+        <div class="voice-review-row" id="voice-review-understood-row">
+          <span class="voice-review-key">I understood</span>
+          <span class="voice-review-value" id="voice-review-understood"></span>
+        </div>
+        <div class="voice-review-row" id="voice-review-missing-row">
+          <span class="voice-review-key">Missing</span>
+          <span class="voice-review-value" id="voice-review-missing"></span>
+        </div>
+        <p class="voice-review-message" id="voice-review-message" aria-live="polite"></p>
+        <div class="voice-review-suggestions" id="voice-review-suggestions"></div>
+        <div class="button-stack">
+          <button class="btn btn-secondary" id="voice-review-manual" type="button">Choose manually</button>
+          <button class="btn btn-secondary" id="voice-review-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </section>
+
     <section class="screen" id="screen-confirm">
       <header class="topbar">
         <div>

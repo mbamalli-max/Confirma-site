@@ -1050,6 +1050,53 @@ h1, h2, h3, h4 {
   gap: 10px;
 }
 
+/* ── Voice review card (missing-field clarification) ─────── */
+.voice-review-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.voice-review-row[hidden] {
+  display: none;
+}
+
+.voice-review-key {
+  flex: 0 0 116px;
+  color: var(--muted);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.voice-review-value {
+  flex: 1;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.voice-review-message {
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 15px;
+  margin: 14px 0;
+}
+
+.voice-review-suggestions {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.voice-review-suggestions:empty {
+  margin-bottom: 0;
+}
+
 /* ── Modals ──────────────────────────────────────────────── */
 .modal-shell[hidden] {
   display: none;
