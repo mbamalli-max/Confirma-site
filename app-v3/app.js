@@ -2183,6 +2183,15 @@ function createElementFromHtml(html) {
   return template.content.firstElementChild;
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function renderRecordListWithMarketing(containerId, records, emptyHtml, renderer) {
   const container = els[containerId] || document.getElementById(containerId);
   if (!container) return;
@@ -3861,6 +3870,31 @@ function getSpeechRecognitionErrorMessage(errorType) {
   return "Microphone error. Please try again or use text input.";
 }
 
+function getSpeechEventTranscript(event) {
+  const results = event?.results;
+  if (!results?.length) return { transcript: "", isFinal: false };
+
+  const finalParts = [];
+  const interimParts = [];
+
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    const transcript = String(result?.[0]?.transcript || "").trim();
+    if (!transcript) continue;
+    if (result.isFinal) {
+      finalParts.push(transcript);
+    } else {
+      interimParts.push(transcript);
+    }
+  }
+
+  if (finalParts.length) {
+    return { transcript: finalParts.join(" ").trim(), isFinal: true };
+  }
+
+  return { transcript: interimParts.join(" ").trim(), isFinal: false };
+}
+
 function formatVoiceCorrectionAmount(value) {
   const normalized = String(value || "").trim().replace(/,/g, "");
   if (!normalized) return "";
@@ -3940,46 +3974,131 @@ function handleQuickTextRecord() {
   els["quick-text-input-v2"].value = "";
 }
 
+const NATURAL_AMOUNT_PATTERN = "([0-9]+(?:\\.[0-9]+)?\\s*(?:k|thousand)?)";
+
+function normalizeNaturalTransactionText(input) {
+  return String(input || "")
+    .trim()
+    .replace(/[₦$£€₵]/g, " ")
+    .replace(/,/g, "")
+    .replace(/\b(?:ngn|usd|naira|naria|dollars?|bucks?|cedis?|pounds?|euros?)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseNaturalAmount(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  const hasMultiplier = /\s*(?:k|thousand)\b/.test(raw);
+  const normalized = raw.replace(/\s*(?:k|thousand)\b/g, "").trim();
+  const number = parseFloat(normalized);
+  if (!Number.isFinite(number)) return 0;
+  const amount = hasMultiplier ? number * 1000 : number;
+  return Math.round(amount * 100);
+}
+
+function isLikelyNaturalAmount(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (/\s*(?:k|thousand)\b/.test(raw)) return true;
+  const number = parseFloat(raw);
+  return Number.isFinite(number) && number >= 100;
+}
+
+function cleanNaturalLabelQuery(value) {
+  let label = normalizeText(value)
+    .replace(/^(?:some|the|a|an)\s+/i, "")
+    .replace(/^[0-9]+(?:\.[0-9]+)?\s*(?:bags?|plates?|cups?|pieces?|pcs|cartons?|boxes?|bottles?|litres?|liters?|kg|kilos?|dozens?|packs?|portions?|sets?)\s+(?:of\s+)?/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (/^(?:am|it|them|that|goods?|items?|products?|something)$/.test(label)) {
+    label = "";
+  }
+
+  return label;
+}
+
+function parsedNaturalTransaction(action, labelQuery, amountValue, counterparty = "") {
+  const amountMinor = parseNaturalAmount(amountValue);
+  if (!amountMinor) return null;
+  return {
+    action,
+    labelQuery: cleanNaturalLabelQuery(labelQuery),
+    amountMinor,
+    counterparty: String(counterparty || "").trim()
+  };
+}
+
 function parseNaturalTransaction(input) {
-  const text = String(input || "").trim().replace(/[₦$,]/g, "");
-  let match = text.match(/^(?:sold|sell)\s+(.+?)\s+for\s+([0-9,.]+)/i);
+  const text = normalizeNaturalTransactionText(input);
+  const amount = NATURAL_AMOUNT_PATTERN;
+  let match = text.match(new RegExp(`^(?:i\\s+)?(?:sold|sell)\\s+(.+?)\\s+(?:for|at)\\s+${amount}$`, "i"));
   if (match) {
-    return { action: "sale", labelQuery: match[1].trim(), amountMinor: parseMinor(match[2]), counterparty: "" };
+    return parsedNaturalTransaction("sale", match[1], match[2]);
   }
 
-  match = text.match(/^(?:bought|buy)\s+(.+?)\s+for\s+([0-9,.]+)/i);
-  if (match) {
-    return { action: "purchase", labelQuery: match[1].trim(), amountMinor: parseMinor(match[2]), counterparty: "" };
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:sold|sell)\\s+${amount}\\s+(.+)$`, "i"));
+  if (match && isLikelyNaturalAmount(match[1])) {
+    return parsedNaturalTransaction("sale", match[2], match[1]);
   }
 
-  match = text.match(/^paid\s+([0-9,.]+)\s+for\s+(.+)/i);
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:sold|sell)\\s+(.+?)\\s+${amount}$`, "i"));
   if (match) {
-    return { action: "payment", labelQuery: match[2].trim(), amountMinor: parseMinor(match[1]), counterparty: "" };
+    return parsedNaturalTransaction("sale", match[1], match[2]);
   }
 
-  match = text.match(/^(?:paid|pay)\s+(.+?)\s+(?:for\s+)?([0-9,.]+)/i);
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:bought|buy)\\s+(.+?)\\s+(?:for|at)\\s+${amount}$`, "i"));
   if (match) {
-    return { action: "payment", labelQuery: match[1].trim(), amountMinor: parseMinor(match[2]), counterparty: "" };
+    return parsedNaturalTransaction("purchase", match[1], match[2]);
   }
 
-  match = text.match(/^(?:received|receive)\s+([0-9,.]+)\s+from\s+(.+)/i);
-  if (match) {
-    return { action: "receipt", labelQuery: "Customer Payment", amountMinor: parseMinor(match[1]), counterparty: match[2].trim() };
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:bought|buy)\\s+${amount}\\s+(.+)$`, "i"));
+  if (match && isLikelyNaturalAmount(match[1])) {
+    return parsedNaturalTransaction("purchase", match[2], match[1]);
   }
 
-  match = text.match(/^(?:received|receive)\s+(.+?)\s+for\s+([0-9,.]+)/i);
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:bought|buy)\\s+(.+?)\\s+${amount}$`, "i"));
   if (match) {
-    return { action: "receipt", labelQuery: match[1].trim(), amountMinor: parseMinor(match[2]), counterparty: "" };
+    return parsedNaturalTransaction("purchase", match[1], match[2]);
   }
 
-  match = text.match(/^(?:received|receive)\s+(.+?)\s+([0-9,.]+)$/i);
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:paid|pay)\\s+${amount}\\s+to\\s+(.+?)\\s+for\\s+(.+)$`, "i"));
   if (match) {
-    return { action: "receipt", labelQuery: match[1].trim(), amountMinor: parseMinor(match[2]), counterparty: "" };
+    return parsedNaturalTransaction("payment", match[3], match[1], match[2]);
   }
 
-  match = text.match(/^(customer|client)\s+paid\s+([0-9,.]+)$/i);
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:paid|pay)\\s+${amount}\\s+for\\s+(.+)$`, "i"));
   if (match) {
-    return { action: "receipt", labelQuery: "Customer Payment", amountMinor: parseMinor(match[2]), counterparty: match[1].trim() };
+    return parsedNaturalTransaction("payment", match[2], match[1]);
+  }
+
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:paid|pay)\\s+(.+?)\\s+(?:for\\s+)?${amount}$`, "i"));
+  if (match) {
+    return parsedNaturalTransaction("payment", match[1], match[2]);
+  }
+
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:received|receive|collected|collect)\\s+${amount}\\s+from\\s+(.+?)\\s+for\\s+(.+)$`, "i"));
+  if (match) {
+    return parsedNaturalTransaction("receipt", match[3], match[1], match[2]);
+  }
+
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:received|receive|collected|collect)\\s+${amount}\\s+from\\s+(.+)$`, "i"));
+  if (match) {
+    return parsedNaturalTransaction("receipt", "Customer Payment", match[1], match[2]);
+  }
+
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:received|receive|collected|collect)\\s+(.+?)\\s+(?:for|at)\\s+${amount}$`, "i"));
+  if (match) {
+    return parsedNaturalTransaction("receipt", match[1], match[2]);
+  }
+
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:received|receive|collected|collect)\\s+(.+?)\\s+${amount}$`, "i"));
+  if (match) {
+    return parsedNaturalTransaction("receipt", match[1], match[2]);
+  }
+
+  match = text.match(new RegExp(`^(customer|client)\\s+(?:paid|pay)\\s+${amount}$`, "i"));
+  if (match) {
+    return parsedNaturalTransaction("receipt", "Customer Payment", match[2], match[1]);
   }
 
   return null;
@@ -4000,13 +4119,22 @@ async function startVoiceRecordShortcut() {
   state.activeRecognition = recognition;
   setRecordingState(true);
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-  recognition.lang = isSafari ? "en-US" : getVoiceLocale();
+  recognition.lang = getVoiceLocale();
   recognition.continuous = false;
-  recognition.interimResults = false;
+  recognition.interimResults = true;
   recognition.maxAlternatives = 1;
+  let finalTranscriptHandled = false;
 
   recognition.onresult = async (event) => {
-    const transcript = event.results[0][0].transcript;
+    const speech = getSpeechEventTranscript(event);
+    if (!speech.transcript) return;
+    if (!speech.isFinal) {
+      els["voice-label-v2"].textContent = `Listening: ${speech.transcript}`;
+      return;
+    }
+
+    finalTranscriptHandled = true;
+    const transcript = speech.transcript;
     const corrected = await applyVoiceCorrections(transcript);
     rememberVoiceTranscript(transcript, "capture");
     const parsed = parseNaturalTransaction(corrected);
@@ -4043,6 +4171,9 @@ async function startVoiceRecordShortcut() {
       state.activeRecognition = null;
     }
     setRecordingState(false);
+    if (!finalTranscriptHandled) {
+      els["voice-label-v2"].textContent = "Tap to speak your transaction";
+    }
   };
 
   if (isSafari && navigator.mediaDevices?.getUserMedia) {
@@ -4082,18 +4213,124 @@ function getCatalogForProfileAction(actionContext) {
   });
 }
 
+function textTokens(value) {
+  return normalizeText(value).split(/\s+/).filter(Boolean);
+}
+
+function levenshteinDistance(a, b) {
+  const left = String(a || "");
+  const right = String(b || "");
+  if (left === right) return 0;
+  if (!left.length) return right.length;
+  if (!right.length) return left.length;
+
+  const row = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    let previous = row[0];
+    row[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const current = row[j];
+      const substitution = previous + (left[i - 1] === right[j - 1] ? 0 : 1);
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, substitution);
+      previous = current;
+    }
+  }
+  return row[right.length];
+}
+
+function soundexCode(value) {
+  const letters = normalizeText(value).replace(/[^a-z]/g, "").toUpperCase();
+  if (!letters) return "";
+  const codes = { B: 1, F: 1, P: 1, V: 1, C: 2, G: 2, J: 2, K: 2, Q: 2, S: 2, X: 2, Z: 2, D: 3, T: 3, L: 4, M: 5, N: 5, R: 6 };
+  let output = letters[0];
+  let previous = codes[output] || "";
+
+  for (let index = 1; index < letters.length && output.length < 4; index += 1) {
+    const code = codes[letters[index]] || "";
+    if (code && code !== previous) output += code;
+    previous = code;
+  }
+
+  return output.padEnd(4, "0");
+}
+
+function fuzzyTokenMatch(queryToken, labelToken) {
+  if (queryToken.length < 4 || labelToken.length < 4) return false;
+  if (queryToken.length <= 4 && queryToken.length !== labelToken.length) return false;
+  const distance = levenshteinDistance(queryToken, labelToken);
+  return distance <= (Math.max(queryToken.length, labelToken.length) >= 7 ? 2 : 1);
+}
+
+function phoneticTokenMatch(queryToken, labelToken) {
+  if (queryToken.length < 4 || labelToken.length < 4) return false;
+  if (Math.abs(queryToken.length - labelToken.length) > 2) return false;
+  return soundexCode(queryToken) === soundexCode(labelToken);
+}
+
+function labelSearchTerms(item) {
+  return [item.display_name, ...(item.synonyms || [])]
+    .map((term) => normalizeText(term))
+    .filter(Boolean);
+}
+
+function scoreLabelTextMatch(query, item) {
+  const normalizedQuery = normalizeText(query);
+  if (!normalizedQuery) return { score: 0, reason: "" };
+
+  const queryTokens = textTokens(normalizedQuery);
+  let best = { score: 0, reason: "" };
+
+  labelSearchTerms(item).forEach((term) => {
+    const termTokens = textTokens(term);
+    let score = 0;
+    let reason = "";
+
+    if (term === normalizedQuery) {
+      score = 56;
+      reason = "Exact match";
+    } else if (termTokens.includes(normalizedQuery)) {
+      score = 42;
+      reason = "Exact word match";
+    } else if (queryTokens.length > 1 && queryTokens.every((queryToken) => {
+      return termTokens.some((labelToken) => labelToken === queryToken
+        || (queryToken.length >= 3 && labelToken.startsWith(queryToken))
+        || fuzzyTokenMatch(queryToken, labelToken));
+    })) {
+      score = 38;
+      reason = "Multi-word match";
+    } else if (normalizedQuery.length >= 5 && term.includes(normalizedQuery)) {
+      score = 28;
+      reason = "Phrase match";
+    } else if (queryTokens.some((queryToken) => queryToken.length >= 3 && termTokens.some((labelToken) => labelToken.startsWith(queryToken)))) {
+      score = 22;
+      reason = "Starts with your words";
+    } else if (queryTokens.some((queryToken) => termTokens.some((labelToken) => fuzzyTokenMatch(queryToken, labelToken)))) {
+      score = 18;
+      reason = "Close spelling match";
+    } else if (queryTokens.some((queryToken) => termTokens.some((labelToken) => phoneticTokenMatch(queryToken, labelToken)))) {
+      score = 12;
+      reason = "Sounds similar";
+    }
+
+    if (score > best.score) {
+      best = { score, reason };
+    }
+  });
+
+  return best;
+}
+
 function findBestLabelForAction(labelQuery, actionContext) {
   const catalog = getCatalogForProfileAction(actionContext);
   const normalizedQuery = normalizeText(labelQuery);
   const ranked = catalog
     .map((item) => {
-      const exact = normalizeText(item.display_name) === normalizedQuery ? 1 : 0;
-      const partial = normalizeText(item.display_name).includes(normalizedQuery) ? 1 : 0;
-      const synonym = item.synonyms.some((synonym) => normalizeText(synonym).includes(normalizedQuery)) ? 1 : 0;
-      const preferred = (state.profile?.preferred_labels || []).includes(item.display_name) ? 1 : 0;
-      const score = (exact * 50) + (partial * 18) + (synonym * 20) + (preferred * 8);
+      const match = scoreLabelTextMatch(normalizedQuery, item);
+      const preferred = (state.profile?.preferred_labels || []).includes(item.display_name) ? 8 : 0;
+      const score = match.score + preferred;
       return { item, score };
     })
+    .filter((entry) => !normalizedQuery || entry.score > 0)
     .sort((a, b) => b.score - a.score || a.item.display_name.localeCompare(b.item.display_name));
 
   return ranked[0]?.score ? ranked[0].item : catalog[0] || null;
@@ -4236,7 +4473,7 @@ async function renderBrowseResults() {
 }
 
 function renderRankedItemHtml(item, index) {
-  return `<button type="button" class="ranked-item" data-ranked-id="${item.id}"><strong>${item.icon || "🏷️"} ${item.display_name}</strong><span>${contextCopy(item)}</span><small>${item.badge || item.reason || "Recommended label"}</small></button>`;
+  return `<button type="button" class="ranked-item" data-ranked-id="${escapeHtml(item.id)}"><strong>${escapeHtml(item.icon || "🏷️")} ${escapeHtml(item.display_name)}</strong><span>${escapeHtml(contextCopy(item))}</span><small>${escapeHtml(item.badge || item.reason || "Recommended label")}</small></button>`;
 }
 
 function wireRankedButtons(containerId, results) {
@@ -4250,6 +4487,7 @@ function wireRankedButtons(containerId, results) {
 
 async function startSpeechMatch() {
   clearPendingVoiceTranscript();
+  state.speechResults = [];
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) {
     setRecordingState(false);
@@ -4258,17 +4496,27 @@ async function startSpeechMatch() {
   }
 
   els["speech-status"].textContent = "Listening...";
+  els["speech-results"].innerHTML = "";
   stopActiveRecognition();
   const recognition = new SpeechRec();
   state.activeRecognition = recognition;
   setRecordingState(true);
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-  recognition.lang = isSafari ? "en-US" : getVoiceLocale();
+  recognition.lang = getVoiceLocale();
   recognition.continuous = false;
-  recognition.interimResults = false;
+  recognition.interimResults = true;
   recognition.maxAlternatives = 1;
+  let finalTranscriptHandled = false;
   recognition.onresult = async (event) => {
-    const transcript = event.results[0][0].transcript;
+    const speech = getSpeechEventTranscript(event);
+    if (!speech.transcript) return;
+    if (!speech.isFinal) {
+      els["speech-status"].textContent = `Listening: ${speech.transcript}`;
+      return;
+    }
+
+    finalTranscriptHandled = true;
+    const transcript = speech.transcript;
     const corrected = await applyVoiceCorrections(transcript);
     rememberVoiceTranscript(transcript, "selector");
     rankLabels(corrected, { limit: 5, includeScore: true }).then((results) => {
@@ -4301,6 +4549,9 @@ async function startSpeechMatch() {
       state.activeRecognition = null;
     }
     setRecordingState(false);
+    if (!finalTranscriptHandled && !state.speechResults.length) {
+      els["speech-status"].textContent = "No final speech result received. Please try again or type the label.";
+    }
   };
   if (isSafari && navigator.mediaDevices?.getUserMedia) {
     await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -4313,9 +4564,13 @@ async function startSpeechMatch() {
 }
 
 function renderSpeechResults(utterance, results) {
+  const customLabel = cleanNaturalLabelQuery(utterance);
   if (!results.length) {
-    els["speech-status"].textContent = `No strong match for "${utterance}". Try search, browse all, or Other.`;
-    els["speech-results"].innerHTML = "";
+    els["speech-status"].textContent = customLabel
+      ? `No strong match for "${utterance}". You can add it as a custom label.`
+      : `No strong match for "${utterance}". Try search, browse all, or Other.`;
+    els["speech-results"].innerHTML = customLabel ? renderSpeechCustomLabelHtml(customLabel) : "";
+    wireSpeechCustomLabelButton(customLabel);
     return;
   }
 
@@ -4328,8 +4583,26 @@ function renderSpeechResults(utterance, results) {
     els["speech-status"].textContent = `Low confidence for "${utterance}". Try search, browse all, or Other.`;
   }
 
-  els["speech-results"].innerHTML = results.map(renderRankedItemHtml).join("");
+  const fallback = top.confidence < 0.6 && customLabel
+    ? renderSpeechCustomLabelHtml(customLabel)
+    : "";
+  els["speech-results"].innerHTML = results.map(renderRankedItemHtml).join("") + fallback;
   wireRankedButtons("speech-results", results);
+  wireSpeechCustomLabelButton(customLabel);
+}
+
+function renderSpeechCustomLabelHtml(label) {
+  return `<button type="button" class="ranked-item" data-voice-custom-label><strong>⭐ ${escapeHtml(label)}</strong><span>${escapeHtml(friendlyActionLabel(getCurrentActionContext()))}</span><small>Use as a custom label</small></button>`;
+}
+
+function wireSpeechCustomLabelButton(label) {
+  const button = document.querySelector("[data-voice-custom-label]");
+  if (!(button && label)) return;
+  button.addEventListener("click", async () => {
+    const item = await createUserCustomLabel(label);
+    selectLabel(item);
+    els["speech-status"].textContent = `"${label}" saved as a custom label.`;
+  });
 }
 
 async function saveCustomLabel() {
@@ -4504,23 +4777,30 @@ function rankLabels(query, options = {}) {
   return usageMapPromise.then((usageMap) => {
     const normalizedQuery = normalizeText(query);
     const ranked = catalog.map((item) => {
-      const exact = normalizedQuery && normalizeText(item.display_name) === normalizedQuery ? 1 : 0;
-      const synonym = normalizedQuery && item.synonyms.some((synonym) => normalizeText(synonym) === normalizedQuery) ? 1 : 0;
-      const partial = normalizedQuery && (normalizeText(item.display_name).includes(normalizedQuery) || item.synonyms.some((synonym) => normalizeText(synonym).includes(normalizedQuery))) ? 1 : 0;
+      const match = scoreLabelTextMatch(normalizedQuery, item);
       const businessMatch = item.business_types.includes(state.profile.business_type_id) ? 1 : 0;
       const sectorMatch = businessSectorMatch(item) ? 1 : 0;
       const countryMatch = labelSupportsRegion(item) ? 1 : 0;
       const historyBoost = usageMap.get(item.normalized_label) || 0;
       const preferredBoost = (state.profile?.preferred_labels || []).includes(item.display_name) ? 18 : 0;
-      const score = (exact * 40) + (synonym * 30) + (partial * 16) + (businessMatch * 12) + (sectorMatch * 8) + (countryMatch * 6) + Math.min(historyBoost, 8) + preferredBoost;
+      const profileBoost = (businessMatch * 10) + (sectorMatch * 6) + (countryMatch * 4) + Math.min(historyBoost, 8) + preferredBoost;
+      const score = normalizedQuery
+        ? match.score + profileBoost
+        : profileBoost;
       const confidence = normalizedQuery
-        ? Math.min(score / 50, 0.99)
+        ? Math.min((match.score / 60) + (profileBoost / 100), 0.99)
         : Math.min((businessMatch * 0.55) + (sectorMatch * 0.2) + (countryMatch * 0.1) + Math.min(historyBoost, 3) / 10 + (preferredBoost ? 0.15 : 0), 0.92);
-      const reason = exact ? "Exact match" : synonym ? "Synonym match" : partial ? "Related match" : preferredBoost ? "Picked during onboarding" : "Recommended for this business";
-      return { ...item, score, confidence, reason };
-    }).sort((a, b) => b.score - a.score || a.display_name.localeCompare(b.display_name));
+      const reason = match.reason || (preferredBoost ? "Picked during onboarding" : "Recommended for this business");
+      return { ...item, score, confidence, reason, matchScore: match.score };
+    })
+      .filter((item) => !normalizedQuery || item.matchScore > 0)
+      .sort((a, b) => b.score - a.score || a.display_name.localeCompare(b.display_name));
 
-    return ranked.slice(0, limit).map((item) => includeScore ? item : stripScore(item));
+    return ranked.slice(0, limit).map((item) => {
+      const output = includeScore ? { ...item } : stripScore(item);
+      delete output.matchScore;
+      return output;
+    });
   });
 }
 
