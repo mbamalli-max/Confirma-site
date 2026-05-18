@@ -793,7 +793,7 @@ function cacheElements() {
     "pin-reminder-editor", "pin-reminder-question", "pin-reminder-answer", "pin-reminder-save", "pin-reminder-cancel",
     "pin-reset-btn", "pin-save-btn", "pin-remove-btn", "pin-setup-error",
     "settings-security-status", "pin-setup-label", "pin-lock-screen", "pin-error", "first-record-guide",
-    "storage-warning-v2", "loan-readiness-banner", "banner-tier-icon", "banner-headline", "banner-subtext", "banner-cta",
+    "storage-warning-v2", "record-history-banner", "banner-tier-icon", "banner-headline", "banner-subtext", "banner-cta",
     "settings-logout-v2",
     "otp-back", "otp-screen-header-title", "otp-screen-header-copy", "otp-screen-title", "otp-screen-copy", "otp-status-card",
     "otp-email-field", "otp-email-input", "otp-phone-field", "otp-country-prefix", "otp-phone-input", "otp-request-code",
@@ -1635,7 +1635,7 @@ async function renderDashboard() {
   const streakEl = document.getElementById("dash-streak-v2");
   if (streakEl) streakEl.textContent = streak;
 
-  const banner = document.getElementById("loan-readiness-banner");
+  const banner = document.getElementById("record-history-banner");
   if (banner && isAuthSessionValid() && state.deviceIdentity) {
     if (streak >= 90) {
       document.getElementById("banner-tier-icon").textContent = "🥈";

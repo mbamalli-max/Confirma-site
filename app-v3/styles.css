@@ -785,7 +785,7 @@ h1, h2, h3, h4 {
   gap: 10px;
 }
 
-.loan-readiness-banner {
+.record-history-banner {
   background: linear-gradient(135deg, #E8F5E9, #D8F3DC);
   border: 1px solid #52B788;
   border-radius: var(--r-md);
@@ -796,18 +796,18 @@ h1, h2, h3, h4 {
   gap: 1rem;
 }
 
-.loan-readiness-banner .banner-content {
+.record-history-banner .banner-content {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   flex: 1;
 }
 
-.loan-readiness-banner .banner-icon {
+.record-history-banner .banner-icon {
   font-size: 1.5rem;
 }
 
-.loan-readiness-banner .btn-sm {
+.record-history-banner .btn-sm {
   min-height: 36px;
   padding: 0 1rem;
   font-size: 0.85rem;
