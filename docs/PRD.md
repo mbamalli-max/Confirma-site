@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.5.1
-**Date:** 2026-05-17
+**Version:** 3.5.2
+**Date:** 2026-05-18
 
 ---
 

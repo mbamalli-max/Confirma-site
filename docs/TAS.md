@@ -1,8 +1,8 @@
 # Technical Architecture Specification (TAS)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.5.1
-**Date:** 2026-05-17
+**Version:** 3.5.2
+**Date:** 2026-05-18
 
 ---
 
@@ -881,7 +881,7 @@ Server-generated via pdfkit:
 - Business name
 - Masked phone (`maskPhone()`) and email (`maskEmail()`)
 - Report date range
-- Tier label fixed to `free`
+- Report fee label: `Free` (field label is `REPORT FEE`, not `AMOUNT PAID`)
 - Entry count
 - Report device fingerprint
 - Scope: Account devices
@@ -1200,3 +1200,4 @@ Routing via `vercel.json` `routes` array (not `rewrites`).
 | 3.4.1 | 2026-05-11 | **Production smoke test passed.** Per-entry offline verification export confirmed live (commit 6a62ddc): `prev_entry_hash`, `signature_base64`, `signature_message_utf8`, `canonical_payload_utf8_begin/end` present in text export. Server attestation `GET /verify/:vt_id` → `status: VALID`, `fork_status: NORMAL`, `signature_algorithm: ECDSA_P256_SHA256_P1363`. PDF footer confirmed carrying all four attestation fields. `/.well-known/verification-key.json` live and consistent. Full end-to-end path verified: OTP → record → confirm → export → verify URL → VALID. |
 | 3.5.0 | 2026-05-17 | **Free account-device verified reports:** current product has no active payment, ad, or paid-tier gate. `/report/generate-pdf` returns a free server-side PDF with `account_devices` attestation scope, full-history `window_days: 0`, account-linked device entries, device fingerprint column in the ledger, and direct download plus best-effort email. **Verification page:** displays ledger root hash, report device fingerprint, attestation scope, payload, server signature, signature algorithm, and verification key URL. **Service worker:** cache name updated to `konfirmata-cache-v17`. |
 | 3.5.1 | 2026-05-17 | **PDF boundary alignment:** server-generated reports now use Activity Summary / Inflow-Outflow language instead of accounting-statement labels, use Net Recorded Activity wording, show mixed-currency totals per currency without conversion or combination, and prefix multi-device row references with the short device code. |
+| 3.5.2 | 2026-05-18 | **NIW boundary confirmed in production.** PDF output verified against petition technical boundary: no "Income Statement", "Financial Summary", or "Net Income" in any export path. Cover page field renamed `REPORT FEE: Free` (was `AMOUNT PAID: NGN 0.00`). Mixed-currency per-currency totals and `ddb6-1` row reference format confirmed in live user-generated report. All export paths (`/report/generate-pdf`, `/attest` in text export, client fallback) send `window_days: 0`. PDF filename confirmed as `konfirmata-verified-report-{YYYY-MM-DD}.pdf`. |
