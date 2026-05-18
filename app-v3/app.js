@@ -4021,19 +4021,44 @@ function cleanNaturalLabelQuery(value) {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (/^(?:am|it|them|that|goods?|items?|products?|something)$/.test(label)) {
+  if (/^(?:am|it|them|that|something)$/.test(label)) {
     label = "";
   }
 
   return label;
 }
 
+const QUANTITY_UNIT_WORDS = /^(?:bags?|plates?|cups?|pieces?|pcs|cartons?|boxes?|bottles?|litres?|liters?|kg|kilos?|dozens?|packs?|portions?|sets?|units?|items?)$/;
+
+function isQuantityOnlySaleQuery(value) {
+  const normalized = normalizeText(value);
+  if (!normalized) return false;
+  let sawQuantityWord = false;
+  for (const token of normalized.split(/\s+/)) {
+    if (!token || token === "of") continue;
+    if (/^[0-9]+(?:\.[0-9]+)?$/.test(token)) continue;
+    if (QUANTITY_UNIT_WORDS.test(token)) {
+      sawQuantityWord = true;
+      continue;
+    }
+    return false;
+  }
+  return sawQuantityWord;
+}
+
 function parsedNaturalTransaction(action, labelQuery, amountValue, counterparty = "") {
   const amountMinor = parseNaturalAmount(amountValue);
   if (!amountMinor) return null;
+  let cleanedLabel = cleanNaturalLabelQuery(labelQuery);
+  // A sale phrased only with quantity/unit words ("50 units", "3 pieces") describes a
+  // generic product sale — resolve to the Products label rather than leaving it unmatched.
+  // Empty queries (e.g. Pidgin "I sell am") are intentionally left blank, not defaulted.
+  if (action === "sale" && isQuantityOnlySaleQuery(labelQuery)) {
+    cleanedLabel = "products";
+  }
   return {
     action,
-    labelQuery: cleanNaturalLabelQuery(labelQuery),
+    labelQuery: cleanedLabel,
     amountMinor,
     counterparty: String(counterparty || "").trim()
   };
@@ -4147,11 +4172,12 @@ async function startVoiceRecordShortcut() {
     finalTranscriptHandled = true;
     const transcript = speech.transcript;
     const corrected = await applyVoiceCorrections(transcript);
-    rememberVoiceTranscript(transcript, "capture");
     const parsed = parseNaturalTransaction(corrected);
     if (!parsed || !parsed.amountMinor) {
+      clearPendingVoiceTranscript();
       setVoiceRecordError(`Could not understand that. Try: ${getCurrentCaptureExample()}.`);
     } else {
+      rememberVoiceTranscript(transcript, "capture");
       applyParsedTransactionToCapture(parsed, { announce: true });
     }
     try {
@@ -4344,7 +4370,7 @@ function findBestLabelForAction(labelQuery, actionContext) {
     .filter((entry) => !normalizedQuery || entry.score > 0)
     .sort((a, b) => b.score - a.score || a.item.display_name.localeCompare(b.item.display_name));
 
-  return ranked[0]?.score ? ranked[0].item : catalog[0] || null;
+  return ranked[0]?.score ? ranked[0].item : null;
 }
 
 function applyParsedTransactionToCapture(parsed, options = {}) {
