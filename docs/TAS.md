@@ -1,7 +1,7 @@
 # Technical Architecture Specification (TAS)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.5.2
+**Version:** 3.5.3
 **Date:** 2026-05-18
 
 ---
@@ -364,7 +364,7 @@ Optional alphanumeric passcode for local app protection. Separate from phone OTP
 
 #### Natural Language Parsing
 
-Function: `parseNaturalTransaction(input)` (~line 4129 in `app.js`)
+Function: `parseNaturalTransaction(input)` (~line 4031 in `app.js`)
 
 Parses free-text or voice transcripts into structured transaction fields before populating the capture form.
 
@@ -372,13 +372,20 @@ Supported patterns (regex):
 
 | Phrase pattern | Inferred type | Extracted fields |
 |---|---|---|
-| "sold [item] for [amount]" | `sale` (income) | label: item, amount |
-| "sell [item] for [amount]" | `sale` (income) | label: item, amount |
-| "bought [item] for [amount]" | `purchase` (expense) | label: item, amount |
-| "received [amount] from [party]" | `receipt` (income) | amount, counterparty: party |
-| "paid [amount] to [party]" | `payment` (expense) | amount, counterparty: party |
+| "sold [item] for [amount]" | `sale` | label: item, amount |
+| "sell [item] for [amount]" | `sale` | label: item, amount |
+| "sell [amount] [item]" | `sale` | label: item, amount (amount-before-label) |
+| "sell [item] [amount]" | `sale` | label: item, amount |
+| "I sell am for [amount]" | `sale` | amount; label cleared to "" (Pidgin pronoun) |
+| "bought [item] for [amount]" | `purchase` | label: item, amount |
+| "buy [amount] [item]" | `purchase` | label: item, amount (amount-before-label) |
+| "received [amount] from [party]" | `receipt` | amount, counterparty: party |
+| "received [amount] from [party] for [item]" | `receipt` | amount, counterparty: party, label: item |
+| "paid [amount] to [party]" | `payment` | amount, counterparty: party |
 
-Amount normalization: strips currency symbols (₦, $, NGN, USD), removes commas, converts k-suffixes (`"75k"` → `75000`).
+**Amount normalization** (`parseNaturalAmount`): strips currency symbols (₦, $, NGN, USD), removes commas, converts `k`/`thousand` suffixes (`"5k"` → `5000`, `"2.5k"` → `2500`).
+
+**Label cleanup** (`cleanNaturalLabelQuery`): strips leading articles (`a`, `an`, `the`, `some`); strips quantity prefixes (`3 bags of`, `2 plates of`, `1 carton of`, etc.); converts Pidgin/pronoun placeholders (`am`, `it`, `them`, `that`, `goods`, `items`, `products`, `something`) to `""` so the label field is left blank for user selection.
 
 Applied after `applyVoiceCorrections()` and before field population.
 
@@ -390,9 +397,10 @@ Returns the BCP-47 language tag for `SpeechRecognition.lang`:
 
 | Condition | Locale returned |
 |---|---|
-| `operating_region = "NG"` (non-Safari) | `"en-NG"` |
-| Safari (any region) | `"en-US"` — Safari workaround: `en-NG` causes recognition failure on iOS |
+| `operating_region = "NG"` | `"en-NG"` |
 | All others | `"en-US"` |
+
+Both the main voice capture handler and `startSpeechMatch` set `recognition.lang = getVoiceLocale()`. There is no longer a Safari-specific `en-US` override — both paths use the same locale function.
 
 #### Voice Correction System
 
@@ -420,11 +428,12 @@ Store: `voice_corrections` (keyPath: `"raw"`)
 | `renderVoiceCorrectionsSettings()` | 2662 | Renders Settings panel UI with correction list |
 
 **Voice pipeline order:**
-1. `SpeechRecognition` → raw transcript
-2. `applyVoiceCorrections(raw)` → corrected transcript
-3. `parseNaturalTransaction(corrected)` → structured fields
-4. User reviews in capture form, can edit manually
-5. If user edit differs from raw: `saveVoiceCorrection(raw, userEdit)` — correction stored
+1. `SpeechRecognition` → interim results displayed as "Listening: [transcript]" (not parsed)
+2. `onresult` waits for `event.results[i].isFinal === true` before proceeding
+3. `applyVoiceCorrections(raw)` → corrected transcript
+4. `parseNaturalTransaction(corrected)` → structured fields
+5. User reviews in capture form, can edit manually
+6. If user edit differs from raw: `saveVoiceCorrection(raw, userEdit)` — correction stored
 
 **Isolation:** Not synced. Not backed up. Device-local only. Cleared on IndexedDB reset.
 
@@ -1096,18 +1105,23 @@ Reversed transactions (those whose `entry_hash` appears in any reversal's `rever
 
 Scoring per candidate label against query:
 
-| Signal | Score |
-|---|---|
-| Exact normalized match | +40 |
-| Synonym match (label catalog) | +30 |
-| Partial/substring match | +16 |
-| Business type match | +12 |
-| Sector match | +8 |
-| Country match | +6 |
-| Usage history boost | min(count, 8) |
-| Preferred label (onboarding selection) | +18 |
+| Signal | Score | Implementation |
+|---|---|---|
+| Exact normalized match | +40 | String equality after normalization |
+| Synonym match (label catalog) | +30 | Known synonym list in catalog |
+| Token match | +20 | Query token found in label token set |
+| Close spelling match | +18 | `levenshteinDistance(queryToken, labelToken) ≤ 2`, token ≥ 4 chars |
+| Preferred label (onboarding) | +18 | In `profile.preferred_labels` |
+| Partial/substring match | +16 | Substring of normalized label |
+| Phonetic match | +12 | `soundexCode(queryToken) === soundexCode(labelToken)` |
+| Business type match | +12 | `business_type_id` match |
+| Sector match | +8 | `sector_id` match |
+| Country match | +6 | `operating_region` match |
+| Usage history boost | +min(count, 8) | Per-label usage from `usage` IndexedDB store |
 
 Sort: score descending → display_name ascending. Default limit: 12.
+
+Token and fuzzy scoring (`fuzzyTokenMatch`, `phoneticTokenMatch`) operate at the individual word level so short tokens in one label do not spuriously match longer tokens in another (e.g. "rice" does not score "Price Tags").
 
 ### 12.2 Confidence Calculation
 
@@ -1118,9 +1132,25 @@ Without query: composite of business/sector/country match + history/preferred bo
 
 - `"Exact match"` — normalized exact match
 - `"Synonym match"` — known synonym in label catalog
-- `"Related match"` — partial match
+- `"Token match"` — query word found in label
+- `"Close spelling match"` — Levenshtein distance ≤ 2
+- `"Sounds similar"` — Soundex phonetic match
+- `"Related match"` — partial substring match
 - `"Picked during onboarding"` — in preferred_labels
 - `"Recommended for this business"` — business/sector/country match only
+
+### 12.4 Label Speech Search (`startSpeechMatch`)
+
+When the user speaks a label in the Speak tab of the label modal:
+
+1. `SpeechRecognition` → final transcript only (same `isFinal` gate as transaction capture)
+2. `applyVoiceCorrections(transcript)` applied
+3. `rankLabels(corrected, { limit: 5, includeScore: true })` called
+4. If a strong match is found (score above threshold): label options rendered and highlighted
+5. If no strong match: "No strong match for '[utterance]'. You can add it as a custom label." displayed with a **Use as a custom label** button
+6. Button calls `createUserCustomLabel(label)` → `selectLabel(item)` — reuses existing custom-label flow; HTML-escaped before render
+
+**Scope:** All label signals (`voice_corrections`, `usage`, `customLabels`, `preferred_labels`) are device-local only. There is no server-side aggregation of learned terms across users. The static label catalog embedded in `app.js` is the only shared signal.
 
 ---
 
@@ -1201,3 +1231,4 @@ Routing via `vercel.json` `routes` array (not `rewrites`).
 | 3.5.0 | 2026-05-17 | **Free account-device verified reports:** current product has no active payment, ad, or paid-tier gate. `/report/generate-pdf` returns a free server-side PDF with `account_devices` attestation scope, full-history `window_days: 0`, account-linked device entries, device fingerprint column in the ledger, and direct download plus best-effort email. **Verification page:** displays ledger root hash, report device fingerprint, attestation scope, payload, server signature, signature algorithm, and verification key URL. **Service worker:** cache name updated to `konfirmata-cache-v17`. |
 | 3.5.1 | 2026-05-17 | **PDF boundary alignment:** server-generated reports now use Activity Summary / Inflow-Outflow language instead of accounting-statement labels, use Net Recorded Activity wording, show mixed-currency totals per currency without conversion or combination, and prefix multi-device row references with the short device code. |
 | 3.5.2 | 2026-05-18 | **NIW boundary confirmed in production.** PDF output verified against petition technical boundary: no "Income Statement", "Financial Summary", or "Net Income" in any export path. Cover page field renamed `REPORT FEE: Free` (was `AMOUNT PAID: NGN 0.00`). Mixed-currency per-currency totals and `ddb6-1` row reference format confirmed in live user-generated report. All export paths (`/report/generate-pdf`, `/attest` in text export, client fallback) send `window_days: 0`. PDF filename confirmed as `konfirmata-verified-report-{YYYY-MM-DD}.pdf`. |
+| 3.5.3 | 2026-05-18 | **Voice and fuzzy-match improvements** (commit `8e158b7`). Voice capture now waits for `isFinal` before parsing; shows interim transcript while listening. Safari `en-US` override removed — both voice paths use `getVoiceLocale()`. `parseNaturalTransaction` extended: `5k`/`thousand` amounts, amount-before-label phrasing, quantity-prefix cleanup (`3 bags of rice` → `rice`), Pidgin pronoun placeholder (`am`/`it`/`them` → empty label). `rankLabels` now uses Levenshtein edit-distance (+18) and Soundex phonetic (+12) scoring per token — short tokens no longer spuriously match longer label words. `startSpeechMatch` offers "Use as a custom label" fallback when no strong match found. Rendered label results are HTML-escaped. All learned signals remain device-local; no cross-user aggregation. §12 updated with full scoring table and speech-search flow. |

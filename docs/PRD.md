@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.5.2
+**Version:** 3.5.3
 **Date:** 2026-05-18
 
 ---
@@ -160,10 +160,10 @@ Voice uses the same locale (`getVoiceLocale()`), TTS engine (`speakConfirmationC
 
 **Input methods (4):**
 
-1. **Voice** — Web Speech API. User speaks: "Sold rice for 15,000". NLP parser infers action, label, amount. Voice corrections auto-applied before parsing (see §8).
+1. **Voice** — Web Speech API. User speaks: "Sold rice for 15,000". Live interim transcript shown while listening; parser fires only on final result. NLP parser handles standard phrasing, `5k`/`thousand` amounts, amount-before-label, quantity prefixes ("3 bags of rice" → label "rice"), and Pidgin placeholder ("I sell am for 3000" → sale, empty label). Voice corrections auto-applied before parsing (see §8).
 2. **Text** — Natural language text field. "Paid transport 2000" → fills action, label, amount.
 3. **Visual quick-picks** — Labeled cards ranked by preference + usage history. Tap to select.
-4. **Label modal** — Full label browser with 4 modes: **Search** (text filter), **Speak** (voice label search), **Browse** (all labels ranked), **Custom** (free-text, learned for future ranking).
+4. **Label modal** — Full label browser with 4 modes: **Search** (text filter), **Speak** (voice label search — offers "Use as custom label" when no strong match found), **Browse** (all labels ranked), **Custom** (free-text, learned for future ranking).
 
 **Form fields:**
 - Action (sale, purchase, payment, receipt, transfer_in, transfer_out)
@@ -453,12 +453,15 @@ Scoring factors (applied per query match):
 |---|---|
 | Exact normalized match | +40 |
 | Synonym match | +30 |
+| Token match (query token found in label tokens) | +20 |
+| Close spelling match (Levenshtein distance ≤ 2, token ≥ 4 chars) | +18 |
+| Preferred label (selected at onboarding) | +18 |
 | Partial/substring match | +16 |
+| Phonetic match (Soundex) | +12 |
 | Business type match | +12 |
 | Sector match | +8 |
 | Country match | +6 |
 | Usage history boost | +min(count, 8) |
-| Preferred label (selected at onboarding) | +18 |
 
 Results sorted by score descending, then alphabetically. Default limit: 12.
 
