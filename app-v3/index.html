@@ -461,9 +461,13 @@
         </div>
       </header>
       <div class="panel voice-review-card">
-        <div class="voice-review-row">
+        <div class="voice-review-row" id="voice-review-transcript-row">
           <span class="voice-review-key">I heard</span>
           <span class="voice-review-value" id="voice-review-transcript"></span>
+        </div>
+        <div class="voice-review-row" id="voice-review-edit-row" hidden>
+          <span class="voice-review-key">I heard</span>
+          <input class="text-field-like" id="voice-review-edit" type="text" aria-label="Fix what was heard">
         </div>
         <div class="voice-review-row" id="voice-review-understood-row">
           <span class="voice-review-key">I understood</span>

@@ -1097,6 +1097,24 @@ h1, h2, h3, h4 {
   margin-bottom: 0;
 }
 
+#voice-review-edit-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+#voice-review-edit-row[hidden] {
+  display: none;
+}
+
+#voice-review-edit-row .voice-review-key {
+  flex: 0 0 auto;
+}
+
+#voice-review-edit {
+  width: 100%;
+}
+
 /* ── Modals ──────────────────────────────────────────────── */
 .modal-shell[hidden] {
   display: none;

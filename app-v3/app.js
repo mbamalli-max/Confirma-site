@@ -782,7 +782,8 @@ function cacheElements() {
     "revoke-old-devices-modal", "revoke-old-devices-list", "revoke-old-devices-skip",
     "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
     "voice-example-v2", "voice-announce",
-    "voice-review-transcript", "voice-review-understood-row", "voice-review-understood",
+    "voice-review-transcript-row", "voice-review-transcript", "voice-review-edit-row", "voice-review-edit",
+    "voice-review-understood-row", "voice-review-understood",
     "voice-review-missing-row", "voice-review-missing", "voice-review-message",
     "voice-review-suggestions", "voice-review-manual", "voice-review-cancel",
     "bottom-nav-v2", "sync-status-badge", "sync-dot", "sync-label", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
@@ -886,6 +887,12 @@ function wireEvents() {
   document.getElementById("back-to-capture").addEventListener("click", () => showScreen("screen-capture"));
   document.getElementById("voice-review-manual").addEventListener("click", handleVoiceReviewManual);
   document.getElementById("voice-review-cancel").addEventListener("click", cancelVoiceReview);
+  document.getElementById("voice-review-edit").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      retryVoiceReview();
+    }
+  });
   document.getElementById("open-history").addEventListener("click", async () => {
     await renderHistory();
     showScreen("screen-history");
@@ -4384,6 +4391,28 @@ function detectUnsupportedIntent(transcript) {
   return UNSUPPORTED_INTENT_PATTERN.test(text) && /[0-9]/.test(text);
 }
 
+// Curated, predefined-only map of common speech mis-hearings of the action
+// verbs. Applied only to the leading verb token, only after the original
+// parse fails, and only kept if the corrected phrase then parses cleanly.
+// Not auto-expanded from user input.
+const ACTION_VERB_HOMOPHONES = {
+  boat: "bought", bot: "bought", bowt: "bought", board: "bought",
+  sould: "sold", payed: "paid", recieved: "received", recieve: "received"
+};
+
+function homophoneCorrectedTranscript(transcript) {
+  const text = String(transcript || "").trim();
+  if (!text) return null;
+  const tokens = text.split(/\s+/);
+  let verbIndex = 0;
+  if (tokens[0] && tokens[0].toLowerCase() === "i" && tokens.length > 1) verbIndex = 1;
+  const verbToken = String(tokens[verbIndex] || "").toLowerCase().replace(/[^a-z]/g, "");
+  const replacement = ACTION_VERB_HOMOPHONES[verbToken];
+  if (!replacement) return null;
+  tokens[verbIndex] = replacement;
+  return tokens.join(" ");
+}
+
 function rankLabelCandidates(labelQuery, actionContext) {
   const catalog = getCatalogForProfileAction(actionContext);
   const normalizedQuery = normalizeText(labelQuery);
@@ -4403,19 +4432,28 @@ function rankLabelCandidates(labelQuery, actionContext) {
   };
 }
 
-// Single entry point for both voice and typed capture. Returns true when the
-// input was routed (to the capture form or the review card), false on a
-// genuine unparseable failure.
+// Single entry point for both voice and typed capture. Always returns true —
+// every input is routed to the capture form or to the review card.
 function routeCapturedTransaction(transcript, parsed, source) {
   setVoiceRecordError("");
   if (!parsed) {
     if (source === "voice") clearPendingVoiceTranscript();
+    // Borrowing/loan language is checked before any other recovery.
     if (detectUnsupportedIntent(transcript)) {
       openVoiceReview({ mode: "unsupported", transcript, source });
       return true;
     }
-    setVoiceRecordError(`Could not understand that. Try: ${getCurrentCaptureExample()}.`);
-    return false;
+    // Curated leading-verb mis-hearing fix, kept only if it now parses.
+    const corrected = homophoneCorrectedTranscript(transcript);
+    if (corrected) {
+      const reparsed = parseNaturalTransaction(corrected);
+      if (reparsed && reparsed.amountMinor) {
+        return routeCapturedTransaction(corrected, reparsed, source);
+      }
+    }
+    // Genuine failure — show the transcript so the user can fix the wording.
+    openVoiceReview({ mode: "failed", transcript, source });
+    return true;
   }
   const match = rankLabelCandidates(parsed.labelQuery, parsed.action);
   if (match.confident) {
@@ -4438,8 +4476,22 @@ function openVoiceReview(opts) {
 function renderVoiceReview() {
   const pending = state.pendingVoiceParse;
   if (!pending) return;
-  els["voice-review-transcript"].textContent = pending.transcript || "";
   els["voice-review-suggestions"].innerHTML = "";
+
+  if (pending.mode === "failed") {
+    els["voice-review-transcript-row"].hidden = true;
+    els["voice-review-edit-row"].hidden = false;
+    els["voice-review-edit"].value = pending.transcript || "";
+    els["voice-review-understood-row"].hidden = true;
+    els["voice-review-missing-row"].hidden = true;
+    els["voice-review-message"].textContent = "We couldn't read that as a transaction. Fix the wording and try again.";
+    els["voice-review-manual"].textContent = "Try again";
+    return;
+  }
+
+  els["voice-review-transcript-row"].hidden = false;
+  els["voice-review-edit-row"].hidden = true;
+  els["voice-review-transcript"].textContent = pending.transcript || "";
   const isUnsupported = pending.mode === "unsupported";
   els["voice-review-understood-row"].hidden = isUnsupported;
   els["voice-review-missing-row"].hidden = isUnsupported;
@@ -4506,7 +4558,28 @@ function handleVoiceReviewManual() {
     cancelVoiceReview();
     return;
   }
+  if (pending.mode === "failed") {
+    retryVoiceReview();
+    return;
+  }
   resolveVoiceReview({ label: null });
+}
+
+function retryVoiceReview() {
+  const pending = state.pendingVoiceParse;
+  if (!pending || pending.mode !== "failed") return;
+  const edited = String(els["voice-review-edit"].value || "").trim();
+  if (!edited) return;
+  const original = String(pending.transcript || "").trim();
+  const source = pending.source;
+  state.pendingVoiceParse = null;
+  const parsed = parseNaturalTransaction(edited);
+  const usableParsed = (parsed && parsed.amountMinor) ? parsed : null;
+  // Learn the whole-phrase correction only from this explicit user edit.
+  if (usableParsed && edited.toLowerCase() !== original.toLowerCase()) {
+    void saveVoiceCorrection(original, edited);
+  }
+  routeCapturedTransaction(edited, usableParsed, source);
 }
 
 function cancelVoiceReview() {

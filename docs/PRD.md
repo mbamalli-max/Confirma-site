@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.5.8
+**Version:** 3.5.9
 **Date:** 2026-05-18
 
 ---
@@ -166,6 +166,8 @@ Voice uses the same locale (`getVoiceLocale()`), TTS engine (`speakConfirmationC
 4. **Label modal** — Full label browser with 4 modes: **Search** (text filter), **Speak** (voice label search — offers "Use as custom label" when no strong match found), **Browse** (all labels ranked), **Custom** (free-text, learned for future ranking).
 
 **Missing-field clarification.** Voice and text capture share one routing step. When the parsed input confidently matches a label, the capture form is populated directly. When the label is missing or only weakly matched, a review card appears first — it shows the raw transcript ("I heard"), the understood action and amount ("I understood"), what is still missing, up to three suggested labels, an option to use the spoken term as a custom label, and Choose manually / Cancel. Transcripts that clearly describe borrowing or a loan — a transaction type Konfirmata does not yet support — are shown an honest "not supported" message rather than being mapped into an unrelated category. The clarification step only fills capture fields; the user still reviews and confirms before any record is appended.
+
+**Failed-capture recovery.** When speech is misheard badly enough that nothing parses (e.g. "bought" heard as "boat"), the app does not dead-end on an error. It first tries a small predefined fix for common verb mis-hearings; if that fails, the review card opens showing the transcript in an editable field, so the user can correct the wording and try again rather than starting over. A successful manual correction is remembered on-device for that phrase.
 
 **Form fields:**
 - Action (sale, purchase, payment, receipt, transfer_in, transfer_out)
