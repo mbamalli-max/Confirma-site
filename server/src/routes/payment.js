@@ -128,6 +128,8 @@ function computeFinancialStatements(entries, currency) {
   let otherIncome = 0;
   let costOfGoods = 0;
   let operatingExpenses = 0;
+  let borrowedIn = 0;
+  let loanRepaid = 0;
   let start = null;
   let end = null;
   const monthlyBuckets = new Map();
@@ -156,6 +158,12 @@ function computeFinancialStatements(entries, currency) {
     } else if (transactionType === "payment") {
       operatingExpenses += amountMinor;
       bucket.outflows += amountMinor;
+    } else if (transactionType === "liability_in") {
+      // Borrowing is recorded separately — never revenue/income/inflow.
+      borrowedIn += amountMinor;
+    } else if (transactionType === "liability_out") {
+      // Loan repayment is recorded separately — never expense/outflow.
+      loanRepaid += amountMinor;
     }
 
     bucket.net = bucket.inflows - bucket.outflows;
@@ -169,6 +177,10 @@ function computeFinancialStatements(entries, currency) {
       costOfGoods,
       operatingExpenses,
       netIncome: (grossRevenue + otherIncome) - (costOfGoods + operatingExpenses)
+    },
+    borrowing: {
+      borrowedIn,
+      loanRepaid
     },
     cashFlowByMonth: [...monthlyBuckets.entries()]
       .sort(([monthA], [monthB]) => monthA.localeCompare(monthB))
@@ -749,6 +761,19 @@ async function buildVerifiedReportPdf({
     y += 30;
     drawReportStatementRow(doc, y, "Net Recorded Activity", fmt(statements.incomeStatement.netIncome, reportCurrency), { total: true });
     y += 54;
+  }
+
+  const reportBorrowing = statements.borrowing || { borrowedIn: 0, loanRepaid: 0 };
+  if (reportBorrowing.borrowedIn || reportBorrowing.loanRepaid) {
+    y = drawReportSectionTitle(doc, y, "Section 1b", "Recorded Borrowing Activity", null);
+    drawReportStatementRow(doc, y, "Money Borrowed (recorded)", fmt(reportBorrowing.borrowedIn, reportCurrency));
+    y += 22;
+    drawReportStatementRow(doc, y, "Loan Repayments (recorded)", fmt(reportBorrowing.loanRepaid, reportCurrency));
+    y += 22;
+    doc.font("Helvetica").fontSize(8).fillColor(REPORT.muted)
+      .text("Borrowed funds are recorded money movements, not sales, receipts, revenue, income, or verified liabilities. Konfirmata does not independently verify that the underlying borrowing occurred. Records labelled \"Business Loan\" confirmed before the borrowing taxonomy was introduced may have been recorded as receipts.",
+        REPORT_LEFT, y, { width: REPORT_WIDTH, lineGap: 1.5 });
+    y += 50;
   }
 
   y = drawReportSectionTitle(doc, y, "Section 2", "Monthly Cash Flow", null);

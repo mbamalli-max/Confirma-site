@@ -1,7 +1,7 @@
 # Technical Architecture Specification (TAS)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.5.9
+**Version:** 3.6.0
 **Date:** 2026-05-18
 
 ---
@@ -176,7 +176,7 @@ enableVerifiedPdfExportWhenAuthenticated();
 {
   // Identity
   id: Number,                      // Auto-incrementing per device, starts at 1
-  transaction_type: String,        // sale | purchase | payment | receipt | reversal | transfer_in | transfer_out
+  transaction_type: String,        // sale | purchase | payment | receipt | reversal | transfer_in | transfer_out | liability_in | liability_out
   label: String,                   // Display label
   normalized_label: String,        // Lowercase, searchable
   amount_minor: Number,            // Integer, minor units (kobo or cents)
@@ -399,7 +399,7 @@ Both voice (`startVoiceRecordShortcut` `onresult`) and typed (`handleQuickTextRe
 
 - **Confident capture → straight to the capture form.** `rankLabelCandidates(labelQuery, action)` scores the action-specific catalog (`getCatalogForProfileAction`) with `scoreLabelTextMatch`. If the best label scores at or above `CONFIDENT_LABEL_SCORE` (22 — i.e. exact / exact-word / multi-word / phrase / starts-with), `applyParsedTransactionToCapture` runs as before.
 - **Missing or low-confidence label → review card.** When the best score is below the threshold (close-spelling, phonetic, or no match), the `screen-voice-review` card opens showing "I heard" (raw transcript), "I understood" (`action · amount`), "Missing: Label / category", up to 3 ranked suggestions (only labels that scored above zero — no `catalog[0]` fallback), an offer to use the spoken term as a custom label, plus **Choose manually** and **Cancel**.
-- **Unsupported intent → message only.** If a transcript fails to parse but matches `UNSUPPORTED_INTENT_PATTERN` (borrowing/loan/lending/repayment/debt words) and contains a digit, the card opens in `unsupported` mode with an explicit message that Konfirmata has no record type for borrowing, offering **Choose a supported category** and **Cancel**. Borrowing language is never mapped into `sale`/`purchase`/`payment`/`receipt`; no loan/liability action class exists (taxonomy decision deferred).
+- **Unsupported intent → message only.** If a transcript fails to parse but matches `UNSUPPORTED_INTENT_PATTERN` (lending/owing/debt words) and contains a digit, the card opens in `unsupported` mode with an explicit message, offering **Choose a supported category** and **Cancel**. Lending money out and receivables remain unsupported and are never mapped into an existing action. (Borrowing itself is supported as of Phase 4A — see §4.16.)
 
 `applyParsedTransactionToCapture(parsed, options)` accepts an explicit `options.label` (an item, or `null` for "choose manually") so the resolved label flows from the card without re-scoring. Clarification fills capture fields only — the existing capture → review → confirm-and-append gate is unchanged. State lives in `state.pendingVoiceParse`. Correction learning (`maybeLearnVoiceCorrection`) fires only on an explicit label selection in the card; the unsupported path and cancelled cards clear the pending transcript and learn nothing.
 
@@ -507,6 +507,24 @@ Same as transaction voice input:
 - No match found → show "Could not match '[transcript]'. Try typing instead."
 
 Voice is always optional — keyboard/tap path remains available on every step.
+
+---
+
+### 4.16 Borrowing / Liability Taxonomy (Phase 4A)
+
+A correctness repair: before Phase 4A, "Business Loan" was a built-in `receipt` catalog label, so borrowed money was recorded as `transaction_type: receipt` and counted as `otherIncome` — contaminating revenue, inflow, cash-flow, and the server-attested PDF. Phase 4A separates borrowing from revenue.
+
+**Two new transaction types:** `liability_in` (money borrowed / loan received) and `liability_out` (loan repayment). They are recorded via a "Borrowing" action group in the advanced panel, beside Transfer.
+
+**Classification:** `liability_in`/`liability_out` are **excluded** from revenue, income, expense, monthly sales, cash-flow inflows/outflows, and Net Recorded Activity — the same treatment as `transfer`. `buildFinancialStatements` (client) and the server statement builder (`server/src/routes/payment.js`) accumulate them into a separate `borrowing: { borrowedIn, loanRepaid }` figure. The dashboard shows a dedicated "Recorded Borrowing" tile; reports/exports show a separate "Recorded Borrowing Activity" section.
+
+**Parser:** `parseNaturalTransaction` routes "borrowed …", "borrowed … from …", "repaid loan …", "loan repayment …", "paid back …". `UNSUPPORTED_INTENT_PATTERN` is narrowed to lending/owing/debt words only.
+
+**Scope:** borrowing only. Lending money out and receivables are out of scope and remain unsupported.
+
+**History:** the append-only chain is immutable — pre-Phase-4A `receipt / Business Loan` records are **not** reclassified. Reports carry a neutral note that such records may have been recorded as receipts. The "Business Loan" label is removed from `receipt` catalogs going forward.
+
+**Disclaimer (verbatim, shown wherever borrowing appears in exports/reports):** "Borrowed funds are recorded money movements, not sales, receipts, revenue, income, or verified liabilities. Konfirmata does not independently verify that the underlying borrowing occurred."
 
 ---
 
@@ -1113,7 +1131,10 @@ Computed in `buildFinancialStatements(records, currency)` / `computeFinancialSta
 | Monthly sales | Sum of `sale` records in current calendar month |
 | Monthly expenses | Sum of `payment` + `purchase` in current month |
 | Cash flow | Monthly sales − Monthly expenses |
+| Recorded borrowing | Sum of `liability_in` records in current month — shown separately, never folded into sales, expenses, cash flow, or net activity |
 | Streak | Consecutive days (backward from today) with ≥ 1 record |
+
+`liability_in` and `liability_out` are excluded from sales, expenses, cash flow, and Net Recorded Activity (Phase 4A — see §4.16); they are surfaced only via the separate "Recorded Borrowing" metric and report section.
 
 **Timestamp resolution:** `getRecordConfirmedAtMs(record)` resolves entry timestamps for date range calculations. It uses `confirmed_at` with fallback to `created_at` when `confirmed_at` is absent. Values < 1e12 are treated as Unix seconds and multiplied by 1000; values ≥ 1e12 are treated as milliseconds. Records with neither field are excluded from date range.
 
@@ -1267,6 +1288,7 @@ Routing via `vercel.json` `routes` array (not `rewrites`).
 | 3.5.3 | 2026-05-18 | **Voice and fuzzy-match improvements** (commit `8e158b7`). Voice capture now waits for `isFinal` before parsing; shows interim transcript while listening. Safari `en-US` override removed — both voice paths use `getVoiceLocale()`. `parseNaturalTransaction` extended: `5k`/`thousand` amounts, amount-before-label phrasing, quantity-prefix cleanup (`3 bags of rice` → `rice`), Pidgin pronoun placeholder (`am`/`it`/`them` → empty label). `rankLabels` now uses Levenshtein edit-distance (+18) and Soundex phonetic (+12) scoring per token — short tokens no longer spuriously match longer label words. `startSpeechMatch` offers "Use as a custom label" fallback when no strong match found. Rendered label results are HTML-escaped. All learned signals remain device-local; no cross-user aggregation. §12 updated with full scoring table and speech-search flow. |
 | 3.5.5 | 2026-05-18 | **Client fallback PDF reconciled with spec.** SC-2 and PRD SC-15 amended: the absolute "server-side only / no jsPDF" language is replaced with a trust hierarchy — the institutional-grade report is generated only by `POST /report/generate-pdf` (`account_devices` attestation), and a client-rendered jsPDF PDF is permitted only as a fallback when that route returns HTTP 404. New §7.7 (TAS) / §11.5 (PRD) document `buildClientVerifiablePdfReport()`, its 404-only trigger, the optional single-device `/attest` embed, and labeling rules. App: fallback PDF retitled "Konfirmata Activity Export - Device-Generated Fallback", filename changed to `konfirmata-activity-export-fallback-{date}.pdf`, and a prominent in-document notice added stating it is not the account-level server-attested report. |
 | 3.5.6 | 2026-05-18 | **P3-B: broaden fallback trigger to offline/network failure.** `claimFreeReport()` now invokes `buildClientVerifiablePdfReport()` on two conditions: HTTP 404 (server route unavailable, existing behavior) and no-HTTP-status errors (`statusCode == null`) — i.e. device offline or server unreachable. Other HTTP errors (401, 403, 5xx, status 0) continue to surface as error messages without triggering the fallback. Status message distinguishes the two cases: 404 → "Server PDF route unavailable. Generating PDF on this device…"; offline/network → "You appear to be offline. Generating PDF on this device…". §7.7 (TAS) and §11.5 / SC-15 (PRD) updated accordingly. |
+| 3.6.0 | 2026-05-19 | **Phase 4A — Borrowing / Liability Taxonomy (correctness repair).** Two new transaction types `liability_in` (money borrowed) and `liability_out` (loan repayment), recorded via a Borrowing action group in the advanced panel. Both are excluded from revenue, income, expense, monthly sales, cash-flow inflows/outflows, and Net Recorded Activity — accumulated separately into `borrowing: { borrowedIn, loanRepaid }` by `buildFinancialStatements` (client) and the server statement builder. New dashboard "Recorded Borrowing" tile; new "Recorded Borrowing Activity" section in text export, client fallback PDF, and the server-attested PDF, each carrying the verbatim borrowing disclaimer. `parseNaturalTransaction` routes borrowing/repayment phrasing; `UNSUPPORTED_INTENT_PATTERN` narrowed to lending/owing/debt. "Business Loan" removed from `receipt` catalogs (icon mapping retained for historical records). Append-only history preserved — no retro-reclassification of pre-4A `receipt/Business Loan` records. Lending/receivables out of scope. Server `payment.js` updated in lockstep with the client. New §4.16. PWA cache `v20` → `v21`. |
 | 3.5.9 | 2026-05-18 | **Voice Phase 3 — failed-capture recovery.** A transcript that does not parse at all is no longer a dead-end error. `routeCapturedTransaction` now: (1) checks borrowing intent first; (2) tries `homophoneCorrectedTranscript` — a curated, predefined-only map (`ACTION_VERB_HOMOPHONES`) that rewrites the leading verb token for common speech mis-hearings (`boat`→`bought`, `sould`→`sold`, etc.), kept only if the result parses; (3) otherwise opens the `screen-voice-review` card in a new `failed` mode with the transcript in an editable field plus **Try again** / **Cancel**. "Try again" (`retryVoiceReview`) re-routes the edited text through normal parsing; a successful explicit edit learns the whole-phrase correction via `saveVoiceCorrection`. The homophone map is deterministic and not stored. No `catalog[0]`, no auto-append, no loan taxonomy; capture → review → confirm gate unchanged. PWA cache `v19` → `v20`. §4.14 updated. |
 | 3.5.8 | 2026-05-18 | **Voice Phase 2 — missing-field clarification UX.** New `routeCapturedTransaction` routes both voice and typed capture through a clarification step. Confident label matches (score ≥ `CONFIDENT_LABEL_SCORE` 22) go straight to the capture form; missing/low-confidence labels open a new `screen-voice-review` card ("I heard / I understood / Missing" + up to 3 scored suggestions, custom-label offer, Choose manually, Cancel). Unsupported borrowing/loan language (`UNSUPPORTED_INTENT_PATTERN`, message-only mode) is surfaced honestly and never mapped into an existing action — no loan/liability taxonomy added. `applyParsedTransactionToCapture` accepts an explicit `options.label`. No `catalog[0]` fallback, no auto-append; the capture → review → confirm-and-append gate is unchanged. Correction learning fires only on explicit card selection. PWA cache `konfirmata-cache-v18` → `v19`. §4.14 updated. |
 | 3.5.7 | 2026-05-18 | **Voice parsing safety fix (Phase 1).** Uncertain voice/text capture no longer silently produces a wrong label. `findBestLabelForAction` returns `null` instead of defaulting to the first catalog entry when no label scores above zero — the capture form then prompts for an explicit label pick. `cleanNaturalLabelQuery` no longer wipes generic product nouns (`goods`, `items`, `products`), so "sold products 1000" matches the Products label. New `isQuantityOnlySaleQuery` rule normalizes quantity/unit-only sale phrasing ("50 units", "3 pieces") to the Products label without affecting empty Pidgin queries or queries with real product words. Voice-correction learning hardened: a failed parse now clears the pending transcript (`clearPendingVoiceTranscript`) and `rememberVoiceTranscript` only runs on a successful parse, so a non-parsing utterance like "borrowed 1000" can no longer be learned as a stale rewrite. §4.14 updated. No borrowing/loan action class added — that taxonomy decision remains open. |

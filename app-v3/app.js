@@ -523,19 +523,19 @@ const LAYER_B = {
       sell: ["Rice", "Beans", "Garri", "Tomatoes", "Pepper", "Palm Oil", "Yam", "Onion", "Groundnuts", "Vegetable Oil", "Crayfish", "Stock Fish", "Egusi", "Plantain", "Maize", "Millet", "Garden Egg", "Okra", "Ugu", "Bitter Leaf", "Sweet Potato", "Cocoyam", "Banana", "Soybeans", "Groundnut Oil", "Seasoning Cubes", "Salt", "Tomato Paste", "Ogi", "Soft Drinks", "Pure Water", "Zobo", "Kunu"],
       buy: ["Rice Stock", "Beans Stock", "Palm Oil Stock", "Tomato Crate", "Pepper Bag", "Nylon Bags", "Garri Stock", "Yam Stock", "Onion Bag", "Groundnut Stock", "Vegetable Oil Stock", "Crayfish Stock", "Dried Fish Stock", "Egusi Stock", "Seasoning Stock", "Salt Stock", "Wholesale Goods", "Storage Sacks", "Plastic Containers", "Weighing Scale", "Crates/Trays"],
       pay: ["Transport", "Market Fee", "Stall Rent", "Packaging", "Helper Pay", "Generator Fuel", "Mobile Data", "Electricity", "Porter Pay", "Cold Room Fee", "Association Dues", "Loading Fee", "Vehicle Hire", "Shop Repair", "Security Fee", "Cleaning Supplies", "Waste Disposal", "Record Keeper"],
-      receive: ["Customer Payment", "POS Payment", "Debt Collected", "Esusu Payout", "Family Support", "Supplier Refund", "Business Loan", "Association Refund", "Government Support", "NGO Grant", "Bank Transfer"]
+      receive: ["Customer Payment", "POS Payment", "Debt Collected", "Esusu Payout", "Family Support", "Supplier Refund", "Association Refund", "Government Support", "NGO Grant", "Bank Transfer"]
     },
     ng_provision_shop: {
       sell: ["Drinks", "Noodles", "Biscuits", "Sugar", "Bread", "Water", "Toiletries", "Airtime", "Detergent", "Milk", "Eggs", "Tin Tomato", "Sardine", "Corned Beef", "Groundnut Oil", "Vegetable Oil", "Seasoning", "Salt", "Flour", "Spaghetti", "Rice", "Beans", "Garri", "Snacks", "Ice Cream", "Yoghurt", "Juice", "Energy Drinks", "Recharge Cards", "Data Bundle", "Baby Food", "Diapers", "Sanitary Pads", "Soap", "Cream", "Toothpaste", "Tissue", "Matches", "Candles", "Stationery", "Cosmetics", "Cleaning Products", "Household Items"],
       buy: ["Drinks Stock", "Noodles Carton", "Biscuit Carton", "Sugar Stock", "Bread Stock", "Airtime Float", "Toiletries Stock", "Detergent Stock", "Milk Stock", "Egg Crate", "Tin Tomato Stock", "Sardine Carton", "Snack Carton", "Juice Carton", "Rice Stock", "Beans Stock", "Garri Stock", "Seasoning Stock", "Flour Stock", "Baby Food Stock", "Soap Stock", "Cream Stock", "Wholesale Restock", "Nylon Bags", "Shelving", "General Restock"],
       pay: ["Shop Rent", "Electricity", "Transport", "Staff Pay", "Generator Fuel", "Mobile Data", "Packaging", "Shop Repair", "Security Fee", "Association Dues", "Waste Disposal", "Water Supply", "Delivery Cost", "Cleaning Supplies"],
-      receive: ["Customer Payment", "POS Payment", "Debt Collected", "Supplier Refund", "Esusu Payout", "Family Support", "Business Loan", "Bank Transfer"]
+      receive: ["Customer Payment", "POS Payment", "Debt Collected", "Supplier Refund", "Esusu Payout", "Family Support", "Bank Transfer"]
     },
     ng_food_vendor: {
       sell: ["Rice Meal", "Soup", "Swallow", "Snacks", "Drinks", "Fish", "Chicken", "Catering", "Jollof Rice", "Fried Rice", "Egusi Soup", "Ogbono Soup", "Okra Soup", "Pepper Soup", "Pounded Yam", "Eba", "Amala", "Semo", "Fufu", "Tuwo Shinkafa", "Tuwo Masara", "Masa", "Kosai", "Suya", "Moin Moin", "Akara", "Ogi", "Boli", "Asun", "Ofada Rice", "Abacha", "Nkwobi", "Afang Soup", "Yam Porridge", "Beans Porridge", "Puff Puff", "Meat Pie", "Egg Roll", "Scotch Egg", "Chin Chin", "Zobo", "Kunu", "Smoothie", "Fresh Juice", "Chapman", "Goat Meat", "Tilapia", "Grilled Fish", "Small Chops", "Party Pack", "Takeaway", "Delivery Order"],
       buy: ["Rice Stock", "Oil", "Tomatoes", "Pepper", "Meat/Fish", "Gas", "Packaging", "Seasoning", "Firewood", "Vegetables", "Egusi", "Crayfish", "Stock Fish", "Beans", "Yam", "Plantain", "Garri", "Semovita", "Palm Oil", "Onions", "Spices", "Maggi", "Salt", "Water", "Charcoal", "Takeaway Packs", "Nylons", "Plates/Cutlery", "Drinks Stock", "Ice", "Frozen Chicken", "Goat", "Prawns", "Smoked Fish"],
       pay: ["Stall Rent", "Helper Pay", "Transport", "Packaging", "Cooking Gas", "Water Supply", "Electricity", "Generator Fuel", "Firewood", "Market Fee", "Waste Disposal", "Kitchen Rent", "Equipment Repair", "Cleaning Supplies", "Aprons", "Mobile Data", "Association Dues", "Delivery Rider", "Cold Room Fee"],
-      receive: ["Customer Payment", "Bulk Order Payment", "Debt Collected", "Catering Deposit", "Event Payment", "Supplier Refund", "Esusu Payout", "Business Loan", "Bank Transfer"]
+      receive: ["Customer Payment", "Bulk Order Payment", "Debt Collected", "Catering Deposit", "Event Payment", "Supplier Refund", "Esusu Payout", "Bank Transfer"]
     },
     ng_transport_worker: {
       sell: ["Trip Fare", "Delivery Fee", "Charter", "Loading Fee", "Extra Seat", "Interstate Fare", "Haulage Income", "School Run", "Airport Trip", "Goods Delivery", "Dispatch Rider Job", "Moving Service"],
@@ -547,19 +547,19 @@ const LAYER_B = {
       sell: ["Repair Job", "Labour", "Installation", "Maintenance", "Inspection", "Electrical Work", "Plumbing Work", "Welding Job", "Carpentry Job", "Painting Job", "Tiling Job", "Roofing Job", "AC Repair", "Generator Repair", "Phone Repair", "Electronics Repair", "Furniture Making", "Steel Work", "Aluminum Work", "Borehole Service", "Fumigation Service"],
       buy: ["Materials", "Spare Parts", "Tools", "Fittings", "Paint", "Cement", "Tiles", "Wood", "Iron Rods", "Electrical Wire", "PVC Pipe", "Welding Rod", "Gas Cylinder", "Screws/Nails", "Primer", "Safety Gear", "Drill Bits", "Saw Blade", "Measuring Tape"],
       pay: ["Transport", "Helper Pay", "Workshop Rent", "Generator Fuel", "Phone/Data", "Tool Repair", "Electricity", "Protective Gear", "Association Dues", "Training Fee", "Equipment Servicing", "Van Hire", "Marketing"],
-      receive: ["Job Payment", "Deposit", "Balance Payment", "Refund Received", "Materials Advance", "Contract Payment", "Esusu Payout", "Business Loan"]
+      receive: ["Job Payment", "Deposit", "Balance Payment", "Refund Received", "Materials Advance", "Contract Payment", "Esusu Payout"]
     },
     ng_service_provider: {
       sell: ["Service Fee", "Consultation", "Project Fee", "Training", "Admin Service", "Hair Styling", "Barbing", "Makeup", "Nail Service", "Facial", "Photography", "Videography", "Graphic Design", "Web Design", "Printing", "Photocopying", "Lamination", "Typing", "Event Planning", "DJ Service", "MC Service", "Security Service", "Cleaning Service", "Laundry Service", "Ironing Service", "Tutoring", "Driving Lesson", "Fitness Training", "Massage"],
       buy: ["Materials", "Data Bundle", "Office Supplies", "Printing Ink", "Paper", "Tools/Equipment", "Beauty Supplies", "Cleaning Supplies", "Uniforms", "Camera Accessories", "Studio Props", "Sound Equipment"],
       pay: ["Transport", "Data/Internet", "Office Rent", "Assistant Pay", "Marketing", "Electricity", "Generator Fuel", "Equipment Repair", "Training Fee", "Marketplace Fee", "Printing", "Association Dues", "Tax/Levy"],
-      receive: ["Client Payment", "Deposit", "Balance", "Esusu Payout", "Business Loan", "Referral Bonus", "Marketplace Payout", "Bank Transfer"]
+      receive: ["Client Payment", "Deposit", "Balance", "Esusu Payout", "Referral Bonus", "Marketplace Payout", "Bank Transfer"]
     },
     ng_online_seller: {
       sell: ["Products", "Delivery Charged", "Wholesale Order", "Social Media Sale", "Custom Order", "Bundle Sale", "Clearance Sale", "Digital Download", "Recurring Box", "Gift Set", "Print-On-Demand", "Dropship Order"],
       buy: ["Inventory", "Packaging", "Data Bundle", "Product Photos", "Boxes", "Mailers", "Tissue Paper", "Poly Bags", "Tape", "Stickers", "Thank You Cards", "Branded Bags", "Ribbon", "Labels"],
       pay: ["Shipping Cost", "Marketplace Fee", "Marketing Boost", "Data/Internet", "Rider Payment", "Printing", "Storage", "Returns Processing", "Photography", "Marketplace Monthly", "Accounting Software", "Email Marketing", "Influencer Collab", "Packaging Design", "Customs Fee", "Fulfillment Fee", "Processor Fee"],
-      receive: ["Customer Transfer", "Payment Link", "Deposit", "Marketplace Payout", "Refund Received", "Business Loan", "Grant", "Affiliate Payout", "Chargeback Reversal"]
+      receive: ["Customer Transfer", "Payment Link", "Deposit", "Marketplace Payout", "Refund Received", "Grant", "Affiliate Payout", "Chargeback Reversal"]
     }
   },
   US: {
@@ -567,31 +567,31 @@ const LAYER_B = {
       sell: ["Products", "Merchandise", "Gift Items", "Accessories", "Online Sale", "Clothing", "Shoes", "Jewelry", "Handbags", "Beauty Products", "Candles", "Home Decor", "Artwork", "Books", "Electronics", "Toys", "Thrift Items", "Sneaker Resale", "Vintage Items", "Custom T-Shirts", "Merch", "Gift Baskets", "Phone Cases", "Seasonal Items", "Pop-Up Sale", "Flea Market Sale", "Custom Hats", "Baby Items", "Pet Supplies"],
       buy: ["Inventory", "Supplies", "Packaging", "Labels/Tags", "Wholesale Clothing", "Thrift Haul", "Display/Fixtures", "Mailers", "Poly Bags", "Boxes", "Tape", "Hangers", "Tissue Paper", "Ribbon", "Stickers", "Receipt Paper", "Mannequins", "Shelving", "Shopping Bags", "Price Tags"],
       pay: ["Rent", "Utilities", "Shipping Cost", "Staff Pay", "Card Fees", "Storage Unit", "Marketing", "Business License", "Marketplace Fees", "Insurance", "Accounting", "Website/Domain", "Printer Ink", "Cleaning Supplies", "Security System", "POS Equipment Lease", "Booth Fee", "Event Fee", "Photography"],
-      receive: ["Customer Payment", "Online Order Payment", "Deposit", "Supplier Refund", "Insurance Claim", "Business Loan", "Grant", "Tax Refund", "Wallet Transfer"]
+      receive: ["Customer Payment", "Online Order Payment", "Deposit", "Supplier Refund", "Insurance Claim", "Grant", "Tax Refund", "Wallet Transfer"]
     },
     us_food_service: {
       sell: ["Meals", "Drinks", "Catering", "Delivery", "Desserts", "Baked Goods", "Custom Cake", "Cookies", "Cupcakes", "Bread", "Soul Food Plate", "BBQ", "Wings", "Fried Chicken", "Tacos", "Empanadas", "Jerk Chicken", "Meal Prep", "Fresh Juice", "Smoothie", "Coffee", "Tea", "Breakfast Plate", "Brunch Special", "Food Truck Special", "Catering Package", "Weekly Meal Plan", "Ice Cream"],
       buy: ["Ingredients", "Meat", "Packaging", "Produce", "Cooking Oil", "Dairy", "Baking Supplies", "Spices", "Beverages Stock", "Seafood", "Frozen Items", "Canned Goods", "Dry Goods", "Paper Goods", "Foil", "Gloves", "Cleaning Supplies", "Napkins", "Cups", "Lids", "Straws"],
       pay: ["Rent", "Utilities", "Staff Pay", "Delivery App Fee", "Permits", "Cooking Gas/Propane", "Equipment", "Kitchen Rental", "Event Fee", "Uniforms", "Food Handler Permit", "Health Inspection Fee", "Marketing", "Marketplace Commission", "Insurance", "Accounting", "Pest Control", "Grease Trap Service", "Refrigeration Repair", "Linen Service", "POS System", "Website/Online Ordering"],
-      receive: ["Customer Payment", "Catering Deposit", "Delivery App Payout", "Event Deposit", "Supplier Refund", "Business Loan", "Grant", "Insurance Claim", "Tip Pool", "Wallet Transfer", "Zelle"]
+      receive: ["Customer Payment", "Catering Deposit", "Delivery App Payout", "Event Deposit", "Supplier Refund", "Grant", "Insurance Claim", "Tip Pool", "Wallet Transfer", "Zelle"]
     },
     us_digital_business: {
       sell: ["Project Fee", "Consultation", "Retainer", "Digital Product", "Sponsor Revenue", "Social Media Management", "Video Editing", "Graphic Design", "Web Design", "Copywriting", "Virtual Assistant", "Course Sale", "E-Book Sale", "Template Sale", "Coaching Session", "Podcast Sponsorship", "Brand Deal", "YouTube Income", "TikTok Income", "Affiliate Income", "Print-On-Demand", "Stock Photo Sale", "UGC Content", "Newsletter Sponsorship", "Voice Over", "Translation", "Products", "Etsy Sale", "Amazon Sale", "Shopify Sale", "eBay Sale", "Instagram Sale", "TikTok Shop Sale", "Custom Order", "Bundle Sale", "Clearance Sale", "Recurring Box", "Gift Set", "Dropship Order"],
       buy: ["Software", "Equipment", "Domain/Hosting", "Camera/Gear", "Computer", "External Drive", "Props/Backdrops", "Merch Inventory", "Microphone", "Ring Light", "Tripod", "Green Screen", "Stock Photos", "Music License", "Inventory", "Packaging", "Product Photos", "Blank Apparel", "Boxes", "Mailers", "Tissue Paper", "Poly Bags", "Tape", "Stickers", "Thank You Cards", "Branded Bags", "Ribbon", "Labels"],
       pay: ["Software Tools", "Marketing", "Contractor Pay", "Internet", "Marketplace Fee", "Phone Plan", "Cloud Storage", "Email Marketing Tool", "Project Management Tool", "Accounting Software", "Legal Fee", "LLC Filing", "Taxes", "Health Insurance", "Co-working Space", "Training/Course", "Stock Assets", "Business Cards", "Website Maintenance", "CRM Tool", "Shipping Cost", "Storage", "Returns Processing", "Photography", "Influencer Collab", "Packaging Design", "Fulfillment Fee", "Processor Fee"],
-      receive: ["Client Payment", "Marketplace Payout", "Affiliate Payout", "Deposit", "Business Loan", "Grant", "Tax Refund", "Tip", "Wallet Transfer", "Zelle", "Wire Transfer", "Check Deposit", "Customer Payment", "Refund Received", "Chargeback Reversal"]
+      receive: ["Client Payment", "Marketplace Payout", "Affiliate Payout", "Deposit", "Grant", "Tax Refund", "Tip", "Wallet Transfer", "Zelle", "Wire Transfer", "Check Deposit", "Customer Payment", "Refund Received", "Chargeback Reversal"]
     },
     us_contractor: {
       sell: ["Labor", "Project Fee", "Installation", "Repair Job", "Inspection", "Roofing Job", "Plumbing Job", "Electrical Job", "HVAC Job", "Painting Job", "Drywall Job", "Flooring Job", "Landscaping", "Pressure Washing", "Fence Job", "Handyman Work", "Pool Service", "Snow Removal", "Tree Service", "Concrete Work", "Masonry", "Window Installation", "Door Installation", "Cabinet Install", "Deck Build", "Garage Door", "Gutter Install"],
       buy: ["Materials", "Equipment Rental", "Tools", "Safety Gear", "Lumber", "Concrete/Block", "Pipe/Plumbing", "Wire/Electrical", "Roofing Materials", "Flooring Materials", "Paint/Primer", "Fasteners", "Landscaping Supplies", "Chemicals", "Mulch/Soil", "Gravel/Stone", "Drywall", "Insulation", "Windows", "Doors", "Hardware", "Sealants/Caulk"],
       pay: ["Subcontractor Pay", "Permits", "Fuel", "Disposal", "Helper Pay", "Insurance", "Truck Payment", "Tool Rental", "Marketing", "Uniforms", "Accounting", "Legal Fee", "License Renewal", "Safety Training", "Equipment Servicing", "Background Checks", "PPE", "Vehicle Maintenance", "Storage Unit", "Phone Plan"],
-      receive: ["Client Payment", "Deposit", "Progress Payment", "Final Balance", "Insurance Payout", "Business Loan", "Grant", "Retainer", "Check Deposit", "Wire Transfer"]
+      receive: ["Client Payment", "Deposit", "Progress Payment", "Final Balance", "Insurance Payout", "Grant", "Retainer", "Check Deposit", "Wire Transfer"]
     },
     us_beauty_services: {
       sell: ["Hair Service", "Nails", "Treatment", "Makeup", "Product Sale", "Lashes", "Box Braids", "Knotless Braids", "Cornrows", "Fulani Braids", "Starter Locs", "Loc Retwist", "Wash and Style", "Silk Press", "Wig Install", "Sew-In", "Color Service", "Barber Cut", "Shape-Up", "Kids Hair", "Acrylic Set", "Gel Nails", "Manicure", "Pedicure", "Nail Art", "Lash Extensions", "Microblading", "Brow Lamination", "Waxing", "Facial", "Bridal Makeup", "Massage", "Teeth Whitening", "Spray Tan"],
       buy: ["Supplies", "Products", "Equipment", "Braiding Hair", "Bundles/Wigs", "Nail Supplies", "Lash Supplies", "Color/Developer", "Wax Supplies", "Gloves/PPE", "Spa Supplies", "Towels/Linen", "Furniture", "Retail Stock", "Shampoo/Conditioner", "Styling Products", "Nail Polish", "Gel/Acrylic Powder"],
       pay: ["Booth Rent", "Staff Pay", "Training", "Booking App Fee", "Utilities", "Supplies Run", "Insurance", "Marketing", "Business Cards", "Website/Online Booking", "License Renewal", "Equipment Repair", "Laundry", "Cleaning", "Phone Plan", "Parking", "Accounting"],
-      receive: ["Client Payment", "Deposit", "Tip", "Supplier Refund", "Business Loan", "Grant", "Insurance Claim", "Wallet Transfer", "Zelle", "Cash App"]
+      receive: ["Client Payment", "Deposit", "Tip", "Supplier Refund", "Grant", "Insurance Claim", "Wallet Transfer", "Zelle", "Cash App"]
     }
   }
 };
@@ -607,6 +607,18 @@ const EXTRA_SEARCH_LABELS = [
   buildLabel("car_detailing_sale", "Car Detailing", "🚗", ["detailing"], ["sale"], ["US"], ["us_personal_services_side_hustle"])
 ];
 
+// Phase 4A — borrowing taxonomy labels. Global, served via the region
+// fallback in getCatalogForProfileAction (empty business_types).
+const LIABILITY_LABELS = [
+  buildLabel("liability_family_loan", "Family Loan", "👪", ["family loan", "relative loan"], ["liability_in"], ["GLOBAL"], []),
+  buildLabel("liability_esusu_ajo", "Esusu/Ajo", "🤝", ["esusu", "ajo", "susu", "adashe"], ["liability_in"], ["GLOBAL"], []),
+  buildLabel("liability_supplier_credit", "Supplier Credit", "📦", ["supplier credit", "trade credit", "goods on credit"], ["liability_in"], ["GLOBAL"], []),
+  buildLabel("liability_bank_loan", "Bank Loan", "🏦", ["bank loan"], ["liability_in"], ["GLOBAL"], []),
+  buildLabel("liability_cooperative_loan", "Cooperative Loan", "🧑‍🤝‍🧑", ["cooperative", "coop loan", "cooperative loan"], ["liability_in"], ["GLOBAL"], []),
+  buildLabel("liability_loan_repayment", "Loan Repayment", "💵", ["loan repayment", "repayment", "payback", "paid back"], ["liability_out"], ["GLOBAL"], []),
+  buildLabel("liability_installment", "Installment", "📆", ["installment", "instalment"], ["liability_out"], ["GLOBAL"], [])
+];
+
 let LABEL_CATALOG = [];
 
 const PRIMARY_ACTIONS = [
@@ -620,6 +632,17 @@ const TRANSFER_ACTIONS = [
   { id: "transfer_in", label: "Transfer In", icon: "⬇️", help: "Move money into this store of value." },
   { id: "transfer_out", label: "Transfer Out", icon: "⬆️", help: "Move money out to another store of value." }
 ];
+
+// Phase 4A — borrowing taxonomy. Recorded separately from revenue/expense:
+// liability_in / liability_out are never counted as income, expense, or net.
+const LIABILITY_ACTIONS = [
+  { id: "liability_in", label: "Money Borrowed", icon: "📥", help: "Record money borrowed. Not sales or income." },
+  { id: "liability_out", label: "Loan Repayment", icon: "📤", help: "Record a loan repayment you made." }
+];
+
+function isLiabilityAction(action) {
+  return action === "liability_in" || action === "liability_out";
+}
 
 const state = {
   db: null,
@@ -767,7 +790,7 @@ function cacheElements() {
     "country-grid", "operating-region-grid", "operating-region-note", "operating-region-next", "restore-account-link", "sector-grid", "business-grid", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
     "onboarding-next", "onboarding-name", "onboarding-phone", "onboarding-email", "onboarding-state",
     "onboarding-birth-year", "onboarding-gender", "onboarding-profile-error",
-    "business-helper", "profile-summary", "anomaly-banner", "anomaly-banner-text", "anomaly-banner-cta", "primary-actions", "advanced-panel", "transfer-actions",
+    "business-helper", "profile-summary", "anomaly-banner", "anomaly-banner-text", "anomaly-banner-cta", "primary-actions", "advanced-panel", "transfer-actions", "liability-actions",
     "quick-label-grid", "selected-label-chip", "amount-input-v2", "amount-helper-v2", "counterparty-input-v2", "source-account-input",
     "destination-account-input", "transfer-details", "capture-error", "confirm-copy-v2", "confirm-meta-v2",
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
@@ -787,7 +810,7 @@ function cacheElements() {
     "voice-review-missing-row", "voice-review-missing", "voice-review-message",
     "voice-review-suggestions", "voice-review-manual", "voice-review-cancel",
     "bottom-nav-v2", "sync-status-badge", "sync-dot", "sync-label", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
-    "dash-cash-flow-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
+    "dash-cash-flow-v2", "dash-borrowing-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-preferred-edit-v2", "settings-preferred-editor", "settings-preferred-grid", "settings-preferred-done-v2",
     "settings-voice-corrections-v2", "anomaly-panel", "anomaly-badge", "anomaly-list", "mark-anomalies-reviewed",
     "settings-capture-v2", "settings-summary-v2", "settings-trust-toggle", "settings-trust-panel", "settings-trust-v3", "settings-devices-v2", "settings-change-profile-v2",
@@ -1621,6 +1644,9 @@ async function renderDashboard() {
   els["dash-monthly-sales-v2"].textContent = formatMoney(metrics.monthlySales, currency);
   els["dash-monthly-expenses-v2"].textContent = formatMoney(metrics.monthlyExpenses, currency);
   els["dash-cash-flow-v2"].textContent = formatMoney(metrics.monthlySales - metrics.monthlyExpenses, currency);
+  if (els["dash-borrowing-v2"]) {
+    els["dash-borrowing-v2"].textContent = formatMoney(metrics.monthlyBorrowed, currency);
+  }
 
   renderDashboardRecords(records);
 
@@ -3330,6 +3356,23 @@ async function generateExport() {
     formatCashFlowRow("TOTAL", cashFlowTotals.inflows, cashFlowTotals.outflows, cashFlowTotals.net),
     "============================"
   ];
+  const borrowing = financialStatements.borrowing || { borrowedIn: 0, loanRepaid: 0 };
+  const recordedBorrowingLines = (borrowing.borrowedIn || borrowing.loanRepaid)
+    ? [
+        "============================",
+        "RECORDED BORROWING ACTIVITY",
+        "============================",
+        formatStatementRow("Money Borrowed (recorded)", borrowing.borrowedIn),
+        formatStatementRow("Loan Repayments (recorded)", borrowing.loanRepaid),
+        "============================",
+        "Borrowed funds are recorded money movements, not sales, receipts,",
+        "revenue, income, or verified liabilities. Konfirmata does not",
+        "independently verify that the underlying borrowing occurred.",
+        "Records labelled \"Business Loan\" confirmed before the borrowing",
+        "taxonomy was introduced may have been recorded as receipts.",
+        "============================"
+      ]
+    : [];
   const devicePublicKeyExportSection = [
     "",
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -3376,6 +3419,8 @@ async function generateExport() {
     ...activitySummaryLines,
     "",
     ...monthlyActivityLines,
+    "",
+    ...recordedBorrowingLines,
     "",
     "--- TRANSACTION LEDGER (APPENDIX) ---",
     "Each record below includes a human-readable summary followed by its verification bundle.",
@@ -3645,6 +3690,16 @@ async function buildClientVerifiablePdfReport() {
     { width: 500, lineHeight: 12 }
   ) + 12;
 
+  if (records.some((record) => record.transaction_type === "liability_in" || record.transaction_type === "liability_out")) {
+    y = addWrappedPdfText(
+      doc,
+      "Borrowed funds are recorded money movements, not sales, receipts, revenue, income, or verified liabilities. Konfirmata does not independently verify that the underlying borrowing occurred.",
+      margin,
+      y,
+      { width: 500, lineHeight: 12 }
+    ) + 12;
+  }
+
   if (qrDataUrl) {
     try {
       doc.addImage(qrDataUrl, "PNG", pageWidth - margin - 112, 58, 112, 112);
@@ -3782,8 +3837,10 @@ async function claimFreeReport() {
 }
 
 function renderActionRows() {
-  const primarySelected = state.currentAction === "transfer" ? null : state.currentAction;
+  const isSpecialAction = state.currentAction === "transfer" || isLiabilityAction(state.currentAction);
+  const primarySelected = isSpecialAction ? null : state.currentAction;
   const transferSelected = state.currentAction === "transfer" ? state.transferSubtype : null;
+  const liabilitySelected = isLiabilityAction(state.currentAction) ? state.currentAction : null;
 
   renderActionButtons(els["primary-actions"], PRIMARY_ACTIONS, primarySelected, (id) => {
     state.currentAction = id;
@@ -3796,6 +3853,14 @@ function renderActionRows() {
   renderActionButtons(els["transfer-actions"], TRANSFER_ACTIONS, transferSelected, (id) => {
     state.currentAction = "transfer";
     state.transferSubtype = id;
+    renderActionRows();
+    renderQuickLabels();
+    clearSelectedLabel();
+  });
+
+  renderActionButtons(els["liability-actions"], LIABILITY_ACTIONS, liabilitySelected, (id) => {
+    state.currentAction = id;
+    state.profile.last_action = id;
     renderActionRows();
     renderQuickLabels();
     clearSelectedLabel();
@@ -3969,7 +4034,9 @@ function announceVoiceCapture(parsed, labelDisplayName) {
     sale: "sold",
     purchase: "bought",
     payment: "paid",
-    receipt: "received"
+    receipt: "received",
+    liability_in: "recorded borrowing of",
+    liability_out: "recorded loan repayment of"
   }[parsed.action] || "captured";
   const currency = getProfileCurrency();
   const label = String(labelDisplayName || parsed.labelQuery || "transaction").toLowerCase();
@@ -4078,7 +4145,34 @@ function parsedNaturalTransaction(action, labelQuery, amountValue, counterparty 
 function parseNaturalTransaction(input) {
   const text = normalizeNaturalTransactionText(input);
   const amount = NATURAL_AMOUNT_PATTERN;
-  let match = text.match(new RegExp(`^(?:i\\s+)?(?:sold|sell)\\s+(.+?)\\s+(?:for|at)\\s+${amount}$`, "i"));
+
+  // Phase 4A — borrowing taxonomy. Checked first: "paid back …" must not be
+  // read as a generic payment, and "borrowed …" must not fall through.
+  let match = text.match(new RegExp(`^(?:i\\s+)?loan\\s+(?:repayment|payback)\\s+(?:of\\s+)?${amount}$`, "i"));
+  if (match) return parsedNaturalTransaction("liability_out", "Loan Repayment", match[1]);
+
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:repaid|repay)\\s+(?:the\\s+|a\\s+|my\\s+)?(?:loan|borrowing|debt)\\s+${amount}$`, "i"));
+  if (match) return parsedNaturalTransaction("liability_out", "Loan Repayment", match[1]);
+
+  match = text.match(new RegExp(`^(?:i\\s+)?paid\\s+back\\s+(?:the\\s+|a\\s+|my\\s+)?(?:loan\\s+)?${amount}$`, "i"));
+  if (match) return parsedNaturalTransaction("liability_out", "Loan Repayment", match[1]);
+
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:repaid|repay)\\s+${amount}$`, "i"));
+  if (match) return parsedNaturalTransaction("liability_out", "Loan Repayment", match[1]);
+
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:borrowed|borrow)\\s+${amount}\\s+from\\s+(.+)$`, "i"));
+  if (match) return parsedNaturalTransaction("liability_in", match[2], match[1], match[2]);
+
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:borrowed|borrow)\\s+(.+?)\\s+(?:for|at)\\s+${amount}$`, "i"));
+  if (match) return parsedNaturalTransaction("liability_in", match[1], match[2]);
+
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:borrowed|borrow)\\s+${amount}$`, "i"));
+  if (match) return parsedNaturalTransaction("liability_in", "", match[1]);
+
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:borrowed|borrow)\\s+(.+?)\\s+${amount}$`, "i"));
+  if (match) return parsedNaturalTransaction("liability_in", match[1], match[2]);
+
+  match = text.match(new RegExp(`^(?:i\\s+)?(?:sold|sell)\\s+(.+?)\\s+(?:for|at)\\s+${amount}$`, "i"));
   if (match) {
     return parsedNaturalTransaction("sale", match[1], match[2]);
   }
@@ -4379,9 +4473,10 @@ function findBestLabelForAction(labelQuery, actionContext) {
 }
 
 // ── Voice Phase 2 — missing-field clarification ─────────────────────
-// Borrowing/loan language Konfirmata has no record type for. Detected only
-// on a failed parse; never mapped into an existing action category.
-const UNSUPPORTED_INTENT_PATTERN = /\b(?:borrow|borrows|borrowed|borrowing|loan|loans|loaned|lend|lends|lent|lending|repay|repaid|repayment|owe|owed|owing|debt)\b/i;
+// Lending/owing language Konfirmata has no record type for (borrowing IS
+// supported via the liability taxonomy — Phase 4A). Detected only on a
+// failed parse; never mapped into an existing action category.
+const UNSUPPORTED_INTENT_PATTERN = /\b(?:lend|lends|lent|lending|loan|loans|loaned|owe|owed|owing|debt)\b/i;
 // Score floor at which an auto-matched label is trusted without asking.
 // Below it (close-spelling 18 / phonetic 12 / no match 0) the review card opens.
 const CONFIDENT_LABEL_SCORE = 22;
@@ -4504,7 +4599,7 @@ function renderVoiceReview() {
 
   const parsed = pending.parsed;
   const currency = getProfileCurrency();
-  const actionWord = { sale: "Sale", purchase: "Purchase", payment: "Payment", receipt: "Receipt" }[parsed.action] || "Transaction";
+  const actionWord = { sale: "Sale", purchase: "Purchase", payment: "Payment", receipt: "Receipt", liability_in: "Money borrowed", liability_out: "Loan repayment" }[parsed.action] || "Transaction";
   els["voice-review-understood"].textContent = `${actionWord} · ${formatMoney(parsed.amountMinor || 0, currency)}`;
   els["voice-review-missing"].textContent = "Label / category";
   els["voice-review-message"].textContent = "Choose the label that fits, or pick one manually.";
@@ -5019,6 +5114,8 @@ function confirmationCopy(record) {
   if (record.transaction_type === "purchase") return `You bought ${record.label} for ${amount}.`;
   if (record.transaction_type === "payment") return `You paid ${amount} for ${record.label}.`;
   if (record.transaction_type === "receipt") return `You received ${amount} for ${record.label}.`;
+  if (record.transaction_type === "liability_in") return `You recorded money borrowed: ${record.label} — ${amount}.`;
+  if (record.transaction_type === "liability_out") return `You recorded a loan repayment: ${record.label} — ${amount}.`;
   if (record.transaction_type === "reversal") return `You are reversing ${record.label} for ${amount}.`;
   return `You are transferring ${amount} for ${record.label}.`;
 }
@@ -5329,6 +5426,8 @@ function friendlyActionLabel(action) {
   if (action === "payment") return "Pay";
   if (action === "receipt") return "Receive";
   if (action === "transfer") return "Transfer";
+  if (action === "liability_in") return "Money Borrowed";
+  if (action === "liability_out") return "Loan Repayment";
   return action;
 }
 
@@ -5616,7 +5715,7 @@ function inferIcon(displayName, action) {
   return getIconForLabel(displayName);
 }
 
-LABEL_CATALOG = [...buildCatalogFromQuickPicks(), ...EXTRA_SEARCH_LABELS];
+LABEL_CATALOG = [...buildCatalogFromQuickPicks(), ...EXTRA_SEARCH_LABELS, ...LIABILITY_LABELS];
 
 function showScreen(id) {
   const previousScreen = document.querySelector(".screen.active")?.id || null;
@@ -7658,6 +7757,8 @@ function buildFinancialStatements(entries, currency) {
   let otherIncome = 0;
   let costOfGoods = 0;
   let operatingExpenses = 0;
+  let borrowedIn = 0;
+  let loanRepaid = 0;
   let start = null;
   let end = null;
   const monthlyBuckets = new Map();
@@ -7686,6 +7787,12 @@ function buildFinancialStatements(entries, currency) {
     } else if (entry.transaction_type === "payment") {
       operatingExpenses += amount;
       bucket.outflows += amount;
+    } else if (entry.transaction_type === "liability_in") {
+      // Borrowing is recorded separately — never revenue/income/inflow.
+      borrowedIn += amount;
+    } else if (entry.transaction_type === "liability_out") {
+      // Loan repayment is recorded separately — never expense/outflow.
+      loanRepaid += amount;
     }
 
     bucket.net = bucket.inflows - bucket.outflows;
@@ -7699,6 +7806,10 @@ function buildFinancialStatements(entries, currency) {
       costOfGoods,
       operatingExpenses,
       netIncome: (grossRevenue + otherIncome) - (costOfGoods + operatingExpenses)
+    },
+    borrowing: {
+      borrowedIn,
+      loanRepaid
     },
     cashFlowByMonth: [...monthlyBuckets.entries()]
       .sort(([monthA], [monthB]) => monthA.localeCompare(monthB))
@@ -7728,7 +7839,8 @@ function getDashboardMetrics(records, effectiveRecords) {
   const metrics = {
     todaySales: 0,
     monthlySales: 0,
-    monthlyExpenses: 0
+    monthlyExpenses: 0,
+    monthlyBorrowed: 0
   };
 
   effectiveRecords.forEach((record) => {
@@ -7744,6 +7856,11 @@ function getDashboardMetrics(records, effectiveRecords) {
 
     if (isOutflowRecord(record)) {
       if (isThisMonth) metrics.monthlyExpenses += amount;
+    }
+
+    // Borrowing is tracked separately — never folded into sales/expenses/cash flow.
+    if (record.transaction_type === "liability_in" && isThisMonth) {
+      metrics.monthlyBorrowed += amount;
     }
   });
 

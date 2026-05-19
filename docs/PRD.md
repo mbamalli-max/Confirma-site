@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.5.9
+**Version:** 3.6.0
 **Date:** 2026-05-18
 
 ---
@@ -169,8 +169,10 @@ Voice uses the same locale (`getVoiceLocale()`), TTS engine (`speakConfirmationC
 
 **Failed-capture recovery.** When speech is misheard badly enough that nothing parses (e.g. "bought" heard as "boat"), the app does not dead-end on an error. It first tries a small predefined fix for common verb mis-hearings; if that fails, the review card opens showing the transcript in an editable field, so the user can correct the wording and try again rather than starting over. A successful manual correction is remembered on-device for that phrase.
 
+**Borrowing is recorded separately from revenue.** Money borrowed (`liability_in`) and loan repayments (`liability_out`) are recorded through a Borrowing action group, kept apart from sales and receipts. Borrowed funds are **never** counted as sales, income, revenue, expenses, monthly sales, cash flow, or Net Recorded Activity — they appear only in a dedicated "Recorded Borrowing" surface on the dashboard and a separate section in exports and reports. Every borrowing report surface carries the disclaimer: "Borrowed funds are recorded money movements, not sales, receipts, revenue, income, or verified liabilities. Konfirmata does not independently verify that the underlying borrowing occurred." Lending money out is not supported. Records are append-only: entries made before this taxonomy existed are never reclassified.
+
 **Form fields:**
-- Action (sale, purchase, payment, receipt, transfer_in, transfer_out)
+- Action (sale, purchase, payment, receipt, transfer_in, transfer_out, liability_in, liability_out)
 - Label (from quick-picks or search)
 - Amount (number, in major units, currency-aware step)
 - Counterparty (optional free text)
