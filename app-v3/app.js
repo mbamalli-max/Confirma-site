@@ -4664,14 +4664,27 @@ function retryVoiceReview() {
   const pending = state.pendingVoiceParse;
   if (!pending || pending.mode !== "failed") return;
   const edited = String(els["voice-review-edit"].value || "").trim();
-  if (!edited) return;
+  if (!edited) {
+    if (els["voice-review-message"]) {
+      els["voice-review-message"].textContent = "Type a transaction above, then tap Try again.";
+    }
+    return;
+  }
   const original = String(pending.transcript || "").trim();
   const source = pending.source;
-  state.pendingVoiceParse = null;
   const parsed = parseNaturalTransaction(edited);
   const usableParsed = (parsed && parsed.amountMinor) ? parsed : null;
+  if (!usableParsed) {
+    if (els["voice-review-message"]) {
+      els["voice-review-message"].textContent = edited === original
+        ? "Edit the wording above before trying again. Example: \"bought supplies for 80\", \"sold rice for 500\", or \"paid rent 3000\"."
+        : "Still couldn't read that as a transaction. Try: \"bought [item] for [amount]\", \"sold [item] for [amount]\", or \"paid [item] [amount]\".";
+    }
+    return;
+  }
+  state.pendingVoiceParse = null;
   // Learn the whole-phrase correction only from this explicit user edit.
-  if (usableParsed && edited.toLowerCase() !== original.toLowerCase()) {
+  if (edited.toLowerCase() !== original.toLowerCase()) {
     void saveVoiceCorrection(original, edited);
   }
   routeCapturedTransaction(edited, usableParsed, source);
