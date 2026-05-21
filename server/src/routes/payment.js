@@ -656,7 +656,7 @@ async function buildVerifiedReportPdf({
     ["Entry count", String(attestation.entry_count)],
     ["Verification ticket", attestation.vt_id],
     ["Report fee", amountKobo ? formatMoney(amountKobo, "NGN") : "Free"],
-    ["Window days", windowDays === 0 ? "Full history" : String(windowDays)]
+    ["Active since", overallStatements.dateRange.start ? formatDateOnly(new Date(overallStatements.dateRange.start * 1000)) : "No confirmed entries"]
   ];
   let detailY = 178;
   detailRows.forEach(([label, value]) => {
@@ -677,7 +677,7 @@ async function buildVerifiedReportPdf({
 
   const evY = 380;
   doc.save();
-  doc.roundedRect(cardX, evY, cardW, 128, 8).fill(REPORT.soft);
+  doc.roundedRect(cardX, evY, cardW, 204, 8).fill(REPORT.soft);
   doc.restore();
   doc.fillColor(REPORT.green).font("Helvetica-Bold").fontSize(8.5)
     .text("EVIDENCE SUMMARY", cardX + 14, evY + 14, { characterSpacing: 1 });
@@ -699,15 +699,55 @@ async function buildVerifiedReportPdf({
     .text(`${attestedEntries} of ${totalEvidenceEntries} entries (${attestedPercent}%) carry server attestation.`,
       cardX + 14, evLineY + 4, { width: cardW - 28, lineGap: 1 });
 
-  const scopeY = 528;
+  const evLegendY = evY + 132;
+  doc.moveTo(cardX + 14, evLegendY).lineTo(cardX + cardW - 14, evLegendY)
+    .strokeColor(REPORT.line).lineWidth(0.5).stroke();
+  doc.fillColor(REPORT.green).font("Helvetica-Bold").fontSize(7)
+    .text("EVIDENCE LEVELS", cardX + 14, evLegendY + 8, { characterSpacing: 0.8 });
+  const evidenceTiers = [
+    ["Server-attested", "Verified by Konfirmata server"],
+    ["Device-signed", "Signed on device, pending sync"],
+    ["Self-reported", "Before phone verification"]
+  ];
+  let evTierY = evLegendY + 22;
+  evidenceTiers.forEach(([tier, desc]) => {
+    doc.font("Helvetica-Bold").fontSize(7).fillColor(REPORT.ink)
+      .text(tier, cardX + 14, evTierY, { width: cardW - 28 });
+    doc.font("Helvetica").fontSize(7).fillColor(REPORT.muted)
+      .text(desc, cardX + 14, evTierY + 9, { width: cardW - 28 });
+    evTierY += 22;
+  });
+
+  const scopeY = 600;
   doc.save();
-  doc.roundedRect(REPORT_LEFT, scopeY, REPORT_WIDTH, 58, 6).fill(REPORT.panel);
+  doc.roundedRect(REPORT_LEFT, scopeY, REPORT_WIDTH, 128, 6).fill(REPORT.panel);
   doc.restore();
   doc.fillColor(REPORT.green).font("Helvetica-Bold").fontSize(8)
-    .text("WHAT THIS REPORT CONFIRMS", REPORT_LEFT + 14, scopeY + 12, { characterSpacing: 0.8 });
-  doc.fillColor(REPORT.muted).font("Helvetica").fontSize(8.5)
-    .text("This report confirms that the listed account-linked business activity records carry a valid Konfirmata server attestation and that their integrity, sequence, and device origin can be cryptographically verified. It does not independently verify that an underlying transaction occurred.",
-      REPORT_LEFT + 14, scopeY + 26, { width: REPORT_WIDTH - 28, lineGap: 1.5 });
+    .text("ABOUT THIS REPORT", REPORT_LEFT + 14, scopeY + 12, { characterSpacing: 0.8 });
+
+  const colW = Math.floor((REPORT_WIDTH - 28) / 2) - 6;
+  const col2X = REPORT_LEFT + 14 + colW + 12;
+  doc.fillColor(REPORT.ink).font("Helvetica-Bold").fontSize(7.5)
+    .text("What Konfirmata confirms:", REPORT_LEFT + 14, scopeY + 28);
+  doc.fillColor(REPORT.muted).font("Helvetica").fontSize(7.5)
+    .text(
+      "· Record integrity (hash chain)\n· Entry sequence\n· Device origin\n· User confirmation at time of entry",
+      REPORT_LEFT + 14, scopeY + 40, { width: colW, lineGap: 2 }
+    );
+
+  doc.fillColor(REPORT.ink).font("Helvetica-Bold").fontSize(7.5)
+    .text("What Konfirmata does not confirm:", col2X, scopeY + 28);
+  doc.fillColor(REPORT.muted).font("Helvetica").fontSize(7.5)
+    .text(
+      "· Whether the underlying transaction occurred\n· Whether the amounts are true\n· Financial statements or accounting records\n· Lending, underwriting, or institutional decisions",
+      col2X, scopeY + 40, { width: colW, lineGap: 2 }
+    );
+
+  doc.fillColor(REPORT.muted).font("Helvetica").fontSize(7.5)
+    .text(
+      "Konfirmata produces user-confirmed, tamper-evident business activity records whose integrity, sequence, and device origin can be checked. Konfirmata does not independently verify that an underlying transaction occurred, does not produce financial statements, and does not make lending, underwriting, credit, tax, eligibility, or institutional decisions.",
+      REPORT_LEFT + 14, scopeY + 92, { width: REPORT_WIDTH - 28, lineGap: 1.5 }
+    );
 
   // ---------- PAGE 2 — ACTIVITY SUMMARY ----------
   doc.addPage();
@@ -776,20 +816,20 @@ async function buildVerifiedReportPdf({
     y += 50;
   }
 
-  y = drawReportSectionTitle(doc, y, "Section 2", "Monthly Cash Flow", null);
+  y = drawReportSectionTitle(doc, y, "Section 2", "Monthly Recorded Activity", null);
   const cashColumns = mixedCurrency
     ? [
       { label: "Month", x: REPORT_LEFT, width: 80, align: "left" },
       { label: "Currency", x: 138, width: 60, align: "left" },
       { label: "Inflows", x: 206, width: 95, align: "right" },
       { label: "Outflows", x: 314, width: 95, align: "right" },
-      { label: "Net Cash", x: 422, width: 123, align: "right" }
+      { label: "Net Recorded Activity", x: 422, width: 123, align: "right" }
     ]
     : [
       { label: "Month", x: REPORT_LEFT, width: 120, align: "left" },
       { label: "Inflows", x: 180, width: 110, align: "right" },
       { label: "Outflows", x: 300, width: 110, align: "right" },
-      { label: "Net Cash", x: 420, width: 125, align: "right" }
+      { label: "Net Recorded Activity", x: 420, width: 125, align: "right" }
     ];
   const cashRows = mixedCurrency
     ? statementsByCurrency.flatMap(({ currency, statements: currencyStatements }) =>
@@ -851,6 +891,43 @@ async function buildVerifiedReportPdf({
     { label: "Signed", x: 500, width: 45, align: "right" }
   ];
   let ly = drawReportSectionTitle(doc, 88, "Appendix", "Transaction Ledger", "All confirmed account entries, oldest to newest");
+
+  doc.save();
+  doc.roundedRect(REPORT_LEFT, ly, REPORT_WIDTH, 82, 6).fill(REPORT.panel);
+  doc.restore();
+  doc.fillColor(REPORT.green).font("Helvetica-Bold").fontSize(7.5)
+    .text("TRANSACTION TYPE GUIDE", REPORT_LEFT + 14, ly + 10, { characterSpacing: 0.8 });
+  const typeGuideLeft = [
+    ["sale", "Revenue from goods or services sold"],
+    ["purchase", "Goods or stock bought"],
+    ["payment", "Expense or service payment"],
+    ["receipt", "Money received, not a sale"]
+  ];
+  const typeGuideRight = [
+    ["transfer_in / out", "Internal money movement (not income or expense)"],
+    ["reversal", "Correction — reverses a prior entry (both retained)"],
+    ["liability_in", "Recorded borrowing"],
+    ["liability_out", "Recorded loan repayment"]
+  ];
+  const tgCol2X = REPORT_LEFT + 255;
+  let tgY = ly + 24;
+  typeGuideLeft.forEach(([code, desc]) => {
+    doc.font("Helvetica-Bold").fontSize(7.5).fillColor(REPORT.ink)
+      .text(code, REPORT_LEFT + 14, tgY, { width: 68 });
+    doc.font("Helvetica").fontSize(7.5).fillColor(REPORT.muted)
+      .text(desc, REPORT_LEFT + 86, tgY, { width: 155 });
+    tgY += 13;
+  });
+  tgY = ly + 24;
+  typeGuideRight.forEach(([code, desc]) => {
+    doc.font("Helvetica-Bold").fontSize(7.5).fillColor(REPORT.ink)
+      .text(code, tgCol2X, tgY, { width: 82 });
+    doc.font("Helvetica").fontSize(7.5).fillColor(REPORT.muted)
+      .text(desc, tgCol2X + 86, tgY, { width: 163 });
+    tgY += 13;
+  });
+  ly += 90;
+
   ly = drawReportTableHeader(doc, ly, ledgerColumns) + 6;
   const ledgerTotalsByCurrency = new Map();
 

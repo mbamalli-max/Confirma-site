@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 **Project:** Konfirmata
 **Patent:** USPTO Provisional 63/987,858
-**Version:** 3.6.0
-**Date:** 2026-05-18
+**Version:** 3.7.0
+**Date:** 2026-05-20
 
 ---
 
@@ -247,7 +247,9 @@ Voice uses the same locale (`getVoiceLocale()`), TTS engine (`speakConfirmationC
 
 **Free text export:**
 - Plain text file download (`.txt`)
-- Contains: header metadata, records available on the current device, evidence summary, ledger root hash, device fingerprint, embedded ECDSA P-256 public key, and local-device scope note
+- Contains: header metadata with canonical boundary disclaimer, records available on the current device, evidence summary, ledger root hash, device fingerprint, embedded ECDSA P-256 public key, and local-device scope note
+- Activity summary uses reviewer-safe labels: "Recorded Sales Inflows", "Other Recorded Inflows", "Recorded Purchase Outflows", "Recorded Operating Outflows", "Total Recorded Inflows/Outflows", "NET RECORDED ACTIVITY"
+- Boundary disclaimer appears near the top of every export, before the Activity Summary: Konfirmata produces user-confirmed, tamper-evident business activity records whose integrity, sequence, and device origin can be checked. Konfirmata does not independently verify that an underlying transaction occurred, does not produce financial statements, and does not make lending, underwriting, credit, tax, eligibility, or institutional decisions.
 - Appends `DEVICE PUBLIC KEY (ECDSA P-256)` section after integrity data
 - Public key is Base64-encoded SPKI format, suitable for OpenSSL, WebCrypto, and other standard P-256 verification tools
 - If authenticated: `POST /attest` called with `window_days: 0` (best-effort, non-blocking) — on success, `vt_id`, `verify_url`, and QR code data URL are appended to the export
@@ -258,7 +260,12 @@ Voice uses the same locale (`getVoiceLocale()`), TTS engine (`speakConfirmationC
 - Server-generated via pdfkit
 - Available for authenticated users at no charge
 - Calls `POST /report/generate-pdf` with `window_days: 0`
-- Contains: business cover page (masked PII), activity summary, monthly cash flow view, full account-device ledger, device column per row, evidence summary, QR code + verify URL, attestation payload, server signature, verification key URL, and patent notice
+- Contains: business cover page (masked PII, reviewer orientation block, evidence summary with tier legend), activity summary, monthly recorded activity view, full account-device ledger with transaction-type legend, device column per row, integrity and verification page, QR code + verify URL, attestation payload, server signature, verification key URL, and patent notice
+- Cover page includes an "ABOUT THIS REPORT" orientation block with two columns (what Konfirmata confirms / does not confirm) and the canonical boundary disclaimer
+- Evidence Summary card includes an Evidence Levels legend (server-attested / device-signed / self-reported definitions)
+- Transaction Ledger page includes a Transaction Type Guide defining all eight transaction types in plain language
+- Activity summary section renamed "Monthly Recorded Activity" (was "Monthly Cash Flow"); column header renamed "Net Recorded Activity" (was "Net Cash")
+- Cover page detail row "Active since" shows the date of the earliest confirmed record (replaced "Window days")
 - Mixed-currency reports show activity totals and ledger totals per currency without conversion or combination
 - Server sends the PDF as a direct download response and attempts email delivery when a recovery email and `RESEND_API_KEY` are available
 
@@ -498,7 +505,8 @@ The current app has no paid tiers, no payment checkout, no payment processor int
 
 - Available to all users, all regions
 - Plain `.txt` file downloaded to device
-- Contains local-device record ledger, evidence summary, and local export scope note
+- Contains canonical boundary disclaimer near the top, followed by local-device record ledger, evidence summary, and local export scope note
+- Activity summary labels use reviewer-safe wording: "Recorded Sales Inflows", "Other Recorded Inflows", "Recorded Purchase Outflows", "Recorded Operating Outflows", "Total Recorded Inflows/Outflows", "NET RECORDED ACTIVITY"
 - Phone and email shown unmasked (user's own data)
 - Embeds the signing device public key as Base64 SPKI in a `DEVICE PUBLIC KEY (ECDSA P-256)` section after integrity data
 - Appends a per-entry verification bundle: `entry_hash`, `prev_entry_hash`, `signature_base64`, `signature_message_utf8`, and `canonical_payload_utf8`
@@ -513,7 +521,11 @@ The current app has no paid tiers, no payment checkout, no payment processor int
 - Server-generated PDF via `POST /report/generate-pdf`
 - Client sends `window_days: 0` to request full account-device history
 - Filename: `konfirmata-verified-report-{YYYY-MM-DD}.pdf`
-- PDF contains: cover page (masked phone/email), activity summary, monthly cash flow view, full account-device ledger appendix, evidence summary, attestation payload, ECDSA attestation signature, verification key URL, QR code, verify URL, patent notice
+- PDF contains:
+  - **Cover page:** masked phone/email, "ABOUT THIS REPORT" reviewer orientation block (two-column: what Konfirmata confirms / does not confirm + canonical boundary disclaimer), evidence summary with evidence-levels legend (server-attested / device-signed / self-reported definitions), QR code, "Active since" date row
+  - **Activity summary page:** Inflow / Outflow Summary (Section 1), Recorded Borrowing Activity if applicable (Section 1b), Monthly Recorded Activity table (Section 2 — was "Monthly Cash Flow") with "Net Recorded Activity" column (was "Net Cash")
+  - **Transaction Ledger page:** Transaction Type Guide (plain-language definitions for all 8 transaction types) before the ledger table; full account-device ledger appendix with device column
+  - **Integrity & Verification page:** ledger root hash, attestation payload, ECDSA attestation signature, verification key URL, QR code, verify URL, patent notice
 - Ledger rows include a device fingerprint column so institutions can see which account-linked device recorded each entry
 - Ledger references prefix the per-device entry id with the short device code to avoid duplicate-looking ids in multi-device reports
 - Mixed-currency reports show totals per currency without conversion or combination
