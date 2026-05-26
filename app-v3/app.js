@@ -1336,7 +1336,7 @@ function renderCommonLabelGrid(containerId = "common-label-grid") {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `ranked-item${selected.includes(item.display_name) ? " active" : ""}`;
-    button.innerHTML = `<strong>${getIconForLabel(item.display_name)} ${item.display_name}</strong><span>${friendlyActionLabel(item.context)}</span><small>Show more often while recording</small>`;
+    button.innerHTML = `<strong>${getIconForLabel(item.display_name)} ${escapeHtml(item.display_name)}</strong><span>${friendlyActionLabel(item.context)}</span><small>Show more often while recording</small>`;
     button.addEventListener("click", () => {
       void togglePreferredLabel(item.display_name);
     });
@@ -1863,7 +1863,7 @@ async function renderSettings() {
 }
 
 function renderSettingsRow(label, value) {
-  return `<div class="settings-row"><span>${label}</span><strong>${value}</strong></div>`;
+  return `<div class="settings-row"><span>${label}</span><strong>${escapeHtml(String(value ?? ""))}</strong></div>`;
 }
 
 function getRecordConfirmedAtMs(record) {
@@ -2270,7 +2270,7 @@ function renderPreferredLabelsSummary() {
   if (!els["settings-preferred-v2"]) return;
   const preferred = normalizePreferredLabels(state.profile?.preferred_labels, state.profile?.business_type_id);
   els["settings-preferred-v2"].innerHTML = preferred.length
-    ? preferred.map((label) => `<div class="settings-chip">${getIconForLabel(label)} ${label}</div>`).join("")
+    ? preferred.map((label) => `<div class="settings-chip">${getIconForLabel(label)} ${escapeHtml(label)}</div>`).join("")
     : `<div class="record-meta">No common transactions selected yet.</div>`;
 }
 
@@ -3903,7 +3903,7 @@ function buildRankedLabelButton(item) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = `ranked-item${state.selectedLabel && state.selectedLabel.id === item.id ? " active" : ""}`;
-  button.innerHTML = `<strong>${item.icon || "🏷️"} ${item.display_name}</strong><span>${contextCopy(item)}</span>`;
+  button.innerHTML = `<strong>${item.icon || "🏷️"} ${escapeHtml(item.display_name)}</strong><span>${escapeHtml(contextCopy(item))}</span>`;
   button.addEventListener("click", () => selectLabel(item));
   return button;
 }
@@ -5019,11 +5019,11 @@ function prepareConfirmation() {
   state.candidateRecord = record;
   els["confirm-copy-v2"].textContent = confirmationCopy(record);
   els["confirm-meta-v2"].innerHTML = `
-    <div><strong>Type:</strong> ${record.transaction_type}</div>
-    <div><strong>Normalized label:</strong> ${record.normalized_label}</div>
+    <div><strong>Type:</strong> ${escapeHtml(record.transaction_type)}</div>
+    <div><strong>Normalized label:</strong> ${escapeHtml(record.normalized_label)}</div>
     <div><strong>Amount:</strong> ${formatMoney(record.amount_minor, record.currency)}</div>
-    <div><strong>Counterparty:</strong> ${record.counterparty || "Not provided"}</div>
-    ${record.reversed_entry_hash ? `<div><strong>Reverses:</strong> ${record.reversed_entry_hash}</div>` : ""}
+    <div><strong>Counterparty:</strong> ${escapeHtml(record.counterparty || "Not provided")}</div>
+    ${record.reversed_entry_hash ? `<div><strong>Reverses:</strong> ${escapeHtml(record.reversed_entry_hash)}</div>` : ""}
   `;
   showScreen("screen-confirm");
   speakConfirmationCopy(els["confirm-copy-v2"].textContent);
@@ -7550,7 +7550,7 @@ async function renderTrustedDevicesSettings() {
       "No trusted devices found yet."
     );
   } catch (error) {
-    els["settings-devices-v2"].innerHTML = `<div class="record-meta">${error.message || "Unable to load trusted devices."}</div>`;
+    els["settings-devices-v2"].innerHTML = `<div class="record-meta">${escapeHtml(error.message || "Unable to load trusted devices.")}</div>`;
   }
 }
 
@@ -7940,9 +7940,9 @@ function prepareReversalRecord(record) {
   els["confirm-copy-v2"].textContent = confirmationCopy(state.candidateRecord);
   els["confirm-meta-v2"].innerHTML = `
     <div><strong>Type:</strong> reversal</div>
-    <div><strong>Original type:</strong> ${record.transaction_type}</div>
+    <div><strong>Original type:</strong> ${escapeHtml(record.transaction_type)}</div>
     <div><strong>Amount:</strong> ${formatMoney(record.amount_minor, record.currency)}</div>
-    <div><strong>Reverses:</strong> ${record.entry_hash}</div>
+    <div><strong>Reverses:</strong> ${escapeHtml(record.entry_hash)}</div>
   `;
   showScreen("screen-confirm");
   speakConfirmationCopy(els["confirm-copy-v2"].textContent);
