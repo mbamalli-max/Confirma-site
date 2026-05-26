@@ -405,28 +405,49 @@ export async function registerAuthRoutes(app) {
     }
 
     if (deviceIdentity && publicKey) {
-      await query(
+      const existingDeviceResult = await query(
         `
-          INSERT INTO device_identities (
-            device_identity,
-            public_key,
-            phone_number,
-            status,
-            last_seen_at,
-            revoked_at
-          )
-          VALUES ($1, $2, $3, 'ACTIVE', NOW(), NULL)
-          ON CONFLICT (device_identity)
-          DO UPDATE SET
-            public_key = EXCLUDED.public_key,
-            phone_number = EXCLUDED.phone_number,
-            status = 'ACTIVE',
-            revoked_at = NULL,
-            last_seen_at = NOW(),
-            updated_at = NOW()
+          SELECT phone_number
+          FROM device_identities
+          WHERE device_identity = $1
+          LIMIT 1
         `,
-        [deviceIdentity, publicKey, user.phone_number]
+        [deviceIdentity]
       );
+      const existingDevice = existingDeviceResult.rows[0];
+
+      if (existingDevice && existingDevice.phone_number !== user.phone_number) {
+        // Device identity is registered to a different account; reject without leaking which.
+        return reply.code(409).send({ error: "Device identity already registered." });
+      }
+
+      if (existingDevice) {
+        // Same-phone re-verify: refresh activity timestamps only.
+        // public_key and phone_number are immutable after first registration.
+        // revoked_at is intentionally not cleared; use /identity/rotate for key changes.
+        await query(
+          `
+            UPDATE device_identities
+            SET last_seen_at = NOW(), updated_at = NOW()
+            WHERE device_identity = $1
+          `,
+          [deviceIdentity]
+        );
+      } else {
+        await query(
+          `
+            INSERT INTO device_identities (
+              device_identity,
+              public_key,
+              phone_number,
+              status,
+              last_seen_at
+            )
+            VALUES ($1, $2, $3, 'ACTIVE', NOW())
+          `,
+          [deviceIdentity, publicKey, user.phone_number]
+        );
+      }
     }
 
     return buildVerificationResponse(user, channel, deviceIdentity);

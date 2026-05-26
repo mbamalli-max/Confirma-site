@@ -21,62 +21,43 @@ export async function registerSyncRoutes(app) {
     if (!auth) return reply;
 
     const deviceIdentity = String(request.body?.device_identity || "").trim();
-    const publicKey = String(request.body?.public_key || "").trim();
     const entries = Array.isArray(request.body?.entries) ? request.body.entries : [];
+    // request.body.public_key is accepted for client compatibility but intentionally ignored;
+    // signature verification uses the key pinned at registration time.
 
-    if (!deviceIdentity || !publicKey || !entries.length) {
-      return reply.code(400).send({ error: "device_identity, public_key, and entries are required." });
+    if (!deviceIdentity || !entries.length) {
+      return reply.code(400).send({ error: "device_identity and entries are required." });
     }
 
     try {
       const result = await withTransaction(async (client) => {
-        const existingDeviceResult = await client.query(
+        const pinnedDeviceResult = await client.query(
           `
-            SELECT phone_number, revoked_at
+            SELECT phone_number, public_key, status, receipt_counter, last_synced_entry_id, revoked_at
             FROM device_identities
             WHERE device_identity = $1
             LIMIT 1
           `,
           [deviceIdentity]
         );
-        const existingDevice = existingDeviceResult.rows[0];
+        const device = pinnedDeviceResult.rows[0];
 
-        if (existingDevice && existingDevice.phone_number !== auth.phone_number) {
+        if (!device) {
+          throw Object.assign(
+            new Error("Device not registered. Complete OTP verification first."),
+            { statusCode: 401 }
+          );
+        }
+
+        if (device.phone_number !== auth.phone_number) {
           throw Object.assign(new Error("Device belongs to another account."), { statusCode: 403 });
         }
 
-        if (existingDevice?.revoked_at) {
+        if (device.revoked_at) {
           throw Object.assign(new Error("device_revoked"), { statusCode: 401 });
         }
 
-        await client.query(
-          `
-            INSERT INTO device_identities (device_identity, public_key, phone_number, status)
-            VALUES ($1, $2, $3, 'ACTIVE')
-            ON CONFLICT (device_identity)
-            DO UPDATE SET
-              public_key = EXCLUDED.public_key,
-              phone_number = EXCLUDED.phone_number,
-              updated_at = NOW()
-            WHERE device_identities.revoked_at IS NULL
-          `,
-          [deviceIdentity, publicKey, auth.phone_number]
-        );
-
-        const deviceResult = await client.query(
-          `
-            SELECT device_identity, status, receipt_counter, last_synced_entry_id, revoked_at
-            FROM device_identities
-            WHERE device_identity = $1
-            LIMIT 1
-          `,
-          [deviceIdentity]
-        );
-        const device = deviceResult.rows[0];
-
-        if (device?.revoked_at) {
-          throw Object.assign(new Error("device_revoked"), { statusCode: 401 });
-        }
+        const pinnedPublicKey = device.public_key;
 
         const lastEntryResult = await client.query(
           `
@@ -120,7 +101,7 @@ export async function registerSyncRoutes(app) {
             throw Object.assign(new Error("Hash chain continuity failed. Device marked FORKED."), { statusCode: 409 });
           }
 
-          if (!verifyEntrySignature(publicKey, entry.entry_hash, entry.signature)) {
+          if (!verifyEntrySignature(pinnedPublicKey, entry.entry_hash, entry.signature)) {
             throw Object.assign(new Error("Signature verification failed."), { statusCode: 400 });
           }
 
