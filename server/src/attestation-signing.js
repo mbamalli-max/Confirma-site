@@ -6,7 +6,6 @@ export const ATTESTATION_SCOPE_DESCRIPTION = "This report reflects records from 
 export const ACCOUNT_DEVICES_ATTESTATION_SCOPE = "account_devices";
 export const ACCOUNT_DEVICES_ATTESTATION_SCOPE_DESCRIPTION = "This report reflects records from device identities linked to the authenticated account. The report device fingerprint identifies the device that generated the report; each ledger row identifies the device used to record that entry.";
 export const ATTESTATION_SIGNATURE_ALGORITHM = "ECDSA_P256_SHA256_P1363";
-export const LEGACY_ATTESTATION_SIGNATURE_ALGORITHM = "HMAC_SHA256_LEGACY";
 
 let cachedKeyMaterial = null;
 let warnedAboutEphemeralKey = false;

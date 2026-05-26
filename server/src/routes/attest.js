@@ -1,10 +1,9 @@
 import crypto from "node:crypto";
-import { authenticateRequest, buildReceiptSignature } from "../auth-utils.js";
+import { authenticateRequest } from "../auth-utils.js";
 import { query } from "../db.js";
 import {
   ATTESTATION_SCOPE,
   ATTESTATION_SCOPE_DESCRIPTION,
-  LEGACY_ATTESTATION_SIGNATURE_ALGORITHM,
   buildAttestationPayload,
   buildAttestationEnvelope,
   exportPublishedVerificationKey,
@@ -199,22 +198,11 @@ export async function registerAttestRoutes(app) {
     });
 
     const verificationKeyMetadata = getVerificationKeyMetadata();
-    let signatureAlgorithm = verificationKeyMetadata.signature_algorithm;
-    let verificationKeyUrl = verificationKeyMetadata.verification_key_url;
+    const signatureAlgorithm = verificationKeyMetadata.signature_algorithm;
+    const verificationKeyUrl = verificationKeyMetadata.verification_key_url;
 
     if (!verifyAttestationPayload(attestationPayload, attestation.server_signature)) {
-      const legacyExpectedSignature = buildReceiptSignature([
-        attestation.vt_id,
-        attestation.device_identity,
-        attestation.ledger_root_hash,
-        new Date(attestation.window_start).toISOString(),
-        new Date(attestation.window_end).toISOString()
-      ]);
-      if (legacyExpectedSignature !== attestation.server_signature) {
-        return { status: "INVALID" };
-      }
-      signatureAlgorithm = LEGACY_ATTESTATION_SIGNATURE_ALGORITHM;
-      verificationKeyUrl = null;
+      return { status: "INVALID" };
     }
 
     if (!attestation.server_signature) {
