@@ -8,7 +8,7 @@
     "start": "node server.js",
     "migrate": "node migrate.js",
     "test": "node --test test/integrity.test.js",
-    "check": "node --check server.js && node --check src/config.js && node --check src/db.js && node --check src/auth-utils.js && node --check src/crypto.js && node --check src/attestation-signing.js && node --check src/routes/auth.js && node --check src/routes/sync.js && node --check src/routes/identity.js && node --check src/routes/attest.js && node --check src/routes/payment.js && node --check src/routes/account.js"
+    "check": "node --check server.js && node --check src/config.js && node --check src/db.js && node --check src/auth-utils.js && node --check src/crypto-verify.js && node --check src/attestation-signing.js && node --check src/routes/auth.js && node --check src/routes/sync.js && node --check src/routes/identity.js && node --check src/routes/attest.js && node --check src/routes/payment.js && node --check src/routes/account.js"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

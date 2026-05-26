@@ -1,8 +1,6 @@
 import { authenticateRequest, isValidEmail, normalizeEmail, normalizePhoneNumber } from "../auth-utils.js";
 import { query } from "../db.js";
 
-let schemaReady = false;
-
 function normalizeCountry(value) {
   const country = String(value || "").trim().toUpperCase();
   return country ? country.slice(0, 2) : null;
@@ -20,62 +18,6 @@ function normalizePreferredLabels(value) {
     .filter(Boolean);
 }
 
-async function ensureAccountRecoverySchema() {
-  await query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
-  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid()`);
-  await query(`UPDATE users SET id = gen_random_uuid() WHERE id IS NULL`);
-  await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_id_unique ON users(id)`);
-  await query(`ALTER TABLE users ALTER COLUMN id SET NOT NULL`);
-  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`);
-  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE`);
-  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT FALSE`);
-  await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users ((LOWER(email))) WHERE email IS NOT NULL`);
-  await query(`ALTER TABLE device_identities ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
-  await query(`ALTER TABLE device_identities ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ`);
-  await query(
-    `
-      CREATE TABLE IF NOT EXISTS profiles (
-        user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-        name TEXT,
-        business_name TEXT,
-        country CHAR(2),
-        business_type_id TEXT,
-        sector_id TEXT,
-        preferred_labels JSONB DEFAULT '[]'::jsonb,
-        passcode_hint TEXT,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `
-  );
-  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS phone_number TEXT`);
-  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan TEXT`);
-  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan_activated_at TIMESTAMPTZ`);
-  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS passcode_hint TEXT`);
-  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS operating_region CHAR(2)`);
-  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS language VARCHAR(10) DEFAULT 'en'`);
-  await query(
-    `
-      UPDATE profiles p
-      SET phone_number = u.phone_number
-      FROM users u
-      WHERE p.user_id = u.id
-        AND (p.phone_number IS NULL OR p.phone_number <> u.phone_number)
-    `
-  );
-  await query(`UPDATE profiles SET operating_region = country WHERE operating_region IS NULL AND country IS NOT NULL`);
-  await query(`UPDATE profiles SET language = 'en' WHERE language IS NULL OR language = ''`);
-  await query(`UPDATE profiles SET passcode_hint = NULL WHERE passcode_hint IS NOT NULL`);
-}
-
-async function ensureAccountRecoverySchemaIfNeeded(request) {
-  if (schemaReady) return;
-  try {
-    await ensureAccountRecoverySchema();
-    schemaReady = true;
-  } catch (error) {
-    request.log.error(`Schema init failed, continuing: ${error.message}`);
-  }
-}
 
 async function getUserRow(phoneNumber) {
   const result = await query(
@@ -119,7 +61,6 @@ export async function registerAccountRoutes(app) {
   app.get("/records", {
     config: { rateLimit: { max: 30, timeWindow: "1 minute" } }
   }, async (request, reply) => {
-    await ensureAccountRecoverySchemaIfNeeded(request);
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
@@ -183,7 +124,6 @@ export async function registerAccountRoutes(app) {
   app.get("/profile", {
     config: { rateLimit: { max: 60, timeWindow: "1 minute" } }
   }, async (request, reply) => {
-    await ensureAccountRecoverySchemaIfNeeded(request);
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
@@ -224,7 +164,6 @@ export async function registerAccountRoutes(app) {
   app.post("/profile", {
     config: { rateLimit: { max: 20, timeWindow: "1 minute" } }
   }, async (request, reply) => {
-    await ensureAccountRecoverySchemaIfNeeded(request);
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
@@ -299,7 +238,6 @@ export async function registerAccountRoutes(app) {
   app.get("/devices", {
     config: { rateLimit: { max: 30, timeWindow: "1 minute" } }
   }, async (request, reply) => {
-    await ensureAccountRecoverySchemaIfNeeded(request);
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 

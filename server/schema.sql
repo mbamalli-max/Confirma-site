@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS otp_challenges (
   otp_hash TEXT NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  verified_at TIMESTAMPTZ
+  verified_at TIMESTAMPTZ,
+  failed_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_otp_challenges_phone_created_at
@@ -82,6 +83,9 @@ CREATE TABLE IF NOT EXISTS profiles (
   preferred_labels JSONB DEFAULT '[]'::jsonb,
   -- Retained for backward compatibility only. Passcode hints are local-only and are no longer synced.
   passcode_hint TEXT,
+  phone_number TEXT,
+  plan TEXT,
+  plan_activated_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -12,7 +12,6 @@ import {
   normalizePhoneNumber
 } from "../auth-utils.js";
 
-let schemaReady = false;
 let resendModulePromise = null;
 
 async function getResendClient(apiKey) {
@@ -53,39 +52,6 @@ function createPhoneAnchorRequiredError() {
   return error;
 }
 
-async function ensureAuthSchema() {
-  await query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
-  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid()`);
-  await query(`UPDATE users SET id = gen_random_uuid() WHERE id IS NULL`);
-  await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_id_unique ON users(id)`);
-  await query(`ALTER TABLE users ALTER COLUMN id SET NOT NULL`);
-  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`);
-  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE`);
-  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT FALSE`);
-  await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users ((LOWER(email))) WHERE email IS NOT NULL`);
-  await query(`ALTER TABLE otp_challenges ALTER COLUMN phone_number DROP NOT NULL`);
-  await query(`ALTER TABLE otp_challenges ADD COLUMN IF NOT EXISTS identifier TEXT`);
-  await query(`ALTER TABLE otp_challenges ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'sms'`);
-  await query(`ALTER TABLE otp_challenges ADD COLUMN IF NOT EXISTS failed_at TIMESTAMPTZ`);
-  await query(`UPDATE otp_challenges SET identifier = COALESCE(identifier, phone_number) WHERE identifier IS NULL`);
-  await query(`UPDATE otp_challenges SET channel = COALESCE(NULLIF(channel, ''), 'sms')`);
-  await query(
-    `
-      CREATE INDEX IF NOT EXISTS idx_otp_challenges_identifier_created_at
-      ON otp_challenges (identifier, channel, created_at DESC)
-    `
-  );
-}
-
-async function ensureAuthSchemaIfNeeded(request) {
-  if (schemaReady) return;
-  try {
-    await ensureAuthSchema();
-    schemaReady = true;
-  } catch (error) {
-    request.log.error(`Schema init failed, continuing: ${error.message}`);
-  }
-}
 
 async function getUserByPhoneNumber(phoneNumber) {
   if (!phoneNumber) return null;
@@ -196,7 +162,6 @@ export async function registerAuthRoutes(app) {
   app.post("/auth/otp/request", {
     config: { rateLimit: { max: 5, timeWindow: "1 minute" } }
   }, async (request, reply) => {
-    await ensureAuthSchemaIfNeeded(request);
     const channel = normalizeOtpChannel(request.body?.channel || config.otpDefaultChannel);
     const identifier = getOtpIdentifier(channel, request.body);
     const phoneNumber = getOptionalPhoneNumber(request.body);
@@ -291,7 +256,6 @@ export async function registerAuthRoutes(app) {
   app.post("/auth/otp/verify", {
     config: { rateLimit: { max: 10, timeWindow: "1 minute" } }
   }, async (request, reply) => {
-    await ensureAuthSchemaIfNeeded(request);
     const channel = normalizeOtpChannel(request.body?.channel || config.otpDefaultChannel);
     const identifier = getOtpIdentifier(channel, request.body);
     const code = String(request.body?.code || "").trim();
