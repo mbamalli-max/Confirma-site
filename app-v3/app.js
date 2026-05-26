@@ -3398,8 +3398,6 @@ function handleQuickTextRecord() {
     els["quick-text-input-v2"].value = "";
   }
 }
- return null;
-}
 
 async function startVoiceRecordShortcut() {
   setVoiceRecordError("");
