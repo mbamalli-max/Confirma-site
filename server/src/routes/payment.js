@@ -1124,7 +1124,9 @@ async function sendVerifiedReportEmail({ email, filename, pdfBuffer, vtId, verif
 }
 
 export async function registerPaymentRoutes(app) {
-  app.post("/report/generate-pdf", async (request, reply) => {
+  app.post("/report/generate-pdf", {
+    config: { rateLimit: { max: 10, timeWindow: "1 hour" } }
+  }, async (request, reply) => {
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 

@@ -13,9 +13,13 @@ import {
 } from "../attestation-signing.js";
 
 export async function registerAttestRoutes(app) {
-  app.get("/.well-known/verification-key.json", async () => exportPublishedVerificationKey());
+  app.get("/.well-known/verification-key.json", {
+    config: { rateLimit: { max: 120, timeWindow: "1 minute" } }
+  }, async () => exportPublishedVerificationKey());
 
-  app.post("/attest", async (request, reply) => {
+  app.post("/attest", {
+    config: { rateLimit: { max: 10, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 

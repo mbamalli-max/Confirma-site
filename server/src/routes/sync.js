@@ -16,7 +16,9 @@ async function markDeviceStatus(client, deviceIdentity, status) {
 }
 
 export async function registerSyncRoutes(app) {
-  app.post("/sync/entries", async (request, reply) => {
+  app.post("/sync/entries", {
+    config: { rateLimit: { max: 60, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 

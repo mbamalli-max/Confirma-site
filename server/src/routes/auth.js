@@ -193,7 +193,9 @@ function buildVerificationResponse(user, channel, deviceIdentity = "") {
 }
 
 export async function registerAuthRoutes(app) {
-  app.post("/auth/otp/request", async (request, reply) => {
+  app.post("/auth/otp/request", {
+    config: { rateLimit: { max: 5, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
     await ensureAuthSchemaIfNeeded(request);
     const channel = normalizeOtpChannel(request.body?.channel || config.otpDefaultChannel);
     const identifier = getOtpIdentifier(channel, request.body);
@@ -286,7 +288,9 @@ export async function registerAuthRoutes(app) {
     };
   });
 
-  app.post("/auth/otp/verify", async (request, reply) => {
+  app.post("/auth/otp/verify", {
+    config: { rateLimit: { max: 10, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
     await ensureAuthSchemaIfNeeded(request);
     const channel = normalizeOtpChannel(request.body?.channel || config.otpDefaultChannel);
     const identifier = getOtpIdentifier(channel, request.body);

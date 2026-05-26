@@ -116,7 +116,9 @@ function buildProfileResponse(row, fallbackPhoneNumber) {
 }
 
 export async function registerAccountRoutes(app) {
-  app.get("/records", async (request, reply) => {
+  app.get("/records", {
+    config: { rateLimit: { max: 30, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
     await ensureAccountRecoverySchemaIfNeeded(request);
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
@@ -178,7 +180,9 @@ export async function registerAccountRoutes(app) {
     };
   });
 
-  app.get("/profile", async (request, reply) => {
+  app.get("/profile", {
+    config: { rateLimit: { max: 60, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
     await ensureAccountRecoverySchemaIfNeeded(request);
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
@@ -217,7 +221,9 @@ export async function registerAccountRoutes(app) {
     return buildProfileResponse(result.rows[0] || null, user.phone_number);
   });
 
-  app.post("/profile", async (request, reply) => {
+  app.post("/profile", {
+    config: { rateLimit: { max: 20, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
     await ensureAccountRecoverySchemaIfNeeded(request);
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
@@ -290,7 +296,9 @@ export async function registerAccountRoutes(app) {
     return { ok: true };
   });
 
-  app.get("/devices", async (request, reply) => {
+  app.get("/devices", {
+    config: { rateLimit: { max: 30, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
     await ensureAccountRecoverySchemaIfNeeded(request);
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;

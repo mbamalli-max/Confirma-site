@@ -4,7 +4,9 @@ import { verifyEntrySignature } from "../crypto-verify.js";
 import { query, withTransaction } from "../db.js";
 
 export async function registerIdentityRoutes(app) {
-  app.post("/identity/rotate/challenge", async (request, reply) => {
+  app.post("/identity/rotate/challenge", {
+    config: { rateLimit: { max: 3, timeWindow: "1 hour" } }
+  }, async (request, reply) => {
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
@@ -41,7 +43,9 @@ export async function registerIdentityRoutes(app) {
     return { challenge_nonce: nonce, expires_at: expiresAt.toISOString() };
   });
 
-  app.post("/identity/rotate", async (request, reply) => {
+  app.post("/identity/rotate", {
+    config: { rateLimit: { max: 3, timeWindow: "1 hour" } }
+  }, async (request, reply) => {
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
@@ -186,7 +190,9 @@ export async function registerIdentityRoutes(app) {
     }
   });
 
-  app.post("/identity/revoke", async (request, reply) => {
+  app.post("/identity/revoke", {
+    config: { rateLimit: { max: 5, timeWindow: "1 hour" } }
+  }, async (request, reply) => {
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
