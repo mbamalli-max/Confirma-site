@@ -3290,9 +3290,40 @@ function rememberVoiceTranscript(transcript, context) {
   state.lastVoiceLearnedCorrection = "";
 }
 
+function detectBrowser() {
+  const ua = navigator.userAgent;
+  const isIosDevice = /iphone|ipad|ipod/i.test(ua);
+  const isSafariUA = /^((?!chrome|android).)*safari/i.test(ua);
+  const isEdge = /edg\//i.test(ua);
+  const isChrome = /chrome\//i.test(ua) && !isEdge;
+  const isFirefox = /firefox\//i.test(ua);
+  if (isIosDevice && isSafariUA) return "ios-safari";
+  if (isSafariUA) return "macos-safari";
+  if (isEdge) return "edge";
+  if (isChrome) return "chrome";
+  if (isFirefox) return "firefox";
+  return "unknown";
+}
+
 function getSpeechRecognitionErrorMessage(errorType) {
   if (errorType === "not-allowed") {
-    return "Microphone access denied. In Safari, go to Settings → Safari → Microphone and allow access for this site.";
+    const browser = detectBrowser();
+    if (browser === "ios-safari") {
+      return "Microphone access denied. Go to Settings → Safari → Microphone and allow this site, then try again. You can also use text entry below.";
+    }
+    if (browser === "macos-safari") {
+      return "Microphone access denied. In Safari, go to Safari → Settings → Websites → Microphone and allow this site, then try again. You can also use text entry below.";
+    }
+    if (browser === "chrome") {
+      return "Microphone access denied. Click the lock icon in the address bar, allow microphone access, then try again. You can also use text entry below.";
+    }
+    if (browser === "edge") {
+      return "Microphone access denied. Click the lock icon in the address bar, allow microphone access, then try again. You can also use text entry below.";
+    }
+    if (browser === "firefox") {
+      return "Microphone access denied. Click the microphone icon in the address bar to allow access, then try again. You can also use text entry below.";
+    }
+    return "Microphone access denied. Allow microphone access in your browser settings, then try again. You can also use text entry below.";
   }
   if (errorType === "no-speech") {
     return "No speech detected. Please try again.";
@@ -3424,7 +3455,7 @@ async function startVoiceRecordShortcut() {
   const recognition = new SpeechRec();
   state.activeRecognition = recognition;
   setRecordingState(true);
-  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  const browser = detectBrowser();
   recognition.lang = getVoiceLocale();
   recognition.continuous = false;
   recognition.interimResults = true;
@@ -3477,7 +3508,7 @@ async function startVoiceRecordShortcut() {
     }
   };
 
-  if (isSafari && navigator.mediaDevices?.getUserMedia) {
+  if ((browser === "ios-safari" || browser === "macos-safari") && navigator.mediaDevices?.getUserMedia) {
     await navigator.mediaDevices.getUserMedia({ audio: true })
       .then((stream) => {
         stream.getTracks().forEach((track) => track.stop());
@@ -3918,7 +3949,7 @@ async function startSpeechMatch() {
   const recognition = new SpeechRec();
   state.activeRecognition = recognition;
   setRecordingState(true);
-  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  const browser = detectBrowser();
   recognition.lang = getVoiceLocale();
   recognition.continuous = false;
   recognition.interimResults = true;
@@ -3970,7 +4001,7 @@ async function startSpeechMatch() {
       els["speech-status"].textContent = "No final speech result received. Please try again or type the label.";
     }
   };
-  if (isSafari && navigator.mediaDevices?.getUserMedia) {
+  if ((browser === "ios-safari" || browser === "macos-safari") && navigator.mediaDevices?.getUserMedia) {
     await navigator.mediaDevices.getUserMedia({ audio: true })
       .then((stream) => {
         stream.getTracks().forEach((track) => track.stop());
