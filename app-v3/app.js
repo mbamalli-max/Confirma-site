@@ -369,7 +369,13 @@ function wireEvents() {
   document.getElementById("otp-verify-code").addEventListener("click", verifyLocalOtpCode);
   document.getElementById("otp-email-input").addEventListener("input", clearOtpError);
   document.getElementById("otp-phone-input").addEventListener("input", clearOtpError);
-  document.getElementById("otp-code-input").addEventListener("input", clearOtpError);
+  document.getElementById("otp-code-input").addEventListener("input", () => {
+    clearOtpError();
+    if (els["otp-verify-code"]) {
+      const has6 = /^\d{6}$/.test(els["otp-code-input"].value);
+      els["otp-verify-code"].disabled = !state.otpChallenge || !has6;
+    }
+  });
   document.getElementById("settings-logout-v2").addEventListener("click", () => {
     void logoutFromServerSession();
   });
@@ -5627,12 +5633,22 @@ function renderOtpScreen() {
     els["otp-phone-input"].value = formatPhoneForInput(state.profile?.phone_number || "", getPhoneInputCountry());
   }
   if (els["otp-request-code"]) {
-    els["otp-request-code"].textContent = channel === "sms" ? "Send verification code" : "Send verification code";
+    if (state.otpChallenge) {
+      const elapsed = Date.now() - (state.otpChallenge.sentAt || 0);
+      const inCooldown = elapsed < 60000;
+      els["otp-request-code"].disabled = inCooldown;
+      els["otp-request-code"].textContent = inCooldown ? "Resend code in 60s" : "Resend code";
+    } else {
+      els["otp-request-code"].disabled = false;
+      els["otp-request-code"].textContent = "Send code";
+    }
   }
   if (els["otp-verify-code"]) {
     els["otp-verify-code"].textContent = channel === "sms" ? "Verify phone on this device" : "Verify email on this device";
+    const codeValue = els["otp-code-input"]?.value || "";
+    els["otp-verify-code"].disabled = !state.otpChallenge || !/^\d{6}$/.test(codeValue);
   }
-  if (els["otp-code-input"]) {
+  if (els["otp-code-input"] && !state.otpChallenge) {
     els["otp-code-input"].value = "";
   }
   els["otp-helper-text"].textContent = state.otpChallenge
@@ -5698,6 +5714,7 @@ async function requestOtpChallenge(identifier, {
       phoneNumber: phoneNumber || "",
       channel: normalizedChannel,
       expiresAt: Date.now() + 10 * 60 * 1000,
+      sentAt: Date.now(),
       source: "server",
       devCode: response.dev_code || "",
       serverBaseUrl: state.syncApiBaseUrl
@@ -5720,6 +5737,7 @@ async function requestOtpChallenge(identifier, {
       phoneNumber: phoneNumber || "",
       channel: normalizedChannel,
       expiresAt: Date.now() + 10 * 60 * 1000,
+      sentAt: Date.now(),
       source: "local"
     };
     state.syncStatus = "Sync server unavailable in local development. Using a local verification fallback.";
@@ -5890,15 +5908,17 @@ async function requestLocalOtpCode() {
 
 async function verifyLocalOtpCode() {
   if (!state.profile) return;
+  if (els["otp-verify-code"]) {
+    els["otp-verify-code"].disabled = true;
+    els["otp-verify-code"].textContent = "Verifying…";
+  }
   const enteredCode = (els["otp-code-input"]?.value || "").trim();
   try {
     clearOtpError();
     await verifyActiveOtpChallenge(enteredCode);
     renderOtpScreen();
   } catch (error) {
-    if (!state.otpChallenge) {
-      renderOtpScreen();
-    }
+    renderOtpScreen();
     showOtpError(error.message || "Verification failed.");
     return;
   }
@@ -7652,7 +7672,15 @@ function customLabelContextForLearnedFrom(learnedFrom) {
 }
 
 async function requestServerOtpCode() {
-  await requestLocalOtpCode();
+  if (els["otp-request-code"]) {
+    els["otp-request-code"].disabled = true;
+    els["otp-request-code"].textContent = "Sending…";
+  }
+  try {
+    await requestLocalOtpCode();
+  } finally {
+    renderOtpScreen();
+  }
 }
 
 async function verifyServerOtpCode() {
