@@ -1661,6 +1661,7 @@ function renderRecordingSetupSummary() {
     ${renderSettingsRow("Confirmation rule", "Every transaction must be reviewed before append")}
     ${renderSettingsRow("Quick-pick strategy", preferred.length ? `${preferred.length} common transaction${preferred.length === 1 ? "" : "s"} boosted` : "Using business defaults")}
     ${renderSettingsRow("Transfer handling", "Separate from income and expense")}
+    ${renderSettingsRow("Voice input", "Voice input works best in recent Chrome, Edge, and Safari. If voice is unavailable, use text entry.")}
   `;
 }
 
@@ -3447,7 +3448,7 @@ async function startVoiceRecordShortcut() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) {
     setRecordingState(false);
-    setVoiceRecordError("Voice input is not available in this browser. Please use text input.");
+    setVoiceRecordError("Voice input is not available in this browser. Try a recent version of Chrome, Edge, or Safari for voice. You can also use text entry below.");
     return;
   }
 
@@ -3939,7 +3940,7 @@ async function startSpeechMatch() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) {
     setRecordingState(false);
-    els["speech-status"].textContent = "Speech recognition is not available in this browser.";
+    els["speech-status"].textContent = "Voice input is not available in this browser. Try a recent version of Chrome, Edge, or Safari.";
     return;
   }
 
