@@ -87,7 +87,7 @@ async function sendOtpByEmail(email, code) {
     from: config.resendFromEmail,
     to: email,
     subject: "Your Konfirmata verification code",
-    text: `Your Konfirmata code is ${code}. It expires in ${config.otpTtlMinutes} minutes.`
+    text: `Your Konfirmata code is ${code}. It expires in ${config.otpTtlMinutes} minutes. If you did not request this, ignore this email. Check your spam or junk folder if this doesn't appear in your inbox.`
   });
 }
 

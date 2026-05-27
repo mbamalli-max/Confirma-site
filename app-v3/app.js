@@ -7575,7 +7575,9 @@ function getOtpHelperText() {
     return `Verification code requested from the server. Development code: ${state.otpChallenge.devCode}. It expires in 10 minutes.`;
   }
   if (state.otpChallenge.source === "server") {
-    return `Verification code requested. Enter the code sent by ${deliveryNoun}.`;
+    return channel === "email"
+      ? "Verification code requested. Enter the code sent by email. If it doesn't arrive within a minute, check your spam or junk folder. The email comes from noreply@konfirmata.com."
+      : `Verification code requested. Enter the code sent by ${deliveryNoun}.`;
   }
   return `Local development code for this device: ${state.otpChallenge.code}. It expires in 10 minutes.`;
 }
