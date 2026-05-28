@@ -200,7 +200,7 @@ function cacheElements() {
     "voice-review-transcript-row", "voice-review-transcript", "voice-review-edit-row", "voice-review-edit",
     "voice-review-understood-row", "voice-review-understood",
     "voice-review-missing-row", "voice-review-missing", "voice-review-message",
-    "voice-review-suggestions", "voice-review-manual", "voice-review-cancel",
+    "voice-review-suggestions", "voice-review-manual", "voice-review-use-form", "voice-review-cancel",
     "bottom-nav-v2", "sync-status-badge", "sync-dot", "sync-label", "dash-today-sales-v2", "dash-monthly-sales-v2", "dash-monthly-expenses-v2",
     "dash-cash-flow-v2", "dash-borrowing-v2", "dashboard-records-v2", "settings-profile-v2", "settings-preferred-v2",
     "settings-preferred-edit-v2", "settings-preferred-editor", "settings-preferred-grid", "settings-preferred-done-v2",
@@ -301,6 +301,7 @@ function wireEvents() {
   document.getElementById("confirm-append").addEventListener("click", confirmAppend);
   document.getElementById("back-to-capture").addEventListener("click", () => showScreen("screen-capture"));
   document.getElementById("voice-review-manual").addEventListener("click", handleVoiceReviewManual);
+  document.getElementById("voice-review-use-form").addEventListener("click", handleVoiceReviewUseForm);
   document.getElementById("voice-review-cancel").addEventListener("click", cancelVoiceReview);
   document.getElementById("voice-review-edit").addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -3594,6 +3595,66 @@ function homophoneCorrectedTranscript(transcript) {
   return tokens.join(" ");
 }
 
+// ── Phase 8 Item 8C — Structured capture fallback ────────────────────
+// When NLP parsing fails completely, these helpers extract whatever
+// partial data is available so the user can complete the record manually
+// using the capture form's existing structured fields.
+
+function detectActionFromText(normalizedText) {
+  const t = String(normalizedText || "");
+  if (/\b(?:sold|sell|selling)\b/.test(t)) return "sale";
+  if (/\b(?:bought|buy|buying|purchased|purchase)\b/.test(t)) return "purchase";
+  if (/\b(?:paid|pay|paying)\b/.test(t)) return "payment";
+  if (/\b(?:received|receive|collected|collect)\b/.test(t)) return "receipt";
+  return null;
+}
+
+function extractFirstAmountFromText(normalizedText) {
+  const matches = String(normalizedText || "").match(/[0-9]+(?:\.[0-9]+)?(?:\s*(?:k|thousand)\b)?/gi);
+  if (!matches) return null;
+  let maxMinor = 0;
+  for (const m of matches) {
+    const minor = parseNaturalAmount(m);
+    if (minor > maxMinor) maxMinor = minor;
+  }
+  return maxMinor > 0 ? maxMinor : null;
+}
+
+function openStructuredFallback(text, source) {
+  const normalized = normalizeNaturalTransactionText(text);
+  const actionFromVerb = detectActionFromText(normalized);
+  const amountMinor = extractFirstAmountFromText(normalized);
+
+  if (actionFromVerb) {
+    state.currentAction = actionFromVerb;
+    state.profile.last_action = actionFromVerb;
+    renderActionRows();
+    renderQuickLabels();
+  }
+  clearSelectedLabel();
+
+  if (els["amount-input-v2"]) {
+    els["amount-input-v2"].value = amountMinor ? String(amountMinor / 100) : "";
+  }
+
+  if (source === "voice") {
+    state.pendingVoiceParse = null;
+    clearPendingVoiceTranscript();
+  }
+
+  const filled = [];
+  if (actionFromVerb) filled.push("action");
+  if (amountMinor) filled.push("amount");
+
+  const hint = filled.length
+    ? `Pre-filled ${filled.join(" and ")} from your entry. Review them, then choose a label before confirming.`
+    : "Couldn't parse that. Complete the fields below, then review before confirming.";
+
+  clearError();
+  setVoiceRecordError(hint);
+  showScreen("screen-capture");
+}
+
 function rankLabelCandidates(labelQuery, actionContext) {
   const catalog = getCatalogForProfileAction(actionContext);
   const normalizedQuery = normalizeText(labelQuery);
@@ -3632,8 +3693,15 @@ function routeCapturedTransaction(transcript, parsed, source) {
         return routeCapturedTransaction(corrected, reparsed, source);
       }
     }
-    // Genuine failure — show the transcript so the user can fix the wording.
-    openVoiceReview({ mode: "failed", transcript, source });
+    // Genuine failure.
+    // For text entry: route directly to the structured capture form (voice
+    // review adds friction and is semantically wrong for typed input).
+    // For voice: keep voice review so the user can see and edit their transcript.
+    if (source === "text") {
+      openStructuredFallback(transcript, "text");
+    } else {
+      openVoiceReview({ mode: "failed", transcript, source });
+    }
     return true;
   }
   const match = rankLabelCandidates(parsed.labelQuery, parsed.action);
@@ -3659,6 +3727,9 @@ function renderVoiceReview() {
   if (!pending) return;
   els["voice-review-suggestions"].innerHTML = "";
 
+  // "Fill fields instead" is only relevant in failed mode.
+  if (els["voice-review-use-form"]) els["voice-review-use-form"].hidden = true;
+
   if (pending.mode === "failed") {
     els["voice-review-transcript-row"].hidden = true;
     els["voice-review-edit-row"].hidden = false;
@@ -3667,6 +3738,7 @@ function renderVoiceReview() {
     els["voice-review-missing-row"].hidden = true;
     els["voice-review-message"].textContent = "We couldn't read that as a transaction. Fix the wording and try again.";
     els["voice-review-manual"].textContent = "Try again";
+    if (els["voice-review-use-form"]) els["voice-review-use-form"].hidden = false;
     return;
   }
 
@@ -3744,6 +3816,12 @@ function handleVoiceReviewManual() {
     return;
   }
   resolveVoiceReview({ label: null });
+}
+
+function handleVoiceReviewUseForm() {
+  const pending = state.pendingVoiceParse;
+  if (!pending || pending.mode !== "failed") return;
+  openStructuredFallback(pending.transcript, pending.source);
 }
 
 function retryVoiceReview() {
