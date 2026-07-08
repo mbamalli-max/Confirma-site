@@ -33,6 +33,7 @@
     { "src": "/verify/", "dest": "/website-v2/verify.html" },
     { "src": "/verify/(.*)", "dest": "/website-v2/verify.html" },
     { "src": "/lenders\\.html", "status": 308, "headers": { "Location": "/institutions.html" } },
+    { "src": "/banks\\.html", "status": 308, "headers": { "Location": "/institutions.html" } },
     { "src": "/", "dest": "/website-v2/index.html" },
     { "src": "/(.*)", "dest": "/website-v2/$1" }
   ]
