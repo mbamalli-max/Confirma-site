@@ -6,7 +6,7 @@ import {
   verifyOtpCode
 } from "./syncWorker.js";
 import {
-  SECTORS, SUPPORTED_LANGUAGES, PHONE_COUNTRY_RULES, COUNTRIES,
+  SECTORS, SUPPORTED_LANGUAGES, PHONE_COUNTRY_RULES, COUNTRIES, FEATURED_COUNTRY_IDS,
   REGION_CURRENCY_MAP, CAPTURE_EXAMPLES, BUSINESS_TYPES, QUICK_PICKS,
   LAYER_B, EXTRA_SEARCH_LABELS, LIABILITY_LABELS,
   PRIMARY_ACTIONS, TRANSFER_ACTIONS, LIABILITY_ACTIONS, isLiabilityAction
@@ -592,24 +592,87 @@ function ensureOnboardingCountrySteps() {
   });
 }
 
+const countryGridExpanded = { phone_country: false, operating_region: false };
+
+function handleCountrySelect(country, dimension) {
+  if (dimension === "phone_country") {
+    state.authPhoneCountry = country.id;
+    state.profile = {
+      ...(state.profile || {}),
+      plan: normalizePlan(state.profile?.plan),
+      country: country.id,
+      phone_country: country.id,
+      operating_region: getRecognizedCountryId(state.profile?.operating_region) || country.id,
+      language: normalizeLanguageId(state.profile?.language || "en"),
+      last_action: state.profile?.last_action || "sale",
+      preferred_labels: state.profile?.preferred_labels || [],
+      display_name: state.profile?.display_name || "",
+      phone_number: state.profile?.phone_number || "",
+      email: state.profile?.email || "",
+      region: state.profile?.region || "",
+      birth_year: state.profile?.birth_year || "",
+      gender: state.profile?.gender || ""
+    };
+    void persistAuthPhoneCountry(country.id);
+    renderCountryGrid("phone_country");
+    renderCountryGrid("operating_region");
+    syncCountryAwareInputs();
+    syncOnboardingRegionNote();
+    renderOnboardingProfileStep();
+    updateOnboardingStep(2);
+    return;
+  }
+
+  state.profile = {
+    ...(state.profile || {}),
+    plan: normalizePlan(state.profile?.plan),
+    country: getRecognizedCountryId(state.profile?.country) || getPhoneInputCountry() || country.id,
+    phone_country: getRecognizedCountryId(state.profile?.phone_country) || getPhoneInputCountry() || "",
+    operating_region: country.id,
+    language: normalizeLanguageId(state.profile?.language || "en"),
+    sector_id: null,
+    business_type_id: null,
+    last_action: state.profile?.last_action || "sale",
+    preferred_labels: [],
+    display_name: state.profile?.display_name || "",
+    phone_number: state.profile?.phone_number || "",
+    email: state.profile?.email || "",
+    region: state.profile?.region || "",
+    birth_year: state.profile?.birth_year || "",
+    gender: state.profile?.gender || ""
+  };
+  renderCountryGrid("operating_region");
+  renderSectorGrid();
+  renderBusinessGrid();
+  renderOnboardingProfileStep();
+  updateOnboardingStep(3);
+}
+
 function renderCountryGrid(dimension = "phone_country") {
   const gridId = dimension === "operating_region" ? "operating-region-grid" : "country-grid";
   const container = document.getElementById(gridId);
   if (!container) return;
 
+  const expanded = countryGridExpanded[dimension];
   const searchId = gridId + "-search";
   let searchInput = document.getElementById(searchId);
-  if (!searchInput) {
-    searchInput = document.createElement("input");
-    searchInput.type = "search";
-    searchInput.id = searchId;
-    searchInput.placeholder = dimension === "operating_region" ? "Search business regions..." : "Search phone countries...";
-    searchInput.autocomplete = "off";
-    searchInput.style.cssText = "width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--r-md);font-size:15px;margin-bottom:12px;box-sizing:border-box;background:var(--card);color:var(--text);";
-    searchInput.addEventListener("input", () => renderCountryGrid(dimension));
-    container.insertAdjacentElement("beforebegin", searchInput);
+
+  if (expanded) {
+    if (!searchInput) {
+      searchInput = document.createElement("input");
+      searchInput.type = "search";
+      searchInput.id = searchId;
+      searchInput.placeholder = dimension === "operating_region" ? "Search business regions..." : "Search phone countries...";
+      searchInput.autocomplete = "off";
+      searchInput.style.cssText = "width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--r-md);font-size:15px;margin-bottom:12px;box-sizing:border-box;background:var(--card);color:var(--text);";
+      searchInput.addEventListener("input", () => renderCountryGrid(dimension));
+      container.insertAdjacentElement("beforebegin", searchInput);
+    }
+  } else if (searchInput) {
+    searchInput.remove();
   }
-  const query = (searchInput.value || "").trim().toLowerCase();
+
+  const query = expanded ? (searchInput?.value || "").trim().toLowerCase() : "";
 
   container.innerHTML = "";
 
@@ -617,62 +680,36 @@ function renderCountryGrid(dimension = "phone_country") {
     ? getRecognizedCountryId(state.profile?.operating_region || state.profile?.country || state.profile?.phone_country)
     : getRecognizedCountryId(state.profile?.country || state.profile?.phone_country || state.authPhoneCountry);
 
-  const filteredCountries = query ? COUNTRIES.filter(c => c.name.toLowerCase().includes(query)) : COUNTRIES;
-  filteredCountries.forEach((country) => {
-    container.appendChild(buildVisualCard(country.icon, country.name, dimension === "operating_region" ? "Business region" : "Phone country", () => {
-      if (dimension === "phone_country") {
-        state.authPhoneCountry = country.id;
-        state.profile = {
-          ...(state.profile || {}),
-          plan: normalizePlan(state.profile?.plan),
-          country: country.id,
-          phone_country: country.id,
-          operating_region: getRecognizedCountryId(state.profile?.operating_region) || country.id,
-          language: normalizeLanguageId(state.profile?.language || "en"),
-          last_action: state.profile?.last_action || "sale",
-          preferred_labels: state.profile?.preferred_labels || [],
-          display_name: state.profile?.display_name || "",
-          phone_number: state.profile?.phone_number || "",
-          email: state.profile?.email || "",
-          region: state.profile?.region || "",
-          birth_year: state.profile?.birth_year || "",
-          gender: state.profile?.gender || ""
-        };
-        void persistAuthPhoneCountry(country.id);
-        renderCountryGrid("phone_country");
-        renderCountryGrid("operating_region");
-        syncCountryAwareInputs();
-        syncOnboardingRegionNote();
-        renderOnboardingProfileStep();
-        updateOnboardingStep(2);
-        return;
-      }
+  if (!expanded) {
+    FEATURED_COUNTRY_IDS
+      .map((id) => COUNTRIES.find((c) => c.id === id))
+      .filter(Boolean)
+      .forEach((country) => {
+        container.appendChild(buildVisualCard(
+          country.icon,
+          country.name,
+          dimension === "operating_region" ? "Business region" : "Phone country",
+          () => handleCountrySelect(country, dimension),
+          selectedCountry === country.id
+        ));
+      });
 
-      state.profile = {
-        ...(state.profile || {}),
-        plan: normalizePlan(state.profile?.plan),
-        country: getRecognizedCountryId(state.profile?.country) || getPhoneInputCountry() || country.id,
-        phone_country: getRecognizedCountryId(state.profile?.phone_country) || getPhoneInputCountry() || "",
-        operating_region: country.id,
-        language: normalizeLanguageId(state.profile?.language || "en"),
-        sector_id: null,
-        business_type_id: null,
-        last_action: state.profile?.last_action || "sale",
-        preferred_labels: [],
-        display_name: state.profile?.display_name || "",
-        phone_number: state.profile?.phone_number || "",
-        email: state.profile?.email || "",
-        region: state.profile?.region || "",
-        birth_year: state.profile?.birth_year || "",
-        gender: state.profile?.gender || ""
-      };
-      renderCountryGrid("operating_region");
-      renderSectorGrid();
-      renderBusinessGrid();
-      renderOnboardingProfileStep();
-      updateOnboardingStep(3);
-    }, selectedCountry === country.id));
-  });
+    container.appendChild(buildVisualCard("🌐", "Other", "Choose from all countries", () => {
+      countryGridExpanded[dimension] = true;
+      renderCountryGrid(dimension);
+    }));
+  } else {
+    const filteredCountries = query ? COUNTRIES.filter(c => c.name.toLowerCase().includes(query)) : COUNTRIES;
+    filteredCountries.forEach((country) => {
+      container.appendChild(buildVisualCard(
+        country.icon,
+        country.name,
+        dimension === "operating_region" ? "Business region" : "Phone country",
+        () => handleCountrySelect(country, dimension),
+        selectedCountry === country.id
+      ));
+    });
+  }
 
   if (dimension === "operating_region") {
     updateOperatingRegionContinueState();

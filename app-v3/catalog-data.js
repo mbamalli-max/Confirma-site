@@ -26,12 +26,26 @@ export const SUPPORTED_LANGUAGES = [
 ];
 
 export const PHONE_COUNTRY_RULES = {
+  GB: {
+    dialCode: "+44",
+    dialingDigits: "44",
+    onboardingPlaceholder: "e.g. 07123456789",
+    otpPlaceholder: "07123456789",
+    validationMessage: "Enter a valid UK phone number."
+  },
   GH: {
     dialCode: "+233",
     dialingDigits: "233",
     onboardingPlaceholder: "e.g. 0241234567",
     otpPlaceholder: "0241234567",
     validationMessage: "Enter a valid Ghanaian phone number."
+  },
+  IN: {
+    dialCode: "+91",
+    dialingDigits: "91",
+    onboardingPlaceholder: "e.g. 9123456789",
+    otpPlaceholder: "9123456789",
+    validationMessage: "Enter a valid Indian phone number."
   },
   KE: {
     dialCode: "+254",
@@ -318,6 +332,8 @@ export const COUNTRIES = [
 COUNTRIES.forEach((country) => {
   country.icon = "🌍";
 });
+
+export const FEATURED_COUNTRY_IDS = ["US", "NG", "GH", "KE", "GB", "IN"];
 
 export const REGION_CURRENCY_MAP = {
   NG: "NGN", US: "USD", GB: "GBP", GH: "GHS", KE: "KES", ZA: "ZAR",
