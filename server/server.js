@@ -15,6 +15,7 @@ import { registerAttestRoutes } from "./src/routes/attest.js";
 import { registerPaymentRoutes } from "./src/routes/payment.js";
 import { registerAccountRoutes } from "./src/routes/account.js";
 import { registerAdminAuthRoutes } from "./src/routes/admin/auth.js";
+import { registerAdminClassificationRoutes } from "./src/routes/admin/classification.js";
 
 async function registerRouteGroup(app, name, registerFn) {
   try {
@@ -88,6 +89,7 @@ async function main() {
   await registerRouteGroup(app, "attest", registerAttestRoutes);
   await registerRouteGroup(app, "payment", registerPaymentRoutes);
   await registerRouteGroupStrict(app, "admin-auth", registerAdminAuthRoutes);
+  await registerRouteGroupStrict(app, "admin-classification", registerAdminClassificationRoutes);
 
   await app.listen({ host: config.host, port: config.port });
 }

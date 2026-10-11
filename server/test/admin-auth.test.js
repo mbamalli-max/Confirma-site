@@ -1,115 +1,32 @@
 import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { readFile } from "node:fs/promises";
-import Fastify from "fastify";
 import jwt from "jsonwebtoken";
-import cors from "@fastify/cors";
-import rateLimit from "@fastify/rate-limit";
 import {
   decryptTotpSecret,
   encryptTotpSecret,
   generateTotpSecret,
-  hashAdminPassword,
-  issueAdminToken,
-  requireAdmin
+  issueAdminToken
 } from "../src/admin-auth-utils.js";
 import {
   config,
-  createCorsDelegator,
   resolveTrustProxy,
   validateRuntimeConfig
 } from "../src/config.js";
 import { getPool, query } from "../src/db.js";
-import { registerAdminAuthRoutes } from "../src/routes/admin/auth.js";
-
-const PUBLIC_ORIGINS = ["https://konfirmata.com", "https://www.konfirmata.com"];
-const ADMIN_ORIGIN = "https://admin.example.test";
-const PASSWORD = crypto.randomBytes(24).toString("base64url");
-const TOTP_SECRET = generateTotpSecret();
-let passwordHash;
-let totpSecretEnc;
-
-function totpToken(secret, now = Date.now()) {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  const normalized = secret.replace(/=+$/g, "");
-  let bits = 0;
-  let bitCount = 0;
-  const bytes = [];
-  for (const character of normalized) {
-    bits = (bits << 5) | alphabet.indexOf(character);
-    bitCount += 5;
-    if (bitCount >= 8) {
-      bitCount -= 8;
-      bytes.push((bits >>> bitCount) & 0xff);
-      bits &= (1 << bitCount) - 1;
-    }
-  }
-  const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(now / 30_000)));
-  const digest = crypto.createHmac("sha1", Buffer.from(bytes)).update(counter).digest();
-  const offset = digest[digest.length - 1] & 0x0f;
-  const binary = ((digest[offset] & 0x7f) << 24)
-    | ((digest[offset + 1] & 0xff) << 16)
-    | ((digest[offset + 2] & 0xff) << 8)
-    | (digest[offset + 3] & 0xff);
-  return String(binary % 1_000_000).padStart(6, "0");
-}
-
-function wrongTotp() {
-  const now = Date.now();
-  const validWindow = new Set([
-    totpToken(TOTP_SECRET, now - 30_000),
-    totpToken(TOTP_SECRET, now),
-    totpToken(TOTP_SECRET, now + 30_000)
-  ]);
-  for (let candidate = 0; candidate < 10; candidate += 1) {
-    const token = String(candidate).padStart(6, "0");
-    if (!validWindow.has(token)) return token;
-  }
-  throw new Error("Unable to construct a non-matching test TOTP.");
-}
-
-async function buildApp({ trustProxy } = {}) {
-  const app = Fastify({
-    logger: false,
-    ...(trustProxy === undefined ? {} : { trustProxy })
-  });
-  await app.register(cors, createCorsDelegator(PUBLIC_ORIGINS));
-  await app.register(rateLimit, { global: false });
-  app.get("/health", async () => ({ status: "ok" }));
-  await registerAdminAuthRoutes(app);
-  app.get("/admin/owner-only", { preHandler: requireAdmin(["owner"]) }, async () => ({ ok: true }));
-  await app.ready();
-  return app;
-}
-
-async function seedAdmin(role = "viewer") {
-  const email = `admin-${crypto.randomUUID()}@example.test`;
-  const result = await query(
-    `
-      INSERT INTO admin_users (email, password_hash, totp_secret_enc, role)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, email, role
-    `,
-    [email, passwordHash, totpSecretEnc, role]
-  );
-  return result.rows[0];
-}
-
-async function createSession(adminUser, expiry = config.adminJwtExpiry) {
-  const previousExpiry = config.adminJwtExpiry;
-  config.adminJwtExpiry = expiry;
-  const jti = crypto.randomUUID();
-  const token = issueAdminToken(adminUser, jti);
-  config.adminJwtExpiry = previousExpiry;
-  const decoded = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
-  await query(
-    `INSERT INTO admin_sessions (jti, admin_user_id, expires_at) VALUES ($1, $2, $3)`,
-    [jti, adminUser.id, new Date(Math.max(Date.now() + 60_000, Number(decoded.exp) * 1000))]
-  );
-  return { token, jti };
-}
+import {
+  ADMIN_ORIGIN,
+  PUBLIC_ORIGINS,
+  TEST_ADMIN_PASSWORD,
+  TEST_TOTP_SECRET,
+  buildApp,
+  createSession,
+  prepareAdminTestDatabase,
+  rejectAuditInserts,
+  seedAdmin,
+  totpToken,
+  wrongTotp
+} from "./helpers/admin.js";
 
 async function login(app, adminUser, overrides = {}, remoteAddress = `198.51.100.${crypto.randomInt(1, 250)}`) {
   return app.inject({
@@ -118,8 +35,8 @@ async function login(app, adminUser, overrides = {}, remoteAddress = `198.51.100
     remoteAddress,
     payload: {
       email: adminUser.email,
-      password: PASSWORD,
-      totp: totpToken(TOTP_SECRET),
+      password: TEST_ADMIN_PASSWORD,
+      totp: totpToken(TEST_TOTP_SECRET),
       ...overrides
     }
   });
@@ -148,31 +65,15 @@ async function withConfig(run) {
   }
 }
 
-async function rejectAuditInserts(run) {
-  await query(`
-    ALTER TABLE admin_audit_log
-    ADD CONSTRAINT admin_audit_test_reject_insert CHECK (false) NOT VALID
-  `);
-  try {
-    await run();
-  } finally {
-    await query(`
-      ALTER TABLE admin_audit_log
-      DROP CONSTRAINT admin_audit_test_reject_insert
-    `);
-  }
-}
-
 before(async () => {
+  await prepareAdminTestDatabase({
+    migrations: [new URL("../migrations/009_admin_backend.sql", import.meta.url)]
+  });
   config.adminJwtSecret = crypto.randomBytes(32).toString("hex");
   config.adminTotpEncKey = crypto.randomBytes(32).toString("hex");
   config.adminJwtExpiry = "1h";
   config.adminIpAllowlist = "";
   config.trustProxy = undefined;
-  const migration = await readFile(new URL("../migrations/009_admin_backend.sql", import.meta.url), "utf8");
-  await query(migration);
-  passwordHash = await hashAdminPassword(PASSWORD);
-  totpSecretEnc = encryptTotpSecret(TOTP_SECRET);
 });
 
 beforeEach(async () => {
@@ -266,6 +167,44 @@ test("6: ten failures lock the admin for 15 minutes and block correct credential
     const response = await login(app, adminUser, {}, "203.0.113.200");
     assert.equal(response.statusCode, 401);
   } finally {
+    await app.close();
+  }
+});
+
+test("6a: database lockout remains enforced when the application clock is twenty minutes ahead", async () => {
+  const app = await buildApp();
+  const adminUser = await seedAdmin();
+  const originalDateNow = Date.now;
+  await query(
+    `UPDATE admin_users SET locked_until = clock_timestamp() + INTERVAL '5 minutes' WHERE id = $1`,
+    [adminUser.id]
+  );
+  try {
+    Date.now = () => originalDateNow() + 20 * 60_000;
+    const response = await login(app, adminUser);
+    assert.equal(response.statusCode, 401);
+    assert.equal((await query(`SELECT COUNT(*)::int AS count FROM admin_sessions WHERE admin_user_id = $1`, [adminUser.id])).rows[0].count, 0);
+  } finally {
+    Date.now = originalDateNow;
+    await app.close();
+  }
+});
+
+test("6b: elapsed database lockout permits login when the application clock is twenty minutes behind", async () => {
+  const app = await buildApp();
+  const adminUser = await seedAdmin();
+  const originalDateNow = Date.now;
+  await query(
+    `UPDATE admin_users SET locked_until = clock_timestamp() - INTERVAL '5 minutes' WHERE id = $1`,
+    [adminUser.id]
+  );
+  try {
+    Date.now = () => originalDateNow() - 20 * 60_000;
+    const response = await login(app, adminUser);
+    assert.equal(response.statusCode, 200);
+    assert.ok(response.json().token);
+  } finally {
+    Date.now = originalDateNow;
     await app.close();
   }
 });
@@ -642,8 +581,8 @@ test("16c: a trusted proxy can forward an allowlisted client address", async () 
       headers: { "x-forwarded-for": "203.0.113.10" },
       payload: {
         email: adminUser.email,
-        password: PASSWORD,
-        totp: totpToken(TOTP_SECRET)
+        password: TEST_ADMIN_PASSWORD,
+        totp: totpToken(TEST_TOTP_SECRET)
       }
     });
     assert.equal(response.statusCode, 200);

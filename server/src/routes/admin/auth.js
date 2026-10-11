@@ -129,7 +129,8 @@ export async function registerAdminAuthRoutes(app) {
     const result = await query(
       `
         SELECT id, email, password_hash, totp_secret_enc, role, status,
-               failed_login_count, locked_until
+               failed_login_count, locked_until,
+               (locked_until IS NOT NULL AND locked_until > clock_timestamp()) AS is_locked
         FROM admin_users
         WHERE LOWER(email) = LOWER($1)
         LIMIT 1
@@ -143,7 +144,7 @@ export async function registerAdminAuthRoutes(app) {
       return reply.code(401).send({ error: "Invalid admin credentials." });
     }
 
-    if (adminUser.locked_until && new Date(adminUser.locked_until).getTime() > Date.now()) {
+    if (adminUser.is_locked) {
       await writeAuditRow({
         adminUserId: adminUser.id,
         action: "admin.login.failure",
