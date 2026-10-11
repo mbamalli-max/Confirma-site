@@ -1,13 +1,20 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
-import { config, getAuthDeliverySummary, validateRuntimeConfig } from "./src/config.js";
+import {
+  config,
+  createCorsDelegator,
+  getAuthDeliverySummary,
+  getProxyTrustSummary,
+  validateRuntimeConfig
+} from "./src/config.js";
 import { registerAuthRoutes } from "./src/routes/auth.js";
 import { registerSyncRoutes } from "./src/routes/sync.js";
 import { registerIdentityRoutes } from "./src/routes/identity.js";
 import { registerAttestRoutes } from "./src/routes/attest.js";
 import { registerPaymentRoutes } from "./src/routes/payment.js";
 import { registerAccountRoutes } from "./src/routes/account.js";
+import { registerAdminAuthRoutes } from "./src/routes/admin/auth.js";
 
 async function registerRouteGroup(app, name, registerFn) {
   try {
@@ -17,8 +24,16 @@ async function registerRouteGroup(app, name, registerFn) {
   }
 }
 
+async function registerRouteGroupStrict(app, name, registerFn) {
+  try {
+    await registerFn(app);
+  } catch (error) {
+    app.log.fatal({ err: error, route_group: name }, "Admin route registration failed; aborting startup");
+    throw error;
+  }
+}
+
 async function main() {
-  const app = Fastify({ logger: true });
   const allowedOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)
     : ["https://konfirmata.com", "https://www.konfirmata.com"];
@@ -43,13 +58,15 @@ async function main() {
     }
   }
 
-  app.log.info(getAuthDeliverySummary(), "Auth delivery config");
-
-  await app.register(cors, {
-    origin: allowedOrigins,
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Device-Identity"]
+  const app = Fastify({
+    logger: true,
+    ...(config.trustProxy === undefined ? {} : { trustProxy: config.trustProxy })
   });
+
+  app.log.info(getAuthDeliverySummary(), "Auth delivery config");
+  app.log.info(getProxyTrustSummary(), "Proxy trust config");
+
+  await app.register(cors, createCorsDelegator(allowedOrigins));
 
   await app.register(rateLimit, {
     global: false
@@ -70,6 +87,7 @@ async function main() {
   await registerRouteGroup(app, "identity", registerIdentityRoutes);
   await registerRouteGroup(app, "attest", registerAttestRoutes);
   await registerRouteGroup(app, "payment", registerPaymentRoutes);
+  await registerRouteGroupStrict(app, "admin-auth", registerAdminAuthRoutes);
 
   await app.listen({ host: config.host, port: config.port });
 }
