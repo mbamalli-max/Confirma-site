@@ -245,6 +245,9 @@ export async function registerAdminClassificationRoutes(app) {
         `UPDATE admin_classification_confirmations SET used_at = NOW() WHERE token_hash = $1`,
         [confirmation.token_hash]
       );
+      await client.query(
+        `UPDATE metrics_rollup_state SET stale = TRUE, invalidations = invalidations + 1`
+      );
       await writeAuditRow({
         adminUserId: request.adminUser.id,
         action: confirmation.target_classification === null

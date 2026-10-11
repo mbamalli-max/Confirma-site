@@ -126,7 +126,8 @@ before(async () => {
   await prepareAdminTestDatabase({
     migrations: [
       new URL("../migrations/009_admin_backend.sql", import.meta.url),
-      new URL("../migrations/010_account_classification.sql", import.meta.url)
+      new URL("../migrations/010_account_classification.sql", import.meta.url),
+      new URL("../migrations/011_admin_metrics_rollup.sql", import.meta.url)
     ]
   });
   config.adminJwtSecret = crypto.randomBytes(32).toString("hex");

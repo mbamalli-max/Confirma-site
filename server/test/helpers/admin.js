@@ -14,6 +14,7 @@ import { config, createCorsDelegator } from "../../src/config.js";
 import { query } from "../../src/db.js";
 import { registerAdminAuthRoutes } from "../../src/routes/admin/auth.js";
 import { registerAdminClassificationRoutes } from "../../src/routes/admin/classification.js";
+import { registerAdminMetricsRoutes } from "../../src/routes/admin/metrics.js";
 
 export const PUBLIC_ORIGINS = ["https://konfirmata.com", "https://www.konfirmata.com"];
 export const ADMIN_ORIGIN = "https://admin.example.test";
@@ -102,6 +103,7 @@ export async function buildApp({ trustProxy, logger = false } = {}) {
   app.get("/health", async () => ({ status: "ok" }));
   await registerAdminAuthRoutes(app);
   await registerAdminClassificationRoutes(app);
+  await registerAdminMetricsRoutes(app);
   app.get("/admin/owner-only", { preHandler: requireAdmin(["owner"]) }, async () => ({ ok: true }));
   await app.ready();
   return app;
