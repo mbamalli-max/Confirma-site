@@ -15,6 +15,7 @@ import { query } from "../../src/db.js";
 import { registerAdminAuthRoutes } from "../../src/routes/admin/auth.js";
 import { registerAdminClassificationRoutes } from "../../src/routes/admin/classification.js";
 import { registerAdminMetricsRoutes } from "../../src/routes/admin/metrics.js";
+import { registerAdminSuppressedRoutes } from "../../src/routes/admin/suppressed.js";
 
 export const PUBLIC_ORIGINS = ["https://konfirmata.com", "https://www.konfirmata.com"];
 export const ADMIN_ORIGIN = "https://admin.example.test";
@@ -104,6 +105,7 @@ export async function buildApp({ trustProxy, logger = false } = {}) {
   await registerAdminAuthRoutes(app);
   await registerAdminClassificationRoutes(app);
   await registerAdminMetricsRoutes(app);
+  await registerAdminSuppressedRoutes(app);
   app.get("/admin/owner-only", { preHandler: requireAdmin(["owner"]) }, async () => ({ ok: true }));
   await app.ready();
   return app;

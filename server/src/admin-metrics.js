@@ -1,4 +1,5 @@
 import { adminReadQuery, rebuildQuery, withRebuildTransaction } from "./admin-db.js";
+import { COUNTRY_CODES, NO_VALID_CODE, SECTOR_IDS } from "./admin-dimensions.js";
 
 export const METRICS_REBUILD_LOCK_KEY = 7300311;
 
@@ -62,6 +63,10 @@ const EMPTY_COUNTS = Object.freeze({
 class RebuildInProgress extends Error {}
 let rebuildInProgress = false;
 
+function eligibleEventDateSql(expression, parameter) {
+  return `${expression} >= DATE '2000-01-01' AND ${expression} <= ${parameter}::date`;
+}
+
 function countsFromRows(rows) {
   const counts = { ...EMPTY_COUNTS };
   for (const row of rows) {
@@ -96,8 +101,13 @@ async function performRebuild({ automatic }) {
       );
       if (!lock.rows[0]?.acquired) throw new RebuildInProgress("Metrics rebuild already running.");
 
-      const started = await client.query(`SELECT clock_timestamp() AS started_at`);
+      const started = await client.query(`
+        SELECT captured_at AS started_at,
+               (captured_at AT TIME ZONE 'UTC')::date + 1 AS event_date_upper_bound
+        FROM (SELECT clock_timestamp() AS captured_at) captured
+      `);
       const startedAt = started.rows[0].started_at;
+      const eventDateUpperBound = started.rows[0].event_date_upper_bound;
 
       await client.query(`DELETE FROM metrics_daily_rollup`);
       await client.query(`
@@ -143,13 +153,12 @@ async function performRebuild({ automatic }) {
           FROM metric_rows metric
           LEFT JOIN account_classification classification
             ON classification.user_id = metric.user_id
-          WHERE metric.metric_date >= DATE '2000-01-01'
-            AND metric.metric_date <= (clock_timestamp() AT TIME ZONE 'UTC')::date + 1
+          WHERE ${eligibleEventDateSql("metric.metric_date", "$1")}
         )
         SELECT metric_date, metric_key, bucket, COUNT(*)::int
         FROM classified
         GROUP BY metric_date, metric_key, bucket
-      `);
+      `, [eventDateUpperBound]);
 
       await client.query(`DELETE FROM metrics_snapshot`);
       await client.query(`
@@ -162,6 +171,27 @@ async function performRebuild({ automatic }) {
           LEFT JOIN ledger_entries entry
             ON entry.device_identity = device.device_identity
           GROUP BY account.id
+        ), eligible_event_rows AS (
+          SELECT
+            'contributors_records_received'::text AS metric_key,
+            account.id AS user_id,
+            (entry.synced_at AT TIME ZONE 'UTC')::date AS event_date
+          FROM ledger_entries entry
+          INNER JOIN device_identities device
+            ON device.device_identity = entry.device_identity
+          INNER JOIN users account
+            ON account.phone_number = device.phone_number
+
+          UNION ALL
+
+          SELECT
+            'contributors_attestations_issued'::text AS metric_key,
+            account.id AS user_id,
+            (attestation.issued_at AT TIME ZONE 'UTC')::date AS event_date
+          FROM attestations attestation
+          INNER JOIN users account
+            ON account.phone_number = attestation.phone_number
+          WHERE attestation.status = 'VALID'
         ), snapshot_rows AS (
           SELECT 'accounts_phone_verified'::text AS metric_key, account.id AS user_id
           FROM users account
@@ -196,6 +226,19 @@ async function performRebuild({ automatic }) {
 
           SELECT 'accounts_all'::text AS metric_key, account.id AS user_id
           FROM users account
+
+          UNION ALL
+
+          SELECT DISTINCT event.metric_key, event.user_id
+          FROM eligible_event_rows event
+          WHERE ${eligibleEventDateSql("event.event_date", "$1")}
+
+          UNION ALL
+
+          SELECT DISTINCT 'contributors_devices_active'::text AS metric_key, account.id AS user_id
+          FROM device_identities device
+          INNER JOIN users account ON account.phone_number = device.phone_number
+          WHERE device.status = 'ACTIVE'
         ), classified AS (
           SELECT
             snapshot.metric_key,
@@ -211,7 +254,43 @@ async function performRebuild({ automatic }) {
         SELECT metric_key, bucket, COUNT(*)::int
         FROM classified
         GROUP BY metric_key, bucket
-      `);
+      `, [eventDateUpperBound]);
+
+      await client.query(`DELETE FROM metrics_dimension_snapshot`);
+      await client.query(`
+        INSERT INTO metrics_dimension_snapshot (dimension, category, count)
+        WITH external_accounts AS (
+          SELECT account.id AS user_id
+          FROM users account
+          INNER JOIN account_classification classification
+            ON classification.user_id = account.id
+           AND classification.classification = 'EXTERNAL'
+        ), dimension_rows AS (
+          SELECT
+            'country'::text AS dimension,
+            CASE
+              WHEN BTRIM(profile.operating_region::text) = ANY($1::text[])
+                THEN BTRIM(profile.operating_region::text)
+              ELSE $3::text
+            END AS category
+          FROM external_accounts account
+          LEFT JOIN profiles profile ON profile.user_id = account.user_id
+
+          UNION ALL
+
+          SELECT
+            'sector'::text AS dimension,
+            CASE
+              WHEN profile.sector_id = ANY($2::text[]) THEN profile.sector_id
+              ELSE $3::text
+            END AS category
+          FROM external_accounts account
+          LEFT JOIN profiles profile ON profile.user_id = account.user_id
+        )
+        SELECT dimension, category, COUNT(*)::int
+        FROM dimension_rows
+        GROUP BY dimension, category
+      `, [COUNTRY_CODES, SECTOR_IDS, NO_VALID_CODE]);
 
       const state = await client.query(
         `
@@ -236,13 +315,12 @@ async function performRebuild({ automatic }) {
                 FROM attestations attestation
                 WHERE attestation.status = 'VALID'
               ) dated
-              WHERE dated.metric_date < DATE '2000-01-01'
-                 OR dated.metric_date > (clock_timestamp() AT TIME ZONE 'UTC')::date + 1
+              WHERE NOT (${eligibleEventDateSql("dated.metric_date", "$2")})
             )
           WHERE id = TRUE
           RETURNING built_at, build_ms, out_of_range
         `,
-        [startedAt]
+        [startedAt, eventDateUpperBound]
       );
       return { rebuilt: true, automatic, ...state.rows[0] };
     });
@@ -325,6 +403,46 @@ export async function readProvisional() {
     WHERE metric_key = 'accounts_all' AND bucket = 'unclassified'
   `);
   return result.rows[0]?.provisional === true;
+}
+
+export async function readSuppressedOverview() {
+  const [daily, snapshot, provisional] = await Promise.all([
+    adminReadQuery(`
+      SELECT metric_key, COALESCE(SUM(count), 0)::int AS count
+      FROM metrics_daily_rollup
+      WHERE bucket = 'external'
+      GROUP BY metric_key
+    `),
+    adminReadQuery(`
+      SELECT metric_key, count
+      FROM metrics_snapshot
+      WHERE bucket = 'external'
+    `),
+    readProvisional()
+  ]);
+  return {
+    daily: Object.fromEntries(daily.rows.map((row) => [row.metric_key, Number(row.count)])),
+    snapshot: Object.fromEntries(snapshot.rows.map((row) => [row.metric_key, Number(row.count)])),
+    provisional
+  };
+}
+
+export async function readDimensionSnapshot(dimension) {
+  if (dimension !== "country" && dimension !== "sector") {
+    throw new Error("Invalid dimension.");
+  }
+  const allowed = dimension === "country" ? COUNTRY_CODES : SECTOR_IDS;
+  const result = await adminReadQuery(
+    `
+      SELECT category, count
+      FROM metrics_dimension_snapshot
+      WHERE dimension = $1
+        AND (category = ANY($2::text[]) OR category = $3)
+      ORDER BY category
+    `,
+    [dimension, allowed, NO_VALID_CODE]
+  );
+  return result.rows.map(({ category, count }) => ({ category, count: Number(count) }));
 }
 
 export async function readOverview({ range }) {

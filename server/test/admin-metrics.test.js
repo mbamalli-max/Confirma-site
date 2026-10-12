@@ -144,6 +144,7 @@ async function resetState() {
       account_classification,
       admin_sessions,
       admin_users,
+      metrics_dimension_snapshot,
       metrics_daily_rollup,
       metrics_snapshot,
       attestations,
@@ -251,7 +252,8 @@ before(async () => {
     migrations: [
       new URL("../migrations/009_admin_backend.sql", import.meta.url),
       new URL("../migrations/010_account_classification.sql", import.meta.url),
-      new URL("../migrations/011_admin_metrics_rollup.sql", import.meta.url)
+      new URL("../migrations/011_admin_metrics_rollup.sql", import.meta.url),
+      new URL("../migrations/012_admin_dimension_snapshot.sql", import.meta.url)
     ]
   });
   config.adminJwtSecret = crypto.randomBytes(32).toString("hex");
@@ -603,7 +605,7 @@ test("23b: metrics queries project only aggregate and state fields", async () =>
       "acquired", "started_at", "built_at", "build_ms", "out_of_range", "claimed",
       "due", "metric_key", "bucket", "count", "provisional", "period_start", "partial",
       "stale", "invalidations", "last_attempt_at", "last_failure_at", "checked_at",
-      "cache_valid_until", "daily_rollup_rows", "snapshot_rows"
+      "cache_valid_until", "daily_rollup_rows", "snapshot_rows", "event_date_upper_bound"
     ]);
     const forbidden = new Set([
       "email", "phone_number", "name", "business_name", "payload", "signature", "public_key",

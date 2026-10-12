@@ -98,6 +98,9 @@ export const config = {
   adminJwtExpiry: process.env.ADMIN_JWT_EXPIRY || "1h",
   adminCorsOrigins: process.env.ADMIN_CORS_ORIGINS || "",
   adminIpAllowlist: process.env.ADMIN_IP_ALLOWLIST || "",
+  adminKAnonThreshold: process.env.ADMIN_K_ANON_THRESHOLD === undefined
+    ? 5
+    : Number(process.env.ADMIN_K_ANON_THRESHOLD),
   trustProxyRaw: process.env.TRUST_PROXY,
   trustProxy: resolveTrustProxy(process.env.TRUST_PROXY),
   serverReceiptSecret: process.env.SERVER_RECEIPT_SECRET || "",
@@ -148,6 +151,8 @@ export function validateRuntimeConfig() {
   const jwtSecretMissing = !config.jwtSecret;
   const receiptSecretMissing = !config.serverReceiptSecret;
   const adminJwtExpiry = getAdminJwtExpiry();
+  const adminKAnonThresholdValid = Number.isInteger(config.adminKAnonThreshold)
+    && config.adminKAnonThreshold >= 5;
 
   const adminTotpKeyRaw = String(config.adminTotpEncKey || "");
   const adminTotpKeyValid = /^[0-9a-fA-F]{64}$/.test(adminTotpKeyRaw)
@@ -180,6 +185,10 @@ export function validateRuntimeConfig() {
     errors.push("ADMIN_JWT_EXPIRY must be a positive duration such as 1h, 60m, 3600s, or 3600");
   } else if (adminJwtExpiry.seconds > 3_600) {
     errors.push("ADMIN_JWT_EXPIRY must not exceed 1 hour");
+  }
+
+  if (!adminKAnonThresholdValid) {
+    errors.push("ADMIN_K_ANON_THRESHOLD must be an integer of at least 5");
   }
 
   if (strictMode && String(config.adminIpAllowlist || "").trim() && !config.trustProxy) {
@@ -221,7 +230,8 @@ export function validateRuntimeConfig() {
 
   if (errors.length) {
     const error = new Error(`Config validation failed:\n- ${errors.join("\n- ")}`);
-    error.fatal = jwtSecretMissing || receiptSecretMissing || strictMode || config.trustProxy === null;
+    error.fatal = jwtSecretMissing || receiptSecretMissing || strictMode
+      || config.trustProxy === null || !adminKAnonThresholdValid;
     throw error;
   }
 }

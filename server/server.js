@@ -17,6 +17,7 @@ import { registerAccountRoutes } from "./src/routes/account.js";
 import { registerAdminAuthRoutes } from "./src/routes/admin/auth.js";
 import { registerAdminClassificationRoutes } from "./src/routes/admin/classification.js";
 import { registerAdminMetricsRoutes } from "./src/routes/admin/metrics.js";
+import { registerAdminSuppressedRoutes } from "./src/routes/admin/suppressed.js";
 
 async function registerRouteGroup(app, name, registerFn) {
   try {
@@ -92,6 +93,7 @@ async function main() {
   await registerRouteGroupStrict(app, "admin-auth", registerAdminAuthRoutes);
   await registerRouteGroupStrict(app, "admin-classification", registerAdminClassificationRoutes);
   await registerRouteGroupStrict(app, "admin-metrics", registerAdminMetricsRoutes);
+  await registerRouteGroupStrict(app, "admin-suppressed", registerAdminSuppressedRoutes);
 
   await app.listen({ host: config.host, port: config.port });
 }
