@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { config } from "../config.js";
-import { query } from "../db.js";
+import { query, withTransaction } from "../db.js";
 import {
   buildAuthReply,
   generateOtpCode,
@@ -52,10 +52,30 @@ function createPhoneAnchorRequiredError() {
   return error;
 }
 
+function createIdentityConflictError() {
+  const error = new Error("We couldn't complete sign-in with these details. If you already have an account, sign in with the email address you used before.");
+  error.statusCode = 409;
+  return error;
+}
 
-async function getUserByPhoneNumber(phoneNumber) {
+function createDeviceConflictError() {
+  const error = new Error("Device identity already registered.");
+  error.statusCode = 409;
+  return error;
+}
+
+function isExpectedEmailConflict(error) {
+  return error?.code === "23505" && error?.constraint === "idx_users_email_unique";
+}
+
+function isExpectedDeviceConflict(error) {
+  return error?.code === "23505" && error?.constraint === "device_identities_pkey";
+}
+
+
+async function getUserByPhoneNumber(phoneNumber, database = { query }) {
   if (!phoneNumber) return null;
-  const result = await query(
+  const result = await database.query(
     `
       SELECT id, phone_number, email, email_verified, phone_verified
       FROM users
@@ -67,9 +87,9 @@ async function getUserByPhoneNumber(phoneNumber) {
   return result.rows[0] || null;
 }
 
-async function getUserByEmail(email) {
+async function getUserByEmail(email, database = { query }) {
   if (!email) return null;
-  const result = await query(
+  const result = await database.query(
     `
       SELECT id, phone_number, email, email_verified, phone_verified
       FROM users
@@ -91,53 +111,126 @@ async function sendOtpByEmail(email, code) {
   });
 }
 
-async function upsertVerifiedUser({ channel, identifier, phoneNumber, email }) {
+async function upsertVerifiedUser(database, { channel, identifier, phoneNumber, email }) {
   if (channel === "sms") {
-    await query(
-      `
-        INSERT INTO users (phone_number, email, email_verified, phone_verified)
-        VALUES ($1, $2, FALSE, TRUE)
-        ON CONFLICT (phone_number)
-        DO UPDATE SET
-          email = COALESCE(EXCLUDED.email, users.email),
-          phone_verified = TRUE
-      `,
-      [phoneNumber, email || null]
-    );
+    const existingByPhone = await getUserByPhoneNumber(phoneNumber, database);
+    if (existingByPhone) {
+      const result = await database.query(
+        `
+          UPDATE users
+          SET phone_verified = TRUE
+          WHERE phone_number = $1
+          RETURNING id, phone_number, email, email_verified, phone_verified
+        `,
+        [phoneNumber]
+      );
+      return result.rows[0] || null;
+    }
 
-    return getUserByPhoneNumber(phoneNumber);
+    const inserted = await database.query(
+      `
+        INSERT INTO users (phone_number, phone_verified)
+        VALUES ($1, TRUE)
+        ON CONFLICT (phone_number)
+        DO NOTHING
+        RETURNING id, phone_number, email, email_verified, phone_verified
+      `,
+      [phoneNumber]
+    );
+    if (inserted.rows[0]) return inserted.rows[0];
+
+    const result = await database.query(
+      `
+        UPDATE users
+        SET phone_verified = TRUE
+        WHERE phone_number = $1
+        RETURNING id, phone_number, email, email_verified, phone_verified
+      `,
+      [phoneNumber]
+    );
+    return result.rows[0] || null;
   }
 
-  const existingByEmail = await getUserByEmail(email);
+  const existingByEmail = await getUserByEmail(email, database);
   if (existingByEmail) {
-    await query(
+    const result = await database.query(
       `
         UPDATE users
         SET email = $2, email_verified = TRUE
         WHERE phone_number = $1
+        RETURNING id, phone_number, email, email_verified, phone_verified
       `,
       [existingByEmail.phone_number, email]
     );
-    return getUserByPhoneNumber(existingByEmail.phone_number);
+    return result.rows[0] || null;
   }
 
   if (!phoneNumber) {
     throw createPhoneAnchorRequiredError();
   }
 
-  await query(
+  const inserted = await database.query(
     `
       INSERT INTO users (phone_number, email, email_verified, phone_verified)
       VALUES ($1, $2, TRUE, FALSE)
       ON CONFLICT (phone_number)
-      DO UPDATE SET
-        email = COALESCE(EXCLUDED.email, users.email),
-        email_verified = TRUE
+      DO NOTHING
+      RETURNING id, phone_number, email, email_verified, phone_verified
     `,
     [phoneNumber, email]
   );
 
-  return getUserByPhoneNumber(phoneNumber);
+  if (!inserted.rows[0]) {
+    throw createIdentityConflictError();
+  }
+  return inserted.rows[0];
+}
+
+async function registerDevice(database, user, deviceIdentity, publicKey) {
+  if (!deviceIdentity || !publicKey) return;
+
+  const existingDeviceResult = await database.query(
+    `
+      SELECT phone_number
+      FROM device_identities
+      WHERE device_identity = $1
+      LIMIT 1
+    `,
+    [deviceIdentity]
+  );
+  const existingDevice = existingDeviceResult.rows[0];
+
+  if (existingDevice && existingDevice.phone_number !== user.phone_number) {
+    throw createDeviceConflictError();
+  }
+
+  if (existingDevice) {
+    // Same-account re-verify: refresh activity timestamps only. Ownership, public_key,
+    // and revoked_at are immutable on this path.
+    await database.query(
+      `
+        UPDATE device_identities
+        SET last_seen_at = NOW(), updated_at = NOW()
+        WHERE device_identity = $1
+      `,
+      [deviceIdentity]
+    );
+    return;
+  }
+
+  await database.query(
+    `
+      INSERT INTO device_identities (
+        device_identity,
+        public_key,
+        phone_number,
+        status,
+        last_seen_at
+      )
+      VALUES ($1, $2, $3, 'ACTIVE', NOW())
+    `,
+    [deviceIdentity, publicKey, user.phone_number]
+  );
 }
 
 function buildVerificationResponse(user, channel, deviceIdentity = "") {
@@ -329,8 +422,7 @@ export async function registerAuthRoutes(app) {
     const computedBuf = Buffer.from(computedHash, "hex");
     const storedBuf = Buffer.from(challenge.otp_hash, "hex");
     const matches = computedBuf.length === storedBuf.length && crypto.timingSafeEqual(computedBuf, storedBuf);
-    const challengeExpired = new Date(challenge.expires_at).getTime() < Date.now();
-    if (challenge.verified_at || challengeExpired || !matches) {
+    if (!matches) {
       await query(
         `
           UPDATE otp_challenges
@@ -342,82 +434,64 @@ export async function registerAuthRoutes(app) {
       return reply.code(401).send({ error: "OTP verification failed." });
     }
 
-    await query(
+    const consumedResult = await query(
       `
         UPDATE otp_challenges
         SET verified_at = NOW()
         WHERE id = $1
+          AND verified_at IS NULL
+          AND expires_at > NOW()
+        RETURNING id
       `,
       [challenge.id]
     );
 
+    if (!consumedResult.rows[0]) {
+      return reply.code(401).send({ error: "OTP verification failed." });
+    }
+
     let user = null;
 
     try {
-      user = await upsertVerifiedUser({
-        channel,
-        identifier,
-        phoneNumber: channel === "sms" ? identifier : optionalPhoneNumber,
-        email: optionalEmail
+      user = await withTransaction(async (database) => {
+        const verifiedUser = await upsertVerifiedUser(database, {
+          channel,
+          identifier,
+          phoneNumber: channel === "sms" ? identifier : optionalPhoneNumber,
+          email: optionalEmail
+        });
+
+        if (!verifiedUser) {
+          throw new Error("Verified account could not be loaded.");
+        }
+
+        await registerDevice(database, verifiedUser, deviceIdentity, publicKey);
+        return verifiedUser;
       });
     } catch (error) {
-      return reply.code(error.statusCode || 500).send({
-        error: error.message || "Unable to verify this account right now.",
-        ...(error.code ? { code: error.code } : {}),
-        ...(error.missing ? { missing: error.missing } : {})
-      });
+      if (error?.statusCode === 409) {
+        return reply.code(409).send({
+          error: error.message,
+          ...(error.code ? { code: error.code } : {}),
+          ...(error.missing ? { missing: error.missing } : {})
+        });
+      }
+      if (isExpectedEmailConflict(error)) {
+        const conflict = createIdentityConflictError();
+        return reply.code(409).send({ error: conflict.message });
+      }
+      if (isExpectedDeviceConflict(error)) {
+        const conflict = createDeviceConflictError();
+        return reply.code(409).send({ error: conflict.message });
+      }
+      return reply.code(500).send({ error: "Unable to verify this account right now." });
     }
 
     if (!user) {
       return reply.code(500).send({ error: "Verified account could not be loaded." });
     }
 
-    if (deviceIdentity && publicKey) {
-      const existingDeviceResult = await query(
-        `
-          SELECT phone_number
-          FROM device_identities
-          WHERE device_identity = $1
-          LIMIT 1
-        `,
-        [deviceIdentity]
-      );
-      const existingDevice = existingDeviceResult.rows[0];
-
-      if (existingDevice && existingDevice.phone_number !== user.phone_number) {
-        // Device identity is registered to a different account; reject without leaking which.
-        return reply.code(409).send({ error: "Device identity already registered." });
-      }
-
-      if (existingDevice) {
-        // Same-phone re-verify: refresh activity timestamps only.
-        // public_key and phone_number are immutable after first registration.
-        // revoked_at is intentionally not cleared; use /identity/rotate for key changes.
-        await query(
-          `
-            UPDATE device_identities
-            SET last_seen_at = NOW(), updated_at = NOW()
-            WHERE device_identity = $1
-          `,
-          [deviceIdentity]
-        );
-      } else {
-        await query(
-          `
-            INSERT INTO device_identities (
-              device_identity,
-              public_key,
-              phone_number,
-              status,
-              last_seen_at
-            )
-            VALUES ($1, $2, $3, 'ACTIVE', NOW())
-          `,
-          [deviceIdentity, publicKey, user.phone_number]
-        );
-      }
-    }
-
+    // Token construction happens only after withTransaction has committed.
     return buildVerificationResponse(user, channel, deviceIdentity);
   });
 }
