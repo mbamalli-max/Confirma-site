@@ -8,6 +8,7 @@ import { registerIdentityRoutes } from "./src/routes/identity.js";
 import { registerAttestRoutes } from "./src/routes/attest.js";
 import { registerPaymentRoutes } from "./src/routes/payment.js";
 import { registerAccountRoutes } from "./src/routes/account.js";
+import { registerReadinessRoute } from "./src/routes/health.js";
 
 async function registerRouteGroup(app, name, registerFn) {
   try {
@@ -63,6 +64,8 @@ async function main() {
       env: process.env.NODE_ENV || "development"
     });
   });
+
+  registerReadinessRoute(app);
 
   await registerRouteGroup(app, "auth", registerAuthRoutes);
   await registerRouteGroup(app, "account", registerAccountRoutes);
