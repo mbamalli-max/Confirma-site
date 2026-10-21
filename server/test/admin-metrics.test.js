@@ -47,6 +47,7 @@ async function seedUser({
   email = `${crypto.randomUUID()}@example.test`,
   name = null,
   businessName = null,
+  businessType = null,
   phoneVerified = false,
   emailVerified = false,
   deviceStatus = "ACTIVE",
@@ -62,10 +63,10 @@ async function seedUser({
     [phone, email, phoneVerified, emailVerified, createdAt]
   );
   const user = inserted.rows[0];
-  if (name || businessName) {
+  if (name || businessName || businessType) {
     await query(
-      `INSERT INTO profiles (user_id, name, business_name) VALUES ($1, $2, $3)`,
-      [user.id, name, businessName]
+      `INSERT INTO profiles (user_id, name, business_name, business_type_id) VALUES ($1, $2, $3, $4)`,
+      [user.id, name, businessName, businessType]
     );
   }
   const deviceIdentity = `device-${crypto.randomUUID()}`;
@@ -295,7 +296,9 @@ test("1: overview figures agree with independent source counts", async () => {
       accounts_email_verified: 1,
       devices_active: 3,
       accounts_with_records: 3,
-      accounts_with_3plus_records: 0
+      accounts_with_3plus_records: 0,
+      accounts_setup_fields_stored: 0,
+      accounts_setup_fields_with_records: 0
     }
   );
 });
@@ -327,10 +330,151 @@ test("3: every returned total reconciles to its three buckets", async () => {
 test("4: an empty database returns every metric with four zeroes", async () => {
   await rebuildRollups();
   const overview = await readOverview({ range: "all" });
-  assert.equal(overview.metrics.length, 8);
+  assert.equal(overview.metrics.length, 10);
   for (const item of overview.metrics) {
     assert.deepEqual([item.external, item.internal_demo, item.unclassified, item.total], [0, 0, 0, 0]);
   }
+});
+
+test("slice 3c 1: setup fields require a nonblank name and business type", async () => {
+  await seedUser({ name: "Ready account", businessType: "trade_retail" });
+  await seedUser({ name: "Name only" });
+  await seedUser({ businessType: "type_only" });
+  await seedUser();
+  await seedUser({ name: "   ", businessType: "space_name" });
+  await seedUser({ name: "Space type", businessType: "   " });
+  await rebuildRollups();
+  const overview = await readOverview({ range: "all" });
+  assert.equal(metric(overview, "accounts_setup_fields_stored").total, 1);
+});
+
+test("slice 3c 2: business_name without name does not count as setup fields", async () => {
+  await seedUser({ businessName: "Legacy business", businessType: "trade_retail" });
+  await rebuildRollups();
+  const overview = await readOverview({ range: "all" });
+  assert.equal(metric(overview, "accounts_setup_fields_stored").total, 0);
+  const sources = await Promise.all([
+    "../src/admin-metrics.js",
+    "../src/routes/admin/metrics.js",
+    "../src/admin-db.js"
+  ].map((path) => readFile(new URL(path, import.meta.url), "utf8")));
+  assert.equal(sources.join("\n").toLowerCase().includes("business_name"), false);
+});
+
+test("slice 3c 3: an unlisted business type counts but is never stored in a rollup or response", async () => {
+  const marker = "retired_type_x";
+  await seedUser({ name: "Stored fields", businessType: marker });
+  await rebuildRollups();
+  const overview = await readOverview({ range: "all" });
+  assert.equal(metric(overview, "accounts_setup_fields_stored").total, 1);
+  const rollups = await query(`
+    SELECT row_to_json(rows)::text AS value
+    FROM (
+      SELECT metric_key, bucket, count FROM metrics_snapshot
+      UNION ALL
+      SELECT metric_key, bucket, count FROM metrics_daily_rollup
+    ) rows
+  `);
+  assert.equal(JSON.stringify(rollups.rows).includes(marker), false);
+  assert.equal(JSON.stringify(overview).includes(marker), false);
+});
+
+test("slice 3c 4: setup fields with records uses the all-time record count and remains a subset", async () => {
+  const now = new Date();
+  await seedUser({ name: "Current record", businessType: "one", records: [{ syncedAt: now }] });
+  await seedUser({ name: "Old record", businessType: "two", records: [{ syncedAt: new Date("1999-01-01T00:00:00Z") }] });
+  await seedUser({ name: "No record", businessType: "three" });
+  await seedUser({ name: "Missing type", records: [{ syncedAt: now }] });
+  await rebuildRollups();
+  const overview = await readOverview({ range: "all" });
+  assert.equal(metric(overview, "accounts_setup_fields_stored").total, 3);
+  assert.equal(metric(overview, "accounts_setup_fields_with_records").total, 2);
+  assert.equal(metric(overview, "accounts_with_records").total, 3);
+});
+
+test("slice 3c 5: setup-field subset chains hold in every bucket over thirty accounts", async () => {
+  const classifications = ["EXTERNAL", "DEMO", null];
+  for (const classification of classifications) {
+    for (let index = 0; index < 10; index += 1) {
+      await seedUser({
+        classification,
+        name: index < 7 ? `Account ${index}` : null,
+        businessType: index < 6 ? `type_${index}` : null,
+        records: index < 4 ? [{ syncedAt: new Date() }] : []
+      });
+    }
+  }
+  await rebuildRollups();
+  const overview = await readOverview({ range: "all" });
+  const setup = metric(overview, "accounts_setup_fields_stored");
+  const setupWithRecords = metric(overview, "accounts_setup_fields_with_records");
+  const allAccounts = metric(overview, "accounts_registered");
+  const withRecords = metric(overview, "accounts_with_records");
+  for (const bucket of ["external", "internal_demo", "unclassified", "total"]) {
+    assert.ok(setupWithRecords[bucket] <= setup[bucket], bucket);
+    assert.ok(setup[bucket] <= allAccounts[bucket], bucket);
+    assert.ok(setupWithRecords[bucket] <= withRecords[bucket], bucket);
+  }
+});
+
+test("slice 3c 6: setup-field figures use external, internal-demo, and unclassified buckets", async () => {
+  await seedUser({ classification: "EXTERNAL", name: "External", businessType: "one" });
+  await seedUser({ classification: "DEMO", name: "Demo", businessType: "two" });
+  await seedUser({ name: "Unclassified", businessType: "three" });
+  await rebuildRollups();
+  const counts = metric(await readOverview({ range: "all" }), "accounts_setup_fields_stored");
+  assert.deepEqual(
+    [counts.external, counts.internal_demo, counts.unclassified, counts.total],
+    [1, 1, 1, 3]
+  );
+});
+
+test("slice 3c 7: operator overview exposes both point-in-time setup figures for every range", async () => {
+  await seedUser({ classification: "EXTERNAL", name: "Ready", businessType: "trade_retail", records: [{ syncedAt: new Date() }] });
+  await rebuildRollups();
+  const app = await buildApp();
+  const access = await ownerAccess(app);
+  const keys = ["accounts_setup_fields_stored", "accounts_setup_fields_with_records"];
+  try {
+    for (const range of ["30d", "90d", "12m", "all"]) {
+      const response = await app.inject({ method: "GET", url: `/admin/metrics/overview?range=${range}`, headers: access.headers });
+      assert.equal(response.statusCode, 200);
+      for (const key of keys) {
+        const actual = metric(response.json(), key);
+        const expected = METRIC_DEFINITIONS.find((item) => item.key === key);
+        assert.equal(actual.name, expected.name);
+        assert.equal(actual.definition, expected.definition);
+        assert.equal(actual.point_in_time, true);
+        assert.equal(actual.range_ignored, true);
+        assert.deepEqual(
+          Object.keys(actual).filter((field) => ["external", "internal_demo", "unclassified", "total"].includes(field)),
+          ["external", "internal_demo", "unclassified", "total"]
+        );
+      }
+    }
+    assert.equal(METRIC_DEFINITIONS.filter(({ definition }) => definition.toLowerCase().includes("completed onboarding")).length, 1);
+    assert.match(
+      METRIC_DEFINITIONS.find(({ key }) => key === "accounts_setup_fields_stored").definition,
+      /a proxy for completed onboarding, not a count of it/i
+    );
+  } finally { await app.close(); }
+});
+
+test("slice 3c 8: setup-field metrics are rejected by the time-series route", async () => {
+  await rebuildRollups();
+  const app = await buildApp();
+  const access = await ownerAccess(app);
+  try {
+    for (const key of ["accounts_setup_fields_stored", "accounts_setup_fields_with_records"]) {
+      const response = await app.inject({
+        method: "GET",
+        url: `/admin/metrics/timeseries?metric=${key}&bucket=month&periods=1`,
+        headers: access.headers
+      });
+      assert.equal(response.statusCode, 400);
+      assert.equal(response.json().error, "point_in_time_metric");
+    }
+  } finally { await app.close(); }
 });
 
 test("5: classification apply moves all historical records on the next read", async () => {
@@ -631,6 +775,96 @@ test("23c: metrics source never references record contents", async () => {
   ])).join("\n").toLowerCase();
   for (const forbidden of ["payload", "signature", "public_key", "otp_hash", "business_name"]) {
     assert.equal(source.includes(forbidden), false, forbidden);
+  }
+});
+
+test("slice 3c 16: profile markers never appear in admin responses or rollup rows", async () => {
+  const markers = [
+    "slice3c-name-marker-16391",
+    "slice3c-business-marker-26482",
+    "slice3c-type-marker-37593"
+  ];
+  await seedUser({
+    classification: "EXTERNAL",
+    name: markers[0],
+    businessName: markers[1],
+    businessType: markers[2],
+    records: [{ syncedAt: new Date() }]
+  });
+  await rebuildRollups();
+  const app = await buildApp();
+  const access = await ownerAccess(app);
+  try {
+    const routes = [
+      ...["30d", "90d", "12m", "all"].map((range) => `/admin/metrics/overview?range=${range}`),
+      ...["accounts_registered", "records_received", "attestations_issued"].flatMap((key) => [
+        `/admin/metrics/timeseries?metric=${key}&bucket=week&periods=1`,
+        `/admin/metrics/timeseries?metric=${key}&bucket=month&periods=1`
+      ]),
+      "/admin/metrics/status",
+      "/admin/suppressed/overview",
+      "/admin/suppressed/breakdown?dimension=country",
+      "/admin/suppressed/breakdown?dimension=sector"
+    ];
+    for (const url of routes) {
+      const body = (await app.inject({ method: "GET", url, headers: access.headers })).body;
+      for (const marker of markers) assert.equal(body.includes(marker), false, `${url} disclosed ${marker}`);
+    }
+    const refresh = (await app.inject({ method: "POST", url: "/admin/metrics/refresh", headers: access.headers })).body;
+    for (const marker of markers) assert.equal(refresh.includes(marker), false, "refresh disclosed marker");
+    const rollups = await query(`
+      SELECT row_to_json(rows)::text AS value
+      FROM (
+        SELECT metric_date::text AS first, metric_key AS second, bucket AS third, count::text AS fourth
+        FROM metrics_daily_rollup
+        UNION ALL
+        SELECT metric_key, bucket, count::text, NULL FROM metrics_snapshot
+        UNION ALL
+        SELECT dimension, category, count::text, NULL FROM metrics_dimension_snapshot
+      ) rows
+    `);
+    const stored = JSON.stringify(rollups.rows);
+    for (const marker of markers) assert.equal(stored.includes(marker), false, `rollup stored ${marker}`);
+  } finally { await app.close(); }
+});
+
+test("slice 3c 17: rebuild and read statements return no profile-field result columns", async () => {
+  await seedUser({
+    classification: "EXTERNAL",
+    name: "recorder-name-marker",
+    businessName: "recorder-business-marker",
+    businessType: "recorder-type-marker",
+    records: [{ syncedAt: new Date() }]
+  });
+  const readRecorder = recordPoolStatements(getAdminReadPool());
+  const rebuildRecorder = recordPoolStatements(getRebuildPool());
+  const app = await buildApp();
+  const access = await ownerAccess(app);
+  try {
+    await rebuildRollups();
+    for (const range of ["30d", "90d", "12m", "all"]) await readOverview({ range });
+    for (const key of ["accounts_registered", "records_received", "attestations_issued"]) {
+      for (const bucket of ["week", "month"]) await readTimeseries({ metric: key, bucket, periods: 1 });
+    }
+    await readRollupState();
+    await readProvisional();
+    await readStatus();
+    for (const url of [
+      "/admin/suppressed/overview",
+      "/admin/suppressed/breakdown?dimension=country",
+      "/admin/suppressed/breakdown?dimension=sector"
+    ]) assert.equal((await app.inject({ method: "GET", url, headers: access.headers })).statusCode, 200);
+
+    const forbidden = new Set(["name", "business_name", "business_type_id"]);
+    for (const statement of [...readRecorder.statements, ...rebuildRecorder.statements]) {
+      for (const field of statement.fields) {
+        assert.equal(forbidden.has(field), false, `forbidden result field ${field}`);
+      }
+    }
+  } finally {
+    readRecorder.restore();
+    rebuildRecorder.restore();
+    await app.close();
   }
 });
 

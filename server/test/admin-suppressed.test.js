@@ -6,6 +6,7 @@ import { closeAdminPools, getAdminReadPool } from "../src/admin-db.js";
 import { METRIC_DEFINITIONS, rebuildRollups } from "../src/admin-metrics.js";
 import { config } from "../src/config.js";
 import { getPool, query } from "../src/db.js";
+import { SUPPRESSED_OVERVIEW_METRIC_KEYS } from "../src/routes/admin/suppressed.js";
 import {
   ADMIN_ORIGIN,
   buildApp,
@@ -59,7 +60,8 @@ async function seedAccount({
   phone,
   email,
   name = null,
-  businessName = null
+  businessName = null,
+  businessType = null
 } = {}) {
   const accountPhone = phone || `+1555${crypto.randomInt(1_000_000, 9_999_999)}`;
   const userResult = await query(`
@@ -69,9 +71,9 @@ async function seedAccount({
   `, [accountPhone, email || `${crypto.randomUUID()}@example.test`, phoneVerified, emailVerified, createdAt]);
   const userId = userResult.rows[0].id;
   await query(`
-    INSERT INTO profiles (user_id, operating_region, sector_id, name, business_name)
-    VALUES ($1, $2, $3, $4, $5)
-  `, [userId, country, sector, name, businessName]);
+    INSERT INTO profiles (user_id, operating_region, sector_id, name, business_name, business_type_id)
+    VALUES ($1, $2, $3, $4, $5, $6)
+  `, [userId, country, sector, name, businessName, businessType]);
   const deviceIdentity = `device-${crypto.randomUUID()}`;
   await query(`
     INSERT INTO device_identities (device_identity, public_key, phone_number, status)
@@ -130,6 +132,18 @@ async function suppressedResponses(app) {
     ownerRequest(app, "/admin/suppressed/breakdown?dimension=country"),
     ownerRequest(app, "/admin/suppressed/breakdown?dimension=sector")
   ]);
+}
+
+async function seedReviewedSetupCase() {
+  const now = new Date();
+  for (let index = 0; index < 20; index += 1) {
+    const hasSetupFields = index < 7 || (index >= 9 && index < 16);
+    await seedAccount({
+      name: hasSetupFields ? `Setup account ${index}` : null,
+      businessType: hasSetupFields ? `type_${index}` : null,
+      records: index < 9 ? [now] : []
+    });
+  }
 }
 
 function withoutContext(body) {
@@ -663,6 +677,76 @@ test("11: provisional and its statement appear only while an account is unclassi
   } finally { await app.close(); }
 });
 
+test("slice 3c 9: setup-field keys appear in no suppressed overview or breakdown response", async () => {
+  await seedReviewedSetupCase();
+  await rebuildRollups();
+  const app = await buildApp();
+  try {
+    for (const response of await suppressedResponses(app)) {
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.body.includes("accounts_setup_fields_stored"), false);
+      assert.equal(response.body.includes("accounts_setup_fields_with_records"), false);
+    }
+  } finally { await app.close(); }
+});
+
+test("slice 3c 10: suppressed overview keeps the exact eight pre-slice results", async () => {
+  await seedReviewedSetupCase();
+  await rebuildRollups();
+  const app = await buildApp();
+  try {
+    const response = await ownerRequest(app, "/admin/suppressed/overview");
+    assert.deepEqual(response.json().metrics, [
+      { key: "accounts_registered", definition: METRIC_DEFINITIONS[0].definition, disclosure: { status: "published", value: 20 } },
+      { key: "records_received", definition: METRIC_DEFINITIONS[1].definition, disclosure: { status: "published", value: 9 } },
+      { key: "attestations_issued", definition: METRIC_DEFINITIONS[2].definition, disclosure: { status: "fewer_than_k" } },
+      { key: "accounts_phone_verified", definition: METRIC_DEFINITIONS[3].definition, disclosure: { status: "fewer_than_k" } },
+      { key: "accounts_email_verified", definition: METRIC_DEFINITIONS[4].definition, disclosure: { status: "fewer_than_k" } },
+      { key: "devices_active", definition: METRIC_DEFINITIONS[5].definition, disclosure: { status: "published", value: 20 } },
+      { key: "accounts_with_records", definition: METRIC_DEFINITIONS[6].definition, disclosure: { status: "published", value: 9 } },
+      { key: "accounts_with_3plus_records", definition: METRIC_DEFINITIONS[7].definition, disclosure: { status: "fewer_than_k" } }
+    ]);
+  } finally { await app.close(); }
+});
+
+test("slice 3c 11: suppressed overview uses an exported eight-key list while definitions have ten entries", async () => {
+  await rebuildRollups();
+  const app = await buildApp();
+  try {
+    const response = await ownerRequest(app, "/admin/suppressed/overview");
+    assert.equal(METRIC_DEFINITIONS.length, 10);
+    assert.equal(SUPPRESSED_OVERVIEW_METRIC_KEYS.length, 8);
+    assert.deepEqual(response.json().metrics.map(({ key }) => key), SUPPRESSED_OVERVIEW_METRIC_KEYS);
+    const source = await readFile(new URL("../src/routes/admin/suppressed.js", import.meta.url), "utf8");
+    assert.match(source, /SUPPRESSED_OVERVIEW_METRIC_KEYS\.map/);
+    assert.equal(source.includes("METRIC_DEFINITIONS.map"), false);
+  } finally { await app.close(); }
+});
+
+test("slice 3c 12: reviewed overlap case publishes existing figures without exposing the setup overlap", async () => {
+  await seedReviewedSetupCase();
+  await rebuildRollups();
+  const raw = await query(`
+    SELECT metric_key, count
+    FROM metrics_snapshot
+    WHERE bucket = 'external'
+      AND metric_key IN ('accounts_all', 'accounts_with_records', 'accounts_setup_fields_stored', 'accounts_setup_fields_with_records')
+  `);
+  assert.deepEqual(Object.fromEntries(raw.rows.map(({ metric_key, count }) => [metric_key, count])), {
+    accounts_all: 20,
+    accounts_with_records: 9,
+    accounts_setup_fields_stored: 14,
+    accounts_setup_fields_with_records: 7
+  });
+  const app = await buildApp();
+  try {
+    const body = (await ownerRequest(app, "/admin/suppressed/overview")).json();
+    assert.deepEqual(metric(body, "accounts_registered"), { status: "published", value: 20 });
+    assert.deepEqual(metric(body, "accounts_with_records"), { status: "published", value: 9 });
+    assert.equal(body.metrics.some(({ key }) => key.startsWith("accounts_setup_fields")), false);
+  } finally { await app.close(); }
+});
+
 test("12: never-built and failed rebuilds return 503 and provisional true on both routes", async () => {
   await query(`
     ALTER TABLE metrics_rollup_state
@@ -691,7 +775,10 @@ test("13: overview definitions are verbatim and response keys, labels, and state
   try {
     const responses = await suppressedResponses(app);
     assert.deepEqual(responses[0].json().metrics.map(({ key, definition }) => ({ key, definition })),
-      METRIC_DEFINITIONS.map(({ key, definition }) => ({ key, definition })));
+      SUPPRESSED_OVERVIEW_METRIC_KEYS.map((key) => {
+        const { definition } = METRIC_DEFINITIONS.find((item) => item.key === key);
+        return { key, definition };
+      }));
     for (const response of responses) {
       const body = response.json();
       const testedText = JSON.stringify({
@@ -702,6 +789,19 @@ test("13: overview definitions are verbatim and response keys, labels, and state
       assert.equal(/transactions?|verifications?/i.test(testedText), false);
     }
   } finally { await app.close(); }
+});
+
+test("11a: suppressed overview exports the literal pre-slice metric list", () => {
+  assert.deepEqual(SUPPRESSED_OVERVIEW_METRIC_KEYS, [
+    "accounts_registered",
+    "records_received",
+    "attestations_issued",
+    "accounts_phone_verified",
+    "accounts_email_verified",
+    "devices_active",
+    "accounts_with_records",
+    "accounts_with_3plus_records"
+  ]);
 });
 
 test("15: a lone small country causes the smallest publishable country to join the residual", async () => {

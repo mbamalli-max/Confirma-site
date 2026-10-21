@@ -12,6 +12,16 @@ import {
 import { enforceAdminIpAllowlist } from "./auth.js";
 
 const OWNER_ONLY = [enforceAdminIpAllowlist, requireAdmin(["owner"])];
+export const SUPPRESSED_OVERVIEW_METRIC_KEYS = Object.freeze([
+  "accounts_registered",
+  "records_received",
+  "attestations_issued",
+  "accounts_phone_verified",
+  "accounts_email_verified",
+  "devices_active",
+  "accounts_with_records",
+  "accounts_with_3plus_records"
+]);
 const DIMENSIONS = Object.freeze({
   country: {
     label: "Profile country code",
@@ -125,11 +135,10 @@ function discloseOverview(raw, k) {
     k
   );
 
-  return METRIC_DEFINITIONS.map(({ key, definition }) => ({
-    key,
-    definition,
-    disclosure: results[key]
-  }));
+  return SUPPRESSED_OVERVIEW_METRIC_KEYS.map((key) => {
+    const { definition } = METRIC_DEFINITIONS.find((item) => item.key === key);
+    return { key, definition, disclosure: results[key] };
+  });
 }
 
 export async function registerAdminSuppressedRoutes(app) {

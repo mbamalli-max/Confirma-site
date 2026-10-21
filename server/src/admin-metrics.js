@@ -46,6 +46,16 @@ const POINT_METRICS = Object.freeze([
     key: "accounts_with_3plus_records",
     name: "Accounts with three or more records",
     definition: "Accounts with three or more records received, all time. This is not the activation metric: the export step of activation is not observable by the server."
+  },
+  {
+    key: "accounts_setup_fields_stored",
+    name: "Accounts with required setup fields stored",
+    definition: "Accounts whose stored profile holds a display name and a business type, the two fields the app requires before its setup can be finished. A proxy for completed onboarding, not a count of it: the server does not record a completion event, and these fields can reach the server without one. Accounts whose profile has not reached the server are not counted. A point-in-time figure with no date. This is not the activation metric."
+  },
+  {
+    key: "accounts_setup_fields_with_records",
+    name: "Accounts with required setup fields stored and at least one record",
+    definition: "Accounts counted as having the required setup fields stored that also have one or more records received, all time. A point-in-time figure."
   }
 ]);
 
@@ -171,6 +181,11 @@ async function performRebuild({ automatic }) {
           LEFT JOIN ledger_entries entry
             ON entry.device_identity = device.device_identity
           GROUP BY account.id
+        ), account_setup_fields AS (
+          SELECT DISTINCT profile.user_id
+          FROM profiles profile
+          WHERE BTRIM(COALESCE(profile.name, '')) <> ''
+            AND BTRIM(COALESCE(profile.business_type_id, '')) <> ''
         ), eligible_event_rows AS (
           SELECT
             'contributors_records_received'::text AS metric_key,
@@ -221,6 +236,18 @@ async function performRebuild({ automatic }) {
           SELECT 'accounts_with_3plus_records'::text AS metric_key, records.user_id
           FROM account_record_counts records
           WHERE records.record_count >= 3
+
+          UNION ALL
+
+          SELECT 'accounts_setup_fields_stored'::text AS metric_key, setup.user_id
+          FROM account_setup_fields setup
+
+          UNION ALL
+
+          SELECT 'accounts_setup_fields_with_records'::text AS metric_key, setup.user_id
+          FROM account_setup_fields setup
+          INNER JOIN account_record_counts records ON records.user_id = setup.user_id
+          WHERE records.record_count >= 1
 
           UNION ALL
 
