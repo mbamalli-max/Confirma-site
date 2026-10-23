@@ -1,10 +1,12 @@
 import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { readFile } from "node:fs/promises";
 import Fastify from "fastify";
 import jwt from "jsonwebtoken";
 import { config } from "../src/config.js";
 import { getPool } from "../src/db.js";
+import { hashOtp } from "../src/auth-utils.js";
 import { registerAccountRoutes } from "../src/routes/account.js";
 import { registerAttestRoutes } from "../src/routes/attest.js";
 import { registerAuthRoutes } from "../src/routes/auth.js";
@@ -15,8 +17,11 @@ import { registerSyncRoutes } from "../src/routes/sync.js";
 import {
   assertLocalTestDatabase,
   createTestPool,
+  getBackendPid,
   instrumentApplicationPool,
-  resetTestDatabase
+  resetTestDatabase,
+  waitForBackendsBlockedBy,
+  waitForValue
 } from "./helpers/db.js";
 
 // This guard intentionally runs before a pool is created or any SQL is issued.
@@ -25,6 +30,8 @@ assertLocalTestDatabase(config.databaseUrl);
 const INVALID_SESSION_REPLY = { error: "session_invalid" };
 const MISSING_TOKEN_REPLY = { error: "token_missing" };
 const DEVICE_MISMATCH_REPLY = { error: "device_mismatch" };
+const DEVICE_ACTIVITY_UPDATE = /UPDATE\s+device_identities\s+SET\s+last_seen_at\s+=\s+NOW\(\),\s*updated_at\s+=\s+NOW\(\)\s+WHERE\s+device_identity\s+=\s+\$1/i;
+const SMS_PHONE_VERIFICATION_OR_DEVICE_ACTIVITY_UPDATE = /UPDATE\s+(?:users\s+SET\s+phone_verified\s+=\s+TRUE\s+WHERE\s+phone_number\s+=\s+\$1|device_identities\s+SET\s+last_seen_at\s+=\s+NOW\(\),\s*updated_at\s+=\s+NOW\(\)\s+WHERE\s+device_identity\s+=\s+\$1)/i;
 const appPool = getPool();
 const database = createTestPool(config.databaseUrl, config.databaseSsl);
 const poolRecorder = instrumentApplicationPool(appPool);
@@ -64,7 +71,27 @@ async function requestCode(email, phoneNumber) {
 
 async function signIn({ email = `${unique("account")}@example.test`, phone, deviceIdentity }) {
   const code = await requestCode(email, phone);
-  const response = await app.inject({
+  const response = await verifyCode({ email, phone, deviceIdentity, code });
+  assert.equal(response.statusCode, 200, response.body);
+  return { email, phone, deviceIdentity, ...response.json() };
+}
+
+async function settleWithin(promises, description, timeoutMs = 5000) {
+  let timeout;
+  try {
+    return await Promise.race([
+      Promise.allSettled(promises.filter(Boolean)),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Timed out waiting for ${description}.`)), timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function verifyCode({ email, phone, deviceIdentity, code }) {
+  return app.inject({
     method: "POST",
     url: "/auth/otp/verify",
     payload: {
@@ -76,8 +103,6 @@ async function signIn({ email = `${unique("account")}@example.test`, phone, devi
       public_key: `public-key-${deviceIdentity}`
     }
   });
-  assert.equal(response.statusCode, 200, response.body);
-  return { email, phone, deviceIdentity, ...response.json() };
 }
 
 async function sessionRows() {
@@ -101,6 +126,18 @@ async function sessionRow(sessionId) {
     [sessionId]
   );
   return result.rows[0] || null;
+}
+
+async function sessionRowsForDevice(deviceIdentity) {
+  return (await database.query(
+    `
+      SELECT id, revoked_at
+      FROM user_sessions
+      WHERE device_identity = $1
+      ORDER BY created_at, id
+    `,
+    [deviceIdentity]
+  )).rows;
 }
 
 before(async () => {
@@ -212,6 +249,345 @@ test("A1/A2/A4: sign-in creates a device-bound session, returns account_id, and 
     headers: authHeaders(secondSession.auth_token, secondSession.deviceIdentity)
   });
   assert.equal(unaffectedSession.statusCode, 200, unaffectedSession.body);
+});
+
+test("E5: signing in again on one device replaces its active session", async () => {
+  const first = await signIn({ phone: "+12025550214", deviceIdentity: "replace-one-device" });
+  const second = await signIn({
+    email: first.email,
+    phone: first.phone,
+    deviceIdentity: first.deviceIdentity
+  });
+  const rows = await sessionRowsForDevice(first.deviceIdentity);
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows.filter((row) => row.revoked_at === null).length, 1);
+  assert.equal(rows.find((row) => row.id === jwt.decode(first.auth_token).sid).revoked_at === null, false);
+  assert.equal(rows.find((row) => row.id === jwt.decode(second.auth_token).sid).revoked_at, null);
+
+  const oldToken = await app.inject({
+    method: "GET",
+    url: "/profile",
+    headers: authHeaders(first.auth_token, first.deviceIdentity)
+  });
+  assert.equal(oldToken.statusCode, 401, oldToken.body);
+  assert.deepEqual(oldToken.json(), INVALID_SESSION_REPLY);
+
+  const newToken = await app.inject({
+    method: "GET",
+    url: "/profile",
+    headers: authHeaders(second.auth_token, second.deviceIdentity)
+  });
+  assert.equal(newToken.statusCode, 200, newToken.body);
+});
+
+test("E5: sessions on separate devices for one account stay active", async () => {
+  const first = await signIn({ phone: "+12025550215", deviceIdentity: "replace-device-one" });
+  const second = await signIn({
+    email: first.email,
+    phone: first.phone,
+    deviceIdentity: "replace-device-two"
+  });
+
+  for (const signedIn of [first, second]) {
+    assert.equal((await sessionRowsForDevice(signedIn.deviceIdentity)).filter((row) => row.revoked_at === null).length, 1);
+    const profile = await app.inject({
+      method: "GET",
+      url: "/profile",
+      headers: authHeaders(signedIn.auth_token, signedIn.deviceIdentity)
+    });
+    assert.equal(profile.statusCode, 200, profile.body);
+  }
+});
+
+test("E5: concurrent sign-ins on one device serialize and leave one active session", async () => {
+  const initial = await signIn({ phone: "+12025550216", deviceIdentity: "replace-racing-device" });
+  const emailCode = await requestCode(initial.email, initial.phone);
+  const smsCode = "123456";
+  config.smsProviderEnabled = true;
+  await database.query(
+    `
+      INSERT INTO otp_challenges (phone_number, identifier, channel, otp_hash, expires_at)
+      VALUES ($1, $1, 'sms', $2, NOW() + INTERVAL '10 minutes')
+    `,
+    [initial.phone, hashOtp(initial.phone, smsCode, "sms")]
+  );
+
+  const competitor = await database.connect();
+  let competitorOpen = false;
+  let emailVerification;
+  let smsVerification;
+  let raceResults;
+  try {
+    await competitor.query("BEGIN");
+    competitorOpen = true;
+    const blockerPid = await getBackendPid(competitor);
+    await competitor.query(
+      "SELECT device_identity FROM device_identities WHERE device_identity = $1 FOR UPDATE",
+      [initial.deviceIdentity]
+    );
+
+    poolRecorder.reset();
+    emailVerification = verifyCode({
+      email: initial.email,
+      phone: initial.phone,
+      deviceIdentity: initial.deviceIdentity,
+      code: emailCode
+    });
+    const firstVerifierPid = await waitForValue(
+      () => poolRecorder.state.transactionPids.at(-1),
+      (value) => Number.isInteger(value),
+      5000
+    );
+    smsVerification = app.inject({
+      method: "POST",
+      url: "/auth/otp/verify",
+      payload: {
+        channel: "sms",
+        phone_number: initial.phone,
+        code: smsCode,
+        device_identity: initial.deviceIdentity,
+        public_key: `public-key-${initial.deviceIdentity}`
+      }
+    });
+    const secondRequestPid = await waitForValue(
+      () => poolRecorder.state.transactionPids.find((pid) => pid !== firstVerifierPid),
+      (value) => Number.isInteger(value),
+      5000
+    );
+    const [emailWaiterPid, smsWaiterPid] = await waitForBackendsBlockedBy(database, blockerPid, [
+      {
+        description: "email verifier device activity update",
+        pattern: DEVICE_ACTIVITY_UPDATE,
+        pid: firstVerifierPid
+      },
+      {
+        description: "SMS verifier phone verification or device activity update",
+        pattern: SMS_PHONE_VERIFICATION_OR_DEVICE_ACTIVITY_UPDATE,
+        pid: secondRequestPid
+      }
+    ], 5000);
+    assert.notEqual(emailWaiterPid, smsWaiterPid);
+    for (const pid of [emailWaiterPid, smsWaiterPid]) {
+      assert.ok(
+        poolRecorder.state.transactionPids.includes(pid),
+        `expected waiting backend ${pid} to have issued BEGIN after the recorder reset`
+      );
+    }
+    assert.equal(emailWaiterPid, firstVerifierPid);
+    assert.equal(smsWaiterPid, secondRequestPid);
+  } finally {
+    try {
+      if (competitorOpen) await competitor.query("ROLLBACK");
+    } finally {
+      try {
+        competitor.release();
+      } finally {
+        raceResults = await settleWithin(
+          [emailVerification, smsVerification],
+          "the concurrent sign-in requests"
+        );
+      }
+    }
+  }
+
+  const [emailResult, smsResult] = raceResults;
+  assert.equal(emailResult.status, "fulfilled", String(emailResult.reason));
+  assert.equal(smsResult.status, "fulfilled", String(smsResult.reason));
+  const emailResponse = emailResult.value;
+  const smsResponse = smsResult.value;
+  assert.equal(emailResponse.statusCode, 200, emailResponse.body);
+  assert.equal(smsResponse.statusCode, 200, smsResponse.body);
+  const rows = await sessionRowsForDevice(initial.deviceIdentity);
+  assert.equal(rows.length, 3);
+  assert.equal(rows.filter((row) => row.revoked_at === null).length, 1);
+  assert.equal(rows.filter((row) => row.revoked_at !== null).length, 2);
+  assert.ok(poolRecorder.state.queryTexts.some((text) => (
+    /SELECT\s+device_identity\s+FROM\s+device_identities\s+WHERE\s+device_identity\s+=\s+\$1\s+FOR\s+UPDATE/i.test(text)
+  )), "expected same-device sign-in to lock the device row");
+});
+
+test("E5: an old-token request racing replacement is refused after the replacement commits", async () => {
+  const first = await signIn({ phone: "+12025550217", deviceIdentity: "replace-old-token" });
+  const replacementCode = await requestCode(first.email, first.phone);
+  const competitor = await database.connect();
+  let competitorOpen = false;
+  let replacementVerification;
+  let duringReplacement;
+  let raceResults;
+  try {
+    await competitor.query("BEGIN");
+    competitorOpen = true;
+    const blockerPid = await getBackendPid(competitor);
+    await competitor.query(
+      "SELECT device_identity FROM device_identities WHERE device_identity = $1 FOR UPDATE",
+      [first.deviceIdentity]
+    );
+
+    poolRecorder.reset();
+    replacementVerification = verifyCode({
+      email: first.email,
+      phone: first.phone,
+      deviceIdentity: first.deviceIdentity,
+      code: replacementCode
+    });
+    await waitForValue(
+      () => poolRecorder.state.transactionPids.length,
+      (count) => count > 0,
+      5000
+    );
+    duringReplacement = app.inject({
+      method: "GET",
+      url: "/profile",
+      headers: authHeaders(first.auth_token, first.deviceIdentity)
+    });
+    const waiterPids = await waitForBackendsBlockedBy(database, blockerPid, [
+      { description: "replacement verifier device activity update", pattern: DEVICE_ACTIVITY_UPDATE },
+      { description: "/profile guard device activity update", pattern: DEVICE_ACTIVITY_UPDATE }
+    ], 5000);
+    const replacementWaiterPids = waiterPids.filter((pid) => (
+      poolRecorder.state.transactionPids.includes(pid)
+    ));
+    assert.equal(
+      replacementWaiterPids.length,
+      1,
+      "expected exactly one waiting backend to have issued BEGIN after the recorder reset"
+    );
+    const replacementWaiterPid = replacementWaiterPids[0];
+    const profileWaiterPid = waiterPids.find((pid) => pid !== replacementWaiterPid);
+    assert.ok(
+      poolRecorder.state.transactionPids.includes(replacementWaiterPid),
+      `expected replacement verifier backend ${replacementWaiterPid} to have issued BEGIN after the recorder reset`
+    );
+    assert.ok(
+      !poolRecorder.state.transactionPids.includes(profileWaiterPid),
+      `expected /profile backend ${profileWaiterPid} not to have issued BEGIN after the recorder reset`
+    );
+    assert.notEqual(profileWaiterPid, replacementWaiterPid);
+  } finally {
+    try {
+      if (competitorOpen) await competitor.query("ROLLBACK");
+    } finally {
+      try {
+        competitor.release();
+      } finally {
+        raceResults = await settleWithin(
+          [replacementVerification, duringReplacement],
+          "the replacement and old-token requests"
+        );
+      }
+    }
+  }
+
+  const [replacementResult, duringReplacementResult] = raceResults;
+  assert.equal(replacementResult.status, "fulfilled", String(replacementResult.reason));
+  assert.equal(duringReplacementResult.status, "fulfilled", String(duringReplacementResult.reason));
+  const replacement = replacementResult.value;
+  assert.equal(replacement.statusCode, 200, replacement.body);
+  const replacementBody = replacement.json();
+  const activeSessionRows = (await sessionRowsForDevice(first.deviceIdentity))
+    .filter((row) => row.revoked_at === null);
+  assert.equal(activeSessionRows.length, 1);
+  assert.equal(jwt.decode(replacementBody.auth_token).sid, activeSessionRows[0].id);
+
+  const duringReplacementResponse = duringReplacementResult.value;
+  // Admitted before the replacement committed, so this request may finish.
+  assert.equal(duringReplacementResponse.statusCode, 200, duringReplacementResponse.body);
+
+  const oldRequest = await app.inject({
+    method: "GET",
+    url: "/profile",
+    headers: authHeaders(first.auth_token, first.deviceIdentity)
+  });
+  assert.equal(oldRequest.statusCode, 401, oldRequest.body);
+  assert.deepEqual(oldRequest.json(), INVALID_SESSION_REPLY);
+  const replacementRequest = await app.inject({
+    method: "GET",
+    url: "/profile",
+    headers: authHeaders(replacementBody.auth_token, first.deviceIdentity)
+  });
+  assert.equal(replacementRequest.statusCode, 200, replacementRequest.body);
+});
+
+test("E5: a failure after revocation rolls back and preserves the old session", async () => {
+  const first = await signIn({ phone: "+12025550218", deviceIdentity: "replace-rollback-device" });
+  const replacementCode = await requestCode(first.email, first.phone);
+  const firstSessionId = jwt.decode(first.auth_token).sid;
+  poolRecorder.failNextQueryMatching(/INSERT\s+INTO\s+user_sessions/i);
+
+  const failed = await verifyCode({
+    email: first.email,
+    phone: first.phone,
+    deviceIdentity: first.deviceIdentity,
+    code: replacementCode
+  });
+  assert.equal(failed.statusCode, 500, failed.body);
+  assert.equal(Object.hasOwn(failed.json(), "auth_token"), false);
+  const rows = await sessionRowsForDevice(first.deviceIdentity);
+  assert.deepEqual(rows.map((row) => row.id), [firstSessionId]);
+  assert.equal(rows[0].revoked_at, null);
+});
+
+test("E5: migration 014 keeps the newest active session and adds the partial unique index", async () => {
+  const migrationSql = await readFile(
+    new URL("../migrations/014_one_active_session_per_device.sql", import.meta.url),
+    "utf8"
+  );
+  const client = await database.connect();
+  let transactionOpen = false;
+  try {
+    await client.query("BEGIN");
+    transactionOpen = true;
+    await client.query("DROP INDEX IF EXISTS idx_user_sessions_one_active_per_device");
+    const user = await client.query(
+      "INSERT INTO users (phone_number) VALUES ($1) RETURNING id",
+      ["+12025550219"]
+    );
+    const deviceIdentity = "migration-session-device";
+    await client.query(
+      "INSERT INTO device_identities (device_identity, public_key, phone_number) VALUES ($1, $2, $3)",
+      [deviceIdentity, "migration-public-key", "+12025550219"]
+    );
+    const olderId = "00000000-0000-0000-0000-000000000001";
+    const newerId = "00000000-0000-0000-0000-000000000002";
+    await client.query(
+      `
+        INSERT INTO user_sessions (id, user_id, device_identity, created_at)
+        VALUES
+          ($1, $3, $4, '2026-01-01T00:00:00Z'),
+          ($2, $3, $4, '2026-01-01T00:00:00Z')
+      `,
+      [olderId, newerId, user.rows[0].id, deviceIdentity]
+    );
+
+    await client.query(migrationSql);
+    const sessions = await client.query(
+      `
+        SELECT id, revoked_at IS NULL AS active
+        FROM user_sessions
+        WHERE device_identity = $1
+        ORDER BY created_at, id
+      `,
+      [deviceIdentity]
+    );
+    assert.deepEqual(sessions.rows, [
+      { id: olderId, active: false },
+      { id: newerId, active: true }
+    ]);
+    const index = await client.query(
+      `
+        SELECT indisunique, pg_get_expr(indpred, indrelid) AS predicate
+        FROM pg_index
+        WHERE indexrelid = 'idx_user_sessions_one_active_per_device'::regclass
+      `
+    );
+    assert.equal(index.rows[0].indisunique, true);
+    assert.match(index.rows[0].predicate, /revoked_at IS NULL/);
+    assert.match(index.rows[0].predicate, /device_identity IS NOT NULL/);
+  } finally {
+    if (transactionOpen) await client.query("ROLLBACK");
+    client.release();
+  }
 });
 
 test("A1: logout without a bearer token does not make a statement about or change a session", async () => {

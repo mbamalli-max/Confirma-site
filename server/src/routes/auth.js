@@ -492,6 +492,24 @@ export async function registerAuthRoutes(app) {
         }
 
         await registerDevice(database, verifiedUser, deviceIdentity, publicKey);
+        await database.query(
+          `
+            SELECT device_identity
+            FROM device_identities
+            WHERE device_identity = $1
+            FOR UPDATE
+          `,
+          [deviceIdentity]
+        );
+        await database.query(
+          `
+            UPDATE user_sessions
+            SET revoked_at = NOW()
+            WHERE device_identity = $1
+              AND revoked_at IS NULL
+          `,
+          [deviceIdentity]
+        );
         const sessionId = crypto.randomUUID();
         await database.query(
           `
