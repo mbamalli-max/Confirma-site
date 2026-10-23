@@ -2,14 +2,19 @@ import crypto from "node:crypto";
 import { config } from "../config.js";
 import { query, withTransaction } from "../db.js";
 import {
+  authenticateRequest,
   buildAuthReply,
   generateOtpCode,
+  getBearerToken,
   hashOtp,
+  INVALID_SESSION_REPLY,
+  MISSING_TOKEN_REPLY,
   isValidEmail,
   isValidPhoneNumber,
   normalizeEmail,
   normalizeOtpChannel,
-  normalizePhoneNumber
+  normalizePhoneNumber,
+  verifyAuthToken
 } from "../auth-utils.js";
 
 let resendModulePromise = null;
@@ -233,9 +238,10 @@ async function registerDevice(database, user, deviceIdentity, publicKey) {
   );
 }
 
-function buildVerificationResponse(user, channel, deviceIdentity = "") {
+function buildVerificationResponse(user, channel, deviceIdentity = "", sessionId) {
   return {
     ok: true,
+    account_id: user.id,
     channel,
     identifier: channel === "email" ? user.email : user.phone_number,
     phone_number: user.phone_number || "",
@@ -244,11 +250,31 @@ function buildVerificationResponse(user, channel, deviceIdentity = "") {
     phone_verified: Boolean(user.phone_verified),
     sms_available: config.smsProviderEnabled,
     ...buildAuthReply(user.phone_number, deviceIdentity, {
+      sid: sessionId,
       email: user.email || "",
       email_verified: Boolean(user.email_verified),
       phone_verified: Boolean(user.phone_verified)
     })
   };
+}
+
+async function revokeSessionForToken(auth) {
+  const sessionId = String(auth?.sid || "").trim();
+  if (!sessionId) return true;
+
+  const result = await query(
+    `
+      UPDATE user_sessions AS s
+      SET revoked_at = COALESCE(s.revoked_at, NOW())
+      FROM users AS u
+      WHERE s.id = $1
+        AND s.user_id = u.id
+        AND u.phone_number = $2
+      RETURNING s.id
+    `,
+    [sessionId, auth.phone_number]
+  );
+  return result.rowCount > 0;
 }
 
 export async function registerAuthRoutes(app) {
@@ -376,8 +402,8 @@ export async function registerAuthRoutes(app) {
       }
     }
 
-    if ((deviceIdentity && !publicKey) || (!deviceIdentity && publicKey)) {
-      return reply.code(400).send({ error: "device_identity and public_key must be provided together." });
+    if (!deviceIdentity || !publicKey) {
+      return reply.code(400).send({ error: "device_identity and public_key are required." });
     }
 
     const otpResult = await query(
@@ -450,10 +476,10 @@ export async function registerAuthRoutes(app) {
       return reply.code(401).send({ error: "OTP verification failed." });
     }
 
-    let user = null;
+    let verifiedSession = null;
 
     try {
-      user = await withTransaction(async (database) => {
+      verifiedSession = await withTransaction(async (database) => {
         const verifiedUser = await upsertVerifiedUser(database, {
           channel,
           identifier,
@@ -466,7 +492,15 @@ export async function registerAuthRoutes(app) {
         }
 
         await registerDevice(database, verifiedUser, deviceIdentity, publicKey);
-        return verifiedUser;
+        const sessionId = crypto.randomUUID();
+        await database.query(
+          `
+            INSERT INTO user_sessions (id, user_id, device_identity, last_seen_at)
+            VALUES ($1, $2, $3, NOW())
+          `,
+          [sessionId, verifiedUser.id, deviceIdentity]
+        );
+        return { user: verifiedUser, sessionId };
       });
     } catch (error) {
       if (error?.statusCode === 409) {
@@ -487,11 +521,59 @@ export async function registerAuthRoutes(app) {
       return reply.code(500).send({ error: "Unable to verify this account right now." });
     }
 
-    if (!user) {
+    if (!verifiedSession) {
       return reply.code(500).send({ error: "Verified account could not be loaded." });
     }
 
-    // Token construction happens only after withTransaction has committed.
-    return buildVerificationResponse(user, channel, deviceIdentity);
+    // Issue the token only after the session insert and all sign-in writes have committed.
+    return buildVerificationResponse(
+      verifiedSession.user,
+      channel,
+      deviceIdentity,
+      verifiedSession.sessionId
+    );
+  });
+
+  app.post("/auth/logout", async (request, reply) => {
+    const token = getBearerToken(request);
+    if (!token) {
+      return reply.code(400).send(MISSING_TOKEN_REPLY);
+    }
+
+    let auth;
+    try {
+      auth = verifyAuthToken(token);
+    } catch {
+      return reply.code(401).send(INVALID_SESSION_REPLY);
+    }
+
+    try {
+      const revoked = await revokeSessionForToken(auth);
+      if (!revoked) {
+        return reply.code(401).send(INVALID_SESSION_REPLY);
+      }
+      return reply.code(204).send();
+    } catch {
+      return reply.code(503).send({ error: "logout_unavailable" });
+    }
+  });
+
+  app.post("/auth/logout-all", async (request, reply) => {
+    const auth = await authenticateRequest(request, reply);
+    if (!auth) return reply;
+
+    try {
+      await query(
+        `
+          UPDATE user_sessions
+          SET revoked_at = COALESCE(revoked_at, NOW())
+          WHERE user_id = $1
+        `,
+        [auth.account_id]
+      );
+      return reply.code(204).send();
+    } catch {
+      return reply.code(503).send({ error: "logout_unavailable" });
+    }
   });
 }

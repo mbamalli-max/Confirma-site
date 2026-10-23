@@ -74,41 +74,84 @@ export function buildAuthReply(phoneNumber, deviceIdentity = "", extraClaims = {
   };
 }
 
+export const INVALID_SESSION_REPLY = { error: "session_invalid" };
+export const MISSING_TOKEN_REPLY = { error: "token_missing" };
+export const DEVICE_MISMATCH_REPLY = { error: "device_mismatch" };
+export const AUTH_UNAVAILABLE_REPLY = { error: "auth_unavailable" };
+
 export async function authenticateRequest(request, reply) {
+  const token = getBearerToken(request);
+  if (!token) {
+    reply.code(401).send(MISSING_TOKEN_REPLY);
+    return null;
+  }
+
+  let auth;
   try {
-    const token = getBearerToken(request);
-    if (!token) {
-      reply.code(401).send({ error: "Missing bearer token." });
-      return null;
-    }
+    auth = verifyAuthToken(token);
+  } catch {
+    reply.code(401).send(INVALID_SESSION_REPLY);
+    return null;
+  }
 
-    const auth = verifyAuthToken(token);
-    const headerDeviceIdentity = String(request.headers["x-device-identity"] || "").trim();
-    const deviceIdentity = String(auth?.device_identity || headerDeviceIdentity || "").trim();
-    if (!deviceIdentity) {
-      return auth;
-    }
+  const sessionId = String(auth?.sid || "").trim();
+  if (!sessionId) {
+    reply.code(401).send(INVALID_SESSION_REPLY);
+    return null;
+  }
 
-    const deviceResult = await query(
+  let session;
+  try {
+    const sessionResult = await query(
       `
-        SELECT phone_number, revoked_at
-        FROM device_identities
-        WHERE device_identity = $1
+        SELECT
+          s.device_identity,
+          s.revoked_at,
+          u.id AS account_id,
+          u.phone_number,
+          d.phone_number AS device_phone_number,
+          d.revoked_at AS device_revoked_at
+        FROM user_sessions s
+        INNER JOIN users u
+          ON u.id = s.user_id
+        LEFT JOIN device_identities d
+          ON d.device_identity = s.device_identity
+        WHERE s.id = $1
         LIMIT 1
       `,
-      [deviceIdentity]
+      [sessionId]
     );
+    session = sessionResult.rows[0];
+  } catch {
+    reply.code(503).send(AUTH_UNAVAILABLE_REPLY);
+    return null;
+  }
 
-    const device = deviceResult.rows[0];
-    if (!device || device.phone_number !== auth.phone_number) {
-      reply.code(401).send({ error: "Invalid device session." });
-      return null;
-    }
+  if (!session
+      || session.revoked_at
+      || session.phone_number !== auth.phone_number
+      || !session.device_identity
+      || session.device_phone_number !== auth.phone_number
+      || session.device_revoked_at) {
+    reply.code(401).send(INVALID_SESSION_REPLY);
+    return null;
+  }
 
-    if (device.revoked_at) {
-      reply.code(401).send({ error: "device_revoked" });
-      return null;
-    }
+  const headerDeviceIdentity = String(request.headers["x-device-identity"] || "").trim();
+  if (headerDeviceIdentity !== session.device_identity) {
+    reply.code(401).send(DEVICE_MISMATCH_REPLY);
+    return null;
+  }
+
+  try {
+    await query(
+      `
+        UPDATE user_sessions
+        SET last_seen_at = NOW()
+        WHERE id = $1
+      `,
+      [sessionId]
+    );
 
     await query(
       `
@@ -116,15 +159,16 @@ export async function authenticateRequest(request, reply) {
         SET last_seen_at = NOW(), updated_at = NOW()
         WHERE device_identity = $1
       `,
-      [deviceIdentity]
+      [session.device_identity]
     );
-
-    return {
-      ...auth,
-      device_identity: deviceIdentity
-    };
-  } catch (error) {
-    reply.code(401).send({ error: "Invalid or expired auth token." });
+  } catch {
+    reply.code(503).send(AUTH_UNAVAILABLE_REPLY);
     return null;
   }
+
+  return {
+    ...auth,
+    account_id: session.account_id,
+    device_identity: session.device_identity
+  };
 }

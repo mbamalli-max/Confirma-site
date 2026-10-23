@@ -32,12 +32,13 @@ async function getUserRow(phoneNumber) {
   return result.rows[0] || null;
 }
 
-function buildProfileResponse(row, fallbackPhoneNumber) {
+function buildProfileResponse(row, fallbackPhoneNumber, accountId = null) {
   if (!row) {
-    return { profile: null };
+    return { account_id: accountId, profile: null };
   }
 
   return {
+    account_id: accountId,
     profile: {
       name: row.name || "",
       business_name: row.business_name || "",
@@ -158,7 +159,7 @@ export async function registerAccountRoutes(app) {
       [user.id]
     );
 
-    return buildProfileResponse(result.rows[0] || null, user.phone_number);
+    return buildProfileResponse(result.rows[0] || null, user.phone_number, user.id);
   });
 
   app.post("/profile", {

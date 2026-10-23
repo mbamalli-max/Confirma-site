@@ -76,7 +76,8 @@ export function instrumentApplicationPool(pool) {
     maxActive: 0,
     checkoutPids: [],
     transactionPids: [],
-    failCommit: false
+    failCommit: false,
+    failQueryPattern: null
   };
 
   async function instrumentClient(client) {
@@ -91,12 +92,29 @@ export function instrumentApplicationPool(pool) {
 
     client.query = function instrumentedQuery(...args) {
       const text = typeof args[0] === "string" ? args[0] : args[0]?.text;
+      const callback = typeof args[args.length - 1] === "function"
+        ? args[args.length - 1]
+        : null;
       if (/^\s*BEGIN\b/i.test(String(text || ""))) {
         state.transactionPids.push(pid);
       }
       if (state.failCommit && /^\s*COMMIT\b/i.test(String(text || ""))) {
         state.failCommit = false;
-        return Promise.reject(new Error("Forced test commit failure."));
+        const error = new Error("Forced test commit failure.");
+        if (callback) {
+          process.nextTick(callback, error);
+          return undefined;
+        }
+        return Promise.reject(error);
+      }
+      if (state.failQueryPattern?.test(String(text || ""))) {
+        state.failQueryPattern = null;
+        const error = new Error("Forced test query failure.");
+        if (callback) {
+          process.nextTick(callback, error);
+          return undefined;
+        }
+        return Promise.reject(error);
       }
       return originalQuery(...args);
     };
@@ -143,9 +161,13 @@ export function instrumentApplicationPool(pool) {
       state.checkoutPids.length = 0;
       state.transactionPids.length = 0;
       state.failCommit = false;
+      state.failQueryPattern = null;
     },
     failNextCommit() {
       state.failCommit = true;
+    },
+    failNextQueryMatching(pattern) {
+      state.failQueryPattern = pattern;
     },
     restore() {
       pool.connect = originalConnect;
