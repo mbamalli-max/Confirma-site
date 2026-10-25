@@ -1364,3 +1364,12 @@ h1, h2, h3, h4 {
   }
 }
 
+body.account-locked .bottom-nav,
+body.account-locked .sync-status-badge {
+  display: none;
+}
+
+.signed-out-panel {
+  margin-top: 1rem;
+}
+

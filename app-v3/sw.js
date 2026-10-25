@@ -1,4 +1,4 @@
-const CACHE_NAME = "konfirmata-cache-v33";
+const CACHE_NAME = "konfirmata-cache-v34";
 const FILES = [
   "/app",
   "/app/index.html",

@@ -10,6 +10,12 @@ export async function postJson(baseUrl, path, body, authSessionKey, options = {}
     error.statusCode = 0;
     throw error;
   }
+  if (authSessionKey && options.canAttachToken !== true) {
+    const error = new Error("Account session is not permitted for this request.");
+    error.code = "account_session_blocked";
+    error.statusCode = 0;
+    throw error;
+  }
 
   const response = await fetch(`${normalizedBaseUrl}${path}`, {
     method: "POST",
@@ -78,15 +84,17 @@ export async function verifyOtpCode(baseUrl, identifier, code, extra = {}) {
   });
 }
 
-export async function syncQueuedEntries(baseUrl, authSessionKey, payload, deviceIdentity = "") {
+export async function syncQueuedEntries(baseUrl, authSessionKey, payload, deviceIdentity = "", canAttachToken = false) {
   return postJson(baseUrl, "/sync/entries", payload, authSessionKey, {
-    deviceIdentity
+    deviceIdentity,
+    canAttachToken
   });
 }
 
-export async function rotateDeviceIdentity(baseUrl, authSessionKey, payload, deviceIdentity = "") {
+export async function rotateDeviceIdentity(baseUrl, authSessionKey, payload, deviceIdentity = "", canAttachToken = false) {
   return postJson(baseUrl, "/identity/rotate", payload, authSessionKey, {
-    deviceIdentity
+    deviceIdentity,
+    canAttachToken
   });
 }
 

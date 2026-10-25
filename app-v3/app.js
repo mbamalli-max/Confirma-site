@@ -40,6 +40,7 @@ const state = {
   db: null,
   profile: null,
   onboardingStep: 1,
+  onboardingProfileDirty: new Set(),
   selectorMode: "search",
   currentAction: "sale",
   transferSubtype: "transfer_in",
@@ -69,6 +70,7 @@ const state = {
   pinConfirmResolver: null,
   pinConfirmWrongMessage: "",
   pinRecoveryReturnScreen: "screen-capture",
+  pinWipeConfirmedCount: 0,
   preferredLabelEditorOpen: false,
   passcodeReminderEditorOpen: false,
   emailVerified: false,
@@ -81,10 +83,28 @@ const state = {
   publicKeyFingerprint: "",
   authSessionKey: "",
   authSessionExpiresAt: "",
+  boundAccount: "",
+  pendingRevocations: [],
+  sessionGeneration: 0,
+  wipeEpoch: 0,
+  signedOut: false,
+  wipePending: false,
+  localOrigin: "",
+  legacyClaimConsent: null,
+  startupClass: "",
+  legacyRecordCount: 0,
+  legacyChoiceShown: false,
+  legacyConsentApprovalPending: false,
+  startupProfileAccount: "",
+  accountLockedMessage: "",
+  accountStartupChecked: false,
+  fetchControllers: new Set(),
   syncApiBaseUrl: "",
   syncStatus: "Sync not configured yet.",
   syncInFlight: false,
   syncQueueCount: 0,
+  removeLocalDataConfirmedCount: 0,
+  removeLocalDataSessionWarning: "",
   lastSyncAt: "",
   lastSyncReceipt: "",
   swRegistration: null,
@@ -103,6 +123,19 @@ document.addEventListener("DOMContentLoaded", init);
 async function init() {
   cacheElements();
   state.db = await openDb();
+  // Account state is deliberately loaded before profile or record rendering.  A
+  // local profile is not authority to display an account's data.
+  await loadDeviceTrustState();
+  await loadSyncState();
+  if (await resolveAccountStartup()) {
+    wireEvents();
+    window.addEventListener("online", () => {
+      void flushPendingRevocations();
+    });
+    registerPwa();
+    showSignedOutScreen();
+    return;
+  }
   await loadCustomLabelsIntoCatalog();
   try {
     const savedAuthPhoneCountry = await getSetting("auth_phone_country");
@@ -134,13 +167,12 @@ async function init() {
   }
   initializeAuthPhoneCountry();
   syncVerificationState();
-  await loadDeviceTrustState();
-  await loadSyncState();
   await updateSyncBadge();
   wireEvents();
   window.addEventListener("online", () => {
     void updateSyncBadge();
     void flushSyncQueue();
+    void flushPendingRevocations();
   });
   window.addEventListener("offline", () => {
     void updateSyncBadge();
@@ -214,7 +246,10 @@ function cacheElements() {
     "pin-reset-btn", "pin-save-btn", "pin-remove-btn", "pin-setup-error",
     "settings-security-status", "pin-setup-label", "pin-lock-screen", "pin-error", "first-record-guide",
     "storage-warning-v2", "record-history-banner", "banner-tier-icon", "banner-headline", "banner-subtext", "banner-cta",
-    "settings-logout-v2",
+    "settings-logout-v2", "settings-logout-all-v2", "settings-remove-local-data", "settings-account-status",
+    "signed-out-copy", "signed-out-pending", "signed-out-sign-in", "signed-out-remove-data",
+    "remove-local-data-panel", "remove-local-data-copy", "remove-local-data-confirmation", "remove-local-data-error",
+    "remove-local-data-confirm", "remove-local-data-anyway", "remove-local-data-cancel",
     "otp-back", "otp-screen-header-title", "otp-screen-header-copy", "otp-screen-title", "otp-screen-copy", "otp-status-card",
     "otp-email-field", "otp-email-input", "otp-phone-field", "otp-country-prefix", "otp-phone-input", "otp-request-code",
     "otp-helper-text", "otp-code-input", "otp-verify-code", "otp-error-text"
@@ -351,6 +386,13 @@ function wireEvents() {
   document.getElementById("amount-input-v2").addEventListener("change", () => {
     void maybeLearnVoiceCorrection();
   });
+  ["onboarding-name", "onboarding-phone", "onboarding-email", "onboarding-state", "onboarding-birth-year", "onboarding-gender"]
+    .forEach((id) => {
+      const element = document.getElementById(id);
+      const markDirty = () => state.onboardingProfileDirty.add(id);
+      element?.addEventListener("input", markDirty);
+      element?.addEventListener("change", markDirty);
+    });
   document.getElementById("onboarding-name").addEventListener("input", updateFinishOnboardingState);
   document.getElementById("onboarding-phone").addEventListener("change", () => {
     const normalizedPhone = normalizePhoneNumber(
@@ -365,7 +407,13 @@ function wireEvents() {
   });
   document.getElementById("onboarding-phone").addEventListener("input", clearOnboardingProfileError);
   document.getElementById("onboarding-email").addEventListener("input", clearOnboardingProfileError);
-  document.getElementById("otp-back").addEventListener("click", () => showScreen(state.otpReturnScreen || "screen-capture"));
+  document.getElementById("otp-back").addEventListener("click", () => {
+    if (isAccountLocked()) {
+      void showSignedOutScreen();
+      return;
+    }
+    showScreen(state.otpReturnScreen || "screen-capture");
+  });
   document.getElementById("otp-request-code").addEventListener("click", requestServerOtpCode);
   document.getElementById("otp-verify-code").addEventListener("click", verifyLocalOtpCode);
   document.getElementById("otp-email-input").addEventListener("input", clearOtpError);
@@ -380,6 +428,25 @@ function wireEvents() {
   document.getElementById("settings-logout-v2").addEventListener("click", () => {
     void logoutFromServerSession();
   });
+  document.getElementById("settings-logout-all-v2").addEventListener("click", () => {
+    void logoutEverywhere();
+  });
+  document.getElementById("settings-remove-local-data").addEventListener("click", () => {
+    void openRemoveLocalData();
+  });
+  document.getElementById("signed-out-sign-in").addEventListener("click", () => {
+    void openSignedOutSignIn();
+  });
+  document.getElementById("signed-out-remove-data").addEventListener("click", () => {
+    void openRemoveLocalData();
+  });
+  document.getElementById("remove-local-data-confirm").addEventListener("click", () => {
+    void removeLocalDataFlow(false);
+  });
+  document.getElementById("remove-local-data-anyway").addEventListener("click", () => {
+    void removeLocalDataFlow(true);
+  });
+  document.getElementById("remove-local-data-cancel").addEventListener("click", closeRemoveLocalData);
   document.querySelectorAll(".pin-key").forEach((button) => {
     button.addEventListener("click", () => handlePinKey(button.dataset.digit));
   });
@@ -786,12 +853,20 @@ function focusFirstInteractive(container) {
     "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
   );
   if (!target) return;
+  const activeElement = document.activeElement;
   window.requestAnimationFrame(() => {
+    // Let a deliberate focus change win over this deferred convenience focus.
+    // In particular, never pull the caret away from a field in this container.
+    if (document.activeElement !== activeElement || container.contains(document.activeElement)) return;
     target.focus();
   });
 }
 
 function updateOnboardingStep(step) {
+  const enteringProfileStep = step === ONBOARDING_PROFILE_STEP && state.onboardingStep !== ONBOARDING_PROFILE_STEP;
+  if (enteringProfileStep) {
+    renderOnboardingProfileStep();
+  }
   state.onboardingStep = step;
   document.querySelectorAll(".step").forEach((node) => node.classList.remove("active"));
   const activeStep = document.querySelector(`.step[data-step="${state.onboardingStep}"]`);
@@ -910,7 +985,7 @@ async function finishOnboarding() {
     gender
   };
 
-  await saveProfile(state.profile);
+  await saveFirstProfileWithOrigin(state.profile);
   if (normalizedPhoneNumber && detectedPhoneCountry) {
     await persistAuthPhoneCountry(detectedPhoneCountry);
   }
@@ -1071,6 +1146,10 @@ function wireChartToggle() {
 }
 
 async function renderDashboard() {
+  if (isAccountLocked()) {
+    clearRenderedAccountData();
+    return;
+  }
   const records = await getRecords();
   const effectiveRecords = getOperationalRecords(records);
   const currency = getProfileCurrency();
@@ -1133,6 +1212,10 @@ async function renderDashboard() {
 }
 
 function renderDashboardRecords(records) {
+  if (isAccountLocked()) {
+    clearRenderedAccountData();
+    return;
+  }
   const recent = [...records].reverse().slice(0, 5);
   renderRecordListWithMarketing(
     "dashboard-records-v2",
@@ -2548,6 +2631,10 @@ function syncFreeReportOffer() {
 }
 
 function renderExportScreen() {
+  if (isAccountLocked()) {
+    clearRenderedAccountData();
+    return;
+  }
   refreshTrustSetupButtons();
   els["export-status-v2"].textContent = "";
   if (els["report-status"]) {
@@ -2638,18 +2725,24 @@ async function generateExport() {
   let base64PublicKey = null;
 
   if (isAuthSessionValid() && state.deviceIdentity) {
+    const attestationToken = state.authSessionKey;
+    const attestationGuard = { ...captureRecordWriteGuard(), authToken: attestationToken };
     try {
       const response = await postJson(state.syncApiBaseUrl, "/attest", {
         device_identity: state.deviceIdentity,
         window_days: 0
-      }, state.authSessionKey, {
-        deviceIdentity: state.deviceIdentity
+      }, attestationToken, {
+        deviceIdentity: state.deviceIdentity,
+        canAttachToken: canUseAccountSession("ordinary", attestationToken)
       });
 
       if (response?.vt_id && response?.verify_url) {
         attestation = response;
-        await saveSetting("last_vt_id", attestation.vt_id).catch(() => null);
-        await saveSetting("last_verify_url", attestation.verify_url).catch(() => null);
+        const saved = await saveServerResponseSettings({
+          last_vt_id: attestation.vt_id,
+          last_verify_url: attestation.verify_url
+        }, attestationGuard).catch(() => false);
+        if (!saved) return;
 
         if (window.QRCode?.toDataURL) {
           qrDataUrl = await window.QRCode.toDataURL(attestation.verify_url);
@@ -3004,13 +3097,16 @@ async function buildClientVerifiablePdfReport() {
   const issuedAt = new Date();
   let attestation = null;
   let qrDataUrl = "";
+  const attestationToken = state.authSessionKey;
+  const attestationGuard = { ...captureRecordWriteGuard(), authToken: attestationToken };
 
   try {
     attestation = await postJson(state.syncApiBaseUrl, "/attest", {
       device_identity: state.deviceIdentity,
       window_days: 0
-    }, state.authSessionKey, {
-      deviceIdentity: state.deviceIdentity
+    }, attestationToken, {
+      deviceIdentity: state.deviceIdentity,
+      canAttachToken: canUseAccountSession("ordinary", attestationToken)
     });
 
     const coveredRecords = selectRecordsCoveredByAttestation(records, attestation);
@@ -3028,11 +3124,12 @@ async function buildClientVerifiablePdfReport() {
       throw new Error("Public attestation did not match the report ledger root. Please wait for sync and try again.");
     }
 
-    if (attestation?.vt_id) {
-      await saveSetting("last_vt_id", attestation.vt_id).catch(() => null);
-    }
-    if (attestation?.verify_url) {
-      await saveSetting("last_verify_url", attestation.verify_url).catch(() => null);
+    if (attestation?.vt_id || attestation?.verify_url) {
+      const saved = await saveServerResponseSettings({
+        ...(attestation?.vt_id ? { last_vt_id: attestation.vt_id } : {}),
+        ...(attestation?.verify_url ? { last_verify_url: attestation.verify_url } : {})
+      }, attestationGuard).catch(() => false);
+      if (!saved) throw new Error("Discarded an attestation response for a removed install.");
     }
     if (attestation?.verify_url && window.QRCode?.toDataURL) {
       qrDataUrl = await window.QRCode.toDataURL(attestation.verify_url, { width: 180, margin: 1 });
@@ -3190,7 +3287,8 @@ async function claimFreeReport() {
       free_claim: true,
       window_days: 0
     }, state.authSessionKey, {
-      deviceIdentity: state.deviceIdentity
+      deviceIdentity: state.deviceIdentity,
+      canAttachToken: canUseAccountSession("ordinary")
     });
     getVerifiedReportDownloadPayload(response);
     await rememberFreeReportClaimedUiHint();
@@ -4235,16 +4333,17 @@ async function confirmAppend() {
   state.isConfirming = true;
   document.getElementById("confirm-append").disabled = true;
   cancelConfirmationSpeech();
+  const writeGuard = captureRecordWriteGuard();
 
   try {
     const record = {
       ...state.candidateRecord,
       confirmation_state: "confirmed"
     };
-    const appendedRecord = await appendLedgerRecord(record);
+    const appendedRecord = await appendLedgerRecord(record, writeGuard);
     void checkForAnomalies(appendedRecord);
     await bumpLabelUsage(record.normalized_label);
-    await queueSyncRecord(appendedRecord);
+    await queueSyncRecord(appendedRecord, writeGuard);
     await updateSyncBadge();
     resetCaptureForm();
     await renderRecentRecords();
@@ -4272,6 +4371,10 @@ function resetCaptureForm() {
 }
 
 async function renderRecentRecords() {
+  if (isAccountLocked()) {
+    clearRenderedAccountData();
+    return;
+  }
   const records = await getRecords();
   renderFirstRecordGuide(records);
   const recent = [...records].reverse().slice(0, 5);
@@ -4284,6 +4387,10 @@ async function renderRecentRecords() {
 }
 
 async function renderHistory() {
+  if (isAccountLocked()) {
+    clearRenderedAccountData();
+    return;
+  }
   const records = await getRecords();
   renderHistoryList(records);
   wireReverseButtons(records);
@@ -4291,6 +4398,10 @@ async function renderHistory() {
 }
 
 function renderHistoryList(records) {
+  if (isAccountLocked()) {
+    clearRenderedAccountData();
+    return;
+  }
   const reversedHashes = getReversedEntryHashSet(records);
   renderRecordListWithMarketing(
     "history-records-v2",
@@ -4883,7 +4994,43 @@ function inferIcon(displayName, action) {
 
 LABEL_CATALOG = [...buildCatalogFromQuickPicks(), ...EXTRA_SEARCH_LABELS, ...LIABILITY_LABELS];
 
+function isAccountLocked() {
+  return document.body.classList.contains("account-locked");
+}
+
+function clearRenderedAccountData() {
+  [
+    "recent-records-v2",
+    "history-records-v2",
+    "dashboard-records-v2",
+    "confirm-copy-v2",
+    "confirm-meta-v2",
+    "voice-review-transcript",
+    "voice-review-understood",
+    "voice-review-missing",
+    "voice-review-suggestions",
+    "settings-summary-v2",
+    "settings-voice-corrections-v2",
+    "anomaly-list",
+    "export-status-v2",
+    "report-status"
+  ].forEach((id) => {
+    const element = document.getElementById(id);
+    if (element) element.replaceChildren();
+  });
+  state.candidateRecord = null;
+  clearPendingVoiceTranscript();
+}
+
 function showScreen(id) {
+  const allowedWhileLocked = new Set(["screen-signed-out", "screen-otp"]);
+  if (isAccountLocked() && !allowedWhileLocked.has(id)) {
+    if (id === "screen-onboarding" && !state.profile) {
+      // An empty install may leave the lock only through onboarding.
+    } else {
+      id = "screen-signed-out";
+    }
+  }
   const previousScreen = document.querySelector(".screen.active")?.id || null;
   document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
   const nextScreen = document.getElementById(id);
@@ -5119,8 +5266,16 @@ function closePinWipeModal() {
   }
 }
 
-function openPinWipeModal() {
+async function openPinWipeModal() {
   closeForgotPinModal();
+  state.pinWipeConfirmedCount = await getRecordsNotConfirmedBackedUpCount();
+  const warning = document.querySelector("#pin-wipe-modal .pin-wipe-warning");
+  if (warning) {
+    warning.textContent = [
+      "This device does not have a verified recovery channel. The only way to remove the passcode is to wipe all local data and start fresh.",
+      state.pinWipeConfirmedCount ? removalDataLossWarning(state.pinWipeConfirmedCount) : ""
+    ].filter(Boolean).join(" ");
+  }
   if (els["pin-wipe-modal"]) {
     els["pin-wipe-modal"].hidden = false;
     focusFirstInteractive(els["pin-wipe-modal"]);
@@ -5133,7 +5288,7 @@ async function openForgotPinFlow() {
     openForgotPinModal();
     return;
   }
-  openPinWipeModal();
+  await openPinWipeModal();
 }
 
 async function sendForgotPinResetCode() {
@@ -5188,32 +5343,24 @@ function showPinRecoverySuccess(message) {
 async function clearLocalData() {
   stopActiveRecognition();
   stopCaptureExampleRotation();
-  if (state.db) {
-    try {
-      state.db.close();
-    } catch (error) {
-      console.warn("Unable to close IndexedDB cleanly before reset.", error);
-    } finally {
-      state.db = null;
-    }
-  }
-
-  await new Promise((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(DB_NAME);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error || new Error("Failed to clear local database."));
-    request.onblocked = () => reject(new Error("Close other open Konfirmata tabs before wiping this device."));
-  });
-
-  localStorage.clear();
-  window.location.reload();
+  await beginDurableWipeLock();
+  await wipeAllLocalData(state.pinWipeConfirmedCount);
+  closePinWipeModal();
 }
 
 async function handlePinWipeRestart() {
   try {
     await clearLocalData();
   } catch (error) {
-    closePinWipeModal();
+    if (Number.isFinite(error?.updatedRemovalCount)) {
+      state.pinWipeConfirmedCount = error.updatedRemovalCount;
+      const warning = document.querySelector("#pin-wipe-modal .pin-wipe-warning");
+      if (warning) {
+        warning.textContent = `${removalDataLossWarning(error.updatedRemovalCount)} Review the updated warning and confirm again.`;
+      }
+    } else {
+      closePinWipeModal();
+    }
     if (els["pin-error"]) {
       els["pin-error"].textContent = error.message || "Unable to wipe this device right now.";
     }
@@ -5930,7 +6077,14 @@ async function verifyActiveOtpChallenge(
   }
 
   if (activeChallenge.source === "server") {
+    const verifyGeneration = state.sessionGeneration;
+    const verifyGuard = { ...captureRecordWriteGuard(), authToken: state.authSessionKey };
     await createAndStoreDeviceKeyMaterial();
+    if (verifyGeneration !== state.sessionGeneration) {
+      const error = new Error("This sign-in attempt was superseded.");
+      error.accountLocked = true;
+      throw error;
+    }
     const response = await verifyOtpCode(
       activeChallenge.serverBaseUrl || state.syncApiBaseUrl,
       normalizedChallengeIdentifier,
@@ -5943,12 +6097,81 @@ async function verifyActiveOtpChallenge(
         public_key: state.devicePublicKey || ""
       }
     );
-    state.authSessionKey = response["auth_" + "to" + "ken"] || "";
+    const returnedToken = response["auth_" + "to" + "ken"] || "";
+    const returnedAccount = String(response.account_id || "");
+    // The session exists on the server even when this response is too late or
+    // belongs to a different account, so it must be queued for revocation.
+    if (verifyGeneration !== state.sessionGeneration) {
+      await queueRevocation(returnedToken, "late_response", response.expires_at || "");
+      void flushPendingRevocations();
+      const error = new Error("This sign-in response arrived after the session changed.");
+      error.accountLocked = true;
+      throw error;
+    }
+    if (!returnedToken || !returnedAccount) {
+      throw new Error("Verification did not return a usable server session.");
+    }
+    if (state.startupClass === "S9") {
+      const storedConsent = await getSetting("legacy_claim_consent");
+      if (!legacyConsentMatches(storedConsent, challengeChannel, normalizedChallengeIdentifier)) {
+        await queueRevocation(returnedToken, "legacy_no_consent", response.expires_at || "");
+        void flushPendingRevocations();
+        state.accountLockedMessage = "Consent is required before these records can be opened. The new session is being ended.";
+        document.body.classList.add("account-locked");
+        await showSignedOutScreen();
+        const error = new Error(state.accountLockedMessage);
+        error.accountLocked = true;
+        throw error;
+      }
+    }
+    if (state.boundAccount && returnedAccount !== state.boundAccount) {
+      await queueRevocation(returnedToken, "account_mismatch", response.expires_at || "");
+      void flushPendingRevocations();
+      state.accountLockedMessage = "This device holds data for another account. Sign in with the email you used before, or remove local data.";
+      await showSignedOutScreen();
+      const error = new Error(state.accountLockedMessage);
+      error.accountLocked = true;
+      throw error;
+    }
+    const replacingActiveToken = Boolean(state.authSessionKey && state.authSessionKey !== returnedToken);
+    const nextGeneration = state.sessionGeneration + (replacingActiveToken ? 1 : 0);
+    try {
+      const installed = await saveVerifiedSessionAfterGuard({
+        auth_token: returnedToken,
+        auth_token_expires_at: response.expires_at || "",
+        bound_account: returnedAccount,
+        signed_out: false,
+        wipe_pending: false,
+        session_generation: nextGeneration
+      }, verifyGuard, ["legacy_claim_consent", "local_origin"]);
+      if (!installed) {
+        const error = new Error("This sign-in response arrived after local data was removed.");
+        error.code = "stale_response";
+        error.accountLocked = true;
+        throw error;
+      }
+    } catch (error) {
+      if (error?.code === "stale_response") throw error;
+      await queueRevocation(returnedToken, "binding_failed", response.expires_at || "");
+      void flushPendingRevocations();
+      throw error;
+    }
+    state.authSessionKey = returnedToken;
     state.authSessionExpiresAt = response.expires_at || "";
+    state.boundAccount = returnedAccount;
+    state.signedOut = false;
+    state.wipePending = false;
+    state.localOrigin = "";
+    state.legacyClaimConsent = null;
+    if (state.startupClass === "S9") {
+      state.startupClass = "S5";
+      state.otpReturnScreen = "screen-capture";
+    }
+    state.sessionGeneration = nextGeneration;
+    document.body.classList.remove("account-locked");
     state.smsSupported = Boolean(response?.sms_available ?? state.smsSupported);
     if (response.device_identity) {
       state.deviceIdentity = response.device_identity;
-      await saveSetting("device_identity", state.deviceIdentity);
     }
     state.profile.identity_anchor = challengeChannel;
     state.profile.identity_status = "verified_server";
@@ -5969,13 +6192,15 @@ async function verifyActiveOtpChallenge(
     state.profile.email_verified = Boolean(response.email_verified ?? state.profile.email_verified);
     state.profile.phone_verified = Boolean(response.phone_verified ?? state.profile.phone_verified);
     state.profile.phone_country = detectPhoneCountryFromPhoneNumber(state.profile.phone_number) || state.profile.phone_country || "";
-    await Promise.all([
-      saveProfile(state.profile, { skipPush: true }),
-      saveSetting("auth_" + "to" + "ken", state.authSessionKey),
-      saveSetting("auth_" + "to" + "ken_expires_at", state.authSessionExpiresAt)
-    ]);
-    if (state.profile.phone_country) {
-      await persistAuthPhoneCountry(state.profile.phone_country);
+    const responseGuard = { sessionGeneration: nextGeneration, wipeEpoch: verifyGuard.wipeEpoch, authToken: returnedToken };
+    const savedResponse = await saveServerResponseProfile(state.profile, responseGuard, {
+      ...(response.device_identity ? { device_identity: state.deviceIdentity } : {}),
+      ...(state.profile.phone_country ? { auth_phone_country: state.profile.phone_country } : {})
+    });
+    if (!savedResponse) {
+      const error = new Error("This sign-in response arrived after local data was removed.");
+      error.accountLocked = true;
+      throw error;
     }
     state.syncStatus = `${getVerificationChannelLabel(challengeChannel)} completed with sync server.`;
   } else if (enteredCode !== activeChallenge.code) {
@@ -6034,13 +6259,31 @@ async function requestLocalOtpCode() {
     return;
   }
 
+  if (state.startupClass === "S9") {
+    const storedConsent = await getSetting("legacy_claim_consent");
+    if (!legacyConsentMatches(storedConsent, channel, identifier)) {
+      if (!state.legacyConsentApprovalPending) {
+        state.legacyChoiceShown = true;
+        document.body.classList.add("account-locked");
+        await showSignedOutScreen();
+        return;
+      }
+      const consent = { channel: normalizeOtpChannel(channel), identifier };
+      await saveSettings({ legacy_claim_consent: consent });
+      state.legacyClaimConsent = consent;
+    }
+    state.legacyConsentApprovalPending = false;
+  }
+
   if (channel === "email") {
     state.profile.email = identifier;
   } else {
     state.profile.phone_number = identifier;
     state.profile.phone_country = detectPhoneCountryFromPhoneNumber(identifier) || state.profile.phone_country || "";
   }
-  await saveProfile(state.profile);
+  if (state.startupClass !== "S9") {
+    await saveProfile(state.profile);
+  }
   try {
     await requestOtpChallenge(identifier, {
       channel,
@@ -6065,6 +6308,7 @@ async function verifyLocalOtpCode() {
     await verifyActiveOtpChallenge(enteredCode);
     renderOtpScreen();
   } catch (error) {
+    if (error.accountLocked) return;
     renderOtpScreen();
     showOtpError(error.message || "Verification failed.");
     return;
@@ -6075,6 +6319,9 @@ async function verifyLocalOtpCode() {
   }
   if (returnScreen === "screen-export") {
     renderExportScreen();
+  }
+  if (returnScreen === "screen-capture") {
+    await renderRecentRecords();
   }
   void flushSyncQueue();
   showScreen(returnScreen);
@@ -6146,6 +6393,22 @@ function isAuthSessionValid() {
   return Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
 }
 
+function canUseAccountSession(purpose = "ordinary", token = state.authSessionKey) {
+  if (!token) return false;
+  if (purpose === "logout") return true;
+  if (purpose === "startup_profile_check") {
+    return !state.boundAccount && Boolean(getTokenSessionId(token)) && !state.wipePending && !state.signedOut;
+  }
+  return Boolean(
+    state.boundAccount
+    && token === state.authSessionKey
+    && !state.signedOut
+    && !state.wipePending
+    && state.startupClass !== "S4_LEGACY"
+    && state.startupClass !== "S9"
+  );
+}
+
 function getExpiredAuthSessionMessage() {
   return `Your server session expired. Re-open ${getVerificationChannelLabel().toLowerCase()} to continue.`;
 }
@@ -6166,15 +6429,31 @@ async function fetchAuthenticatedJson(path, options = {}) {
     throw error;
   }
 
-  const response = await fetch(`${normalizedBaseUrl}${path}`, {
+  const requestToken = options.authToken || state.authSessionKey;
+  const requestGeneration = Number.isFinite(options.generation) ? options.generation : state.sessionGeneration;
+  if (!canUseAccountSession(options.purpose || "ordinary", requestToken)) {
+    const error = new Error("Account session is locked for this request.");
+    error.code = "account_session_blocked";
+    error.statusCode = 0;
+    throw error;
+  }
+  const controller = options.controller || new AbortController();
+  state.fetchControllers.add(controller);
+  let response;
+  try {
+    response = await fetch(`${normalizedBaseUrl}${path}`, {
     method: options.method || "GET",
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
       ...(state.deviceIdentity ? { "X-Device-Identity": state.deviceIdentity } : {}),
-      ...(state.authSessionKey ? { Authorization: `Bearer ${state.authSessionKey}` } : {})
+      ...(requestToken ? { Authorization: `Bearer ${requestToken}` } : {})
     },
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal
+    });
+  } finally {
+    state.fetchControllers.delete(controller);
+  }
 
   let data = null;
   try {
@@ -6188,9 +6467,30 @@ async function fetchAuthenticatedJson(path, options = {}) {
     const error = new Error(message);
     error.statusCode = response.status;
     error.payload = data;
+    error.requestToken = requestToken;
+    error.requestGeneration = requestGeneration;
+    if (response.status === 401 && data?.error === "token_missing" && !options.tokenMissingRetried) {
+      // The bearer header is intentionally rebuilt from the captured token,
+      // rather than silently discarding a valid session on an app bug.
+      return fetchAuthenticatedJson(path, {
+        ...options,
+        authToken: requestToken,
+        generation: requestGeneration,
+        tokenMissingRetried: true
+      });
+    }
+    await handleAuthenticatedRefusal(error, requestToken, requestGeneration);
     if (response.status === 401 && data?.error === "device_revoked") {
       state.syncStatus = "This device has been revoked. Restore your account again to continue.";
     }
+    throw error;
+  }
+
+  if (requestGeneration !== state.sessionGeneration || requestToken !== state.authSessionKey) {
+    const error = new Error("Discarded a response for an older account session.");
+    error.code = "stale_response";
+    error.requestToken = requestToken;
+    error.requestGeneration = requestGeneration;
     throw error;
   }
 
@@ -6198,17 +6498,461 @@ async function fetchAuthenticatedJson(path, options = {}) {
 }
 
 async function logoutFromServerSession() {
+  const activeToken = state.authSessionKey;
+  const nextGeneration = state.sessionGeneration + 1;
+  const pending = appendPendingRevocation(state.pendingRevocations, activeToken, "sign_out", state.authSessionExpiresAt);
+  await saveSettings({
+    auth_token: "",
+    auth_token_expires_at: "",
+    pending_revocations: pending,
+    session_generation: nextGeneration,
+    signed_out: true
+  }, ["local_origin", "legacy_claim_consent"]);
   state.authSessionKey = "";
   state.authSessionExpiresAt = "";
+  state.pendingRevocations = pending;
+  state.sessionGeneration = nextGeneration;
+  state.signedOut = true;
+  state.localOrigin = "";
+  state.legacyClaimConsent = null;
   state.otpChallenge = null;
-  state.syncStatus = "Signed out. Re-open verification to sync again.";
-  await Promise.all([
-    saveSetting("auth_" + "to" + "ken", ""),
-    saveSetting("auth_" + "to" + "ken_expires_at", "")
-  ]);
-  refreshTrustSetupButtons();
-  renderExportScreen();
-  await renderSettings();
+  abortAccountRequests();
+  state.syncStatus = "Signed out. Queued records stay on this device.";
+  showSignedOutScreen();
+  void flushPendingRevocations();
+}
+
+function getTokenSessionId(token) {
+  try {
+    const encoded = String(token || "").split(".")[1];
+    if (!encoded) return "";
+    const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    return String(JSON.parse(atob(normalized)).sid || "");
+  } catch {
+    return "";
+  }
+}
+
+function getTokenExpiry(token, fallback = "") {
+  try {
+    const encoded = String(token || "").split(".")[1];
+    const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const exp = Number(JSON.parse(atob(normalized)).exp || 0);
+    if (exp) return exp * 1000;
+  } catch {
+    // The server is authoritative; expiry only bounds local retries.
+  }
+  const parsed = new Date(fallback).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function appendPendingRevocation(current, token, reason, expiresAt = "") {
+  if (!token) return Array.isArray(current) ? current : [];
+  const sid = getTokenSessionId(token);
+  const list = Array.isArray(current) ? current.filter((entry) => entry?.token) : [];
+  if (list.some((entry) => entry.token === token || (sid && getTokenSessionId(entry.token) === sid))) return list;
+  return [...list, { token, exp: getTokenExpiry(token, expiresAt), reason }];
+}
+
+async function queueRevocation(token, reason, expiresAt = "") {
+  const pending = appendPendingRevocation(state.pendingRevocations, token, reason, expiresAt);
+  if (pending.length === state.pendingRevocations.length) return pending;
+  await saveSettings({ pending_revocations: pending });
+  state.pendingRevocations = pending;
+  return pending;
+}
+
+function abortAccountRequests() {
+  state.fetchControllers.forEach((controller) => controller.abort());
+  state.fetchControllers.clear();
+}
+
+async function handleAuthenticatedRefusal(error, requestToken, requestGeneration) {
+  if (error?.statusCode !== 401) return;
+  const refusal = error.payload?.error;
+  // A response for T1 must never change T2's local state after re-verification.
+  if (!requestToken || requestToken !== state.authSessionKey || requestGeneration !== state.sessionGeneration) return;
+  if (refusal === "session_invalid") {
+    await enterRefusedSignedOutState(false, requestToken);
+  } else if (refusal === "device_mismatch") {
+    await enterRefusedSignedOutState(true, requestToken);
+  }
+}
+
+async function enterRefusedSignedOutState(queueToken, token, reason = "device_mismatch") {
+  const nextGeneration = state.sessionGeneration + 1;
+  const pending = queueToken
+    ? appendPendingRevocation(state.pendingRevocations, token, reason, state.authSessionExpiresAt)
+    : state.pendingRevocations;
+  await saveSettings({
+    auth_token: "",
+    auth_token_expires_at: "",
+    pending_revocations: pending,
+    session_generation: nextGeneration,
+    signed_out: true
+  }, ["local_origin", "legacy_claim_consent"]);
+  state.authSessionKey = "";
+  state.authSessionExpiresAt = "";
+  state.pendingRevocations = pending;
+  state.sessionGeneration = nextGeneration;
+  state.signedOut = true;
+  state.localOrigin = "";
+  state.legacyClaimConsent = null;
+  abortAccountRequests();
+  state.syncStatus = "This device is signed out. Sign in again to continue.";
+  showSignedOutScreen();
+  if (queueToken) void flushPendingRevocations();
+}
+
+function recordHasServerAcknowledgement(record) {
+  return record?.evidence_level === "server_attested"
+    || Boolean(record?.server_entry_id)
+    || record?.importedFromServer === true;
+}
+
+function getRemovalRecordCount(records, queueEntries) {
+  const recordIds = new Set();
+  let count = 0;
+  (records || []).forEach((record) => {
+    if (record?.id != null) recordIds.add(String(record.id));
+    // Missing or unfamiliar evidence is deliberately treated as unacknowledged.
+    if (!recordHasServerAcknowledgement(record)) count += 1;
+  });
+  const orphanQueueIds = new Set();
+  (queueEntries || []).forEach((entry) => {
+    const recordId = entry?.entry_payload?.id;
+    if (recordId != null && recordIds.has(String(recordId))) return;
+    const entryId = recordId ?? entry?.entry_id ?? entry?.queue_id;
+    orphanQueueIds.add(entryId == null ? `unknown:${orphanQueueIds.size}` : String(entryId));
+  });
+  return count + orphanQueueIds.size;
+}
+
+function readRemovalCountFromStores(recordsStore, queueStore) {
+  return new Promise((resolve, reject) => {
+    let records = null;
+    let queueEntries = null;
+    const finish = () => {
+      if (records == null || queueEntries == null) return;
+      resolve(getRemovalRecordCount(records, queueEntries));
+    };
+    const recordsRequest = recordsStore.getAll();
+    recordsRequest.onsuccess = () => { records = recordsRequest.result || []; finish(); };
+    recordsRequest.onerror = () => reject(recordsRequest.error);
+    const queueRequest = queueStore.getAll();
+    queueRequest.onsuccess = () => { queueEntries = queueRequest.result || []; finish(); };
+    queueRequest.onerror = () => reject(queueRequest.error);
+  });
+}
+
+function getRecordsNotConfirmedBackedUpCount() {
+  const tx = state.db.transaction(["records", "syncQueue"], "readonly");
+  return readRemovalCountFromStores(tx.objectStore("records"), tx.objectStore("syncQueue"));
+}
+
+function removalDataLossWarning(count) {
+  return `${count} record${count === 1 ? "" : "s"} on this device ${count === 1 ? "is" : "are"} not confirmed as backed up. Removing will delete ${count === 1 ? "it" : "them"} permanently.`;
+}
+
+async function showSignedOutScreen({ onlyIfActive = false } = {}) {
+  if (onlyIfActive && getActiveScreenId() !== "screen-signed-out") return;
+  document.body.classList.add("account-locked");
+  clearRenderedAccountData();
+  let removalCount = 0;
+  try {
+    removalCount = await getRecordsNotConfirmedBackedUpCount();
+  } catch (error) {
+    console.warn("Unable to count records not confirmed as backed up.", error);
+  }
+  if (onlyIfActive && getActiveScreenId() !== "screen-signed-out") return;
+  const legacyLocked = state.startupClass === "S9" || state.startupClass === "S4_LEGACY";
+  if (els["signed-out-copy"]) {
+    els["signed-out-copy"].textContent = state.wipePending
+      ? "Finish removing local data."
+      : state.startupClass === "S9"
+        ? "Verify your email to open the records on this device."
+        : state.startupClass === "S4_LEGACY"
+          ? "Records made before sign-in are locked on this device."
+      : removalCount
+        ? `${removalDataLossWarning(removalCount)} Sign in with the email you used before to continue.`
+        : "Local records stay on this device. Sign in with the email you used before to continue.";
+  }
+  if (els["signed-out-pending"]) {
+    const pendingCopy = state.accountLockedMessage === els["signed-out-copy"]?.textContent
+      ? ""
+      : state.accountLockedMessage;
+    els["signed-out-pending"].textContent = pendingCopy || (state.pendingRevocations.length
+      ? "This device's server session ends when it next connects. Each queued token remains a working token until revoked."
+      : "");
+  }
+  if (els["signed-out-sign-in"]) {
+    els["signed-out-sign-in"].textContent = state.legacyChoiceShown && legacyLocked ? "Keep" : "Sign in";
+  }
+  let notNow = document.getElementById("legacy-claim-not-now");
+  if (state.legacyChoiceShown && legacyLocked) {
+    const accountCopy = state.startupClass === "S4_LEGACY"
+      ? "the account this device is signed in to"
+      : "the account you're about to verify";
+    els["signed-out-pending"].textContent = `This device has ${state.legacyRecordCount} record${state.legacyRecordCount === 1 ? "" : "s"} made before sign-in. Keep them with ${accountCopy}, or remove them.`;
+    if (!notNow) {
+      notNow = document.createElement("button");
+      notNow.id = "legacy-claim-not-now";
+      notNow.type = "button";
+      notNow.className = "btn btn-secondary";
+      notNow.textContent = "Not now";
+      notNow.addEventListener("click", () => {
+        state.legacyChoiceShown = false;
+        void showSignedOutScreen();
+      });
+      els["signed-out-remove-data"].parentElement.appendChild(notNow);
+    }
+  } else if (notNow) {
+    notNow.remove();
+  }
+  showScreen("screen-signed-out");
+}
+
+async function openSignedOutSignIn() {
+  if (state.startupClass === "S9" || state.startupClass === "S4_LEGACY") {
+    if (!state.legacyChoiceShown) {
+      state.legacyChoiceShown = true;
+      await showSignedOutScreen();
+      return;
+    }
+    if (state.startupClass === "S4_LEGACY") {
+      await keepS4LegacyRecords();
+      return;
+    }
+    state.legacyConsentApprovalPending = true;
+    state.legacyChoiceShown = false;
+  }
+  if (!state.profile) state.profile = await getProfile();
+  if (!state.profile) {
+    document.body.classList.remove("account-locked");
+    showScreen("screen-onboarding");
+    return;
+  }
+  // A successful same-account sign-in resumes the app in Settings; returning
+  // to the locked screen would leave an unlocked session behind a stale UI.
+  openTrustSetup("screen-settings");
+}
+
+async function keepS4LegacyRecords() {
+  const token = state.authSessionKey;
+  const generation = state.sessionGeneration;
+  const guard = { ...captureRecordWriteGuard(), authToken: token };
+  try {
+    const response = await fetchAuthenticatedJson("/profile", {
+      authToken: token,
+      generation,
+      purpose: "startup_profile_check"
+    });
+    const accountId = String(response.account_id || "");
+    if (!accountId || accountId !== state.startupProfileAccount) {
+      await enterRefusedSignedOutState(true, token, "account_mismatch");
+      state.accountLockedMessage = "This session now belongs to a different account. Sign in again or remove local data.";
+      return showSignedOutScreen();
+    }
+    const saved = await saveServerResponseSettings(
+      { bound_account: accountId, signed_out: false },
+      guard,
+      ["local_origin", "legacy_claim_consent"]
+    );
+    if (!saved) return showSignedOutScreen();
+    state.boundAccount = accountId;
+    state.localOrigin = "";
+    state.legacyClaimConsent = null;
+    state.startupClass = "S5";
+    document.body.classList.remove("account-locked");
+    window.location.reload();
+  } catch (error) {
+    state.accountLockedMessage = error?.statusCode === 401
+      ? "This session is no longer valid. Sign in again to continue."
+      : "Couldn't confirm this account. The records remain locked.";
+    await showSignedOutScreen();
+  }
+}
+
+async function openRemoveLocalData() {
+  if (getActiveScreenId() !== "screen-signed-out") await showSignedOutScreen();
+  const removalCount = await getRecordsNotConfirmedBackedUpCount();
+  state.removeLocalDataConfirmedCount = removalCount;
+  state.removeLocalDataSessionWarning = "";
+  els["remove-local-data-panel"].hidden = false;
+  els["remove-local-data-copy"].textContent = removalCount
+    ? removalDataLossWarning(removalCount)
+    : "This removes records, device keys, and local account data from this device.";
+  els["remove-local-data-error"].hidden = true;
+  els["remove-local-data-error"].textContent = "";
+  els["remove-local-data-anyway"].hidden = true;
+  els["remove-local-data-confirmation"].value = "";
+}
+
+function closeRemoveLocalData() {
+  els["remove-local-data-panel"].hidden = true;
+}
+
+async function beginDurableWipeLock() {
+  if (state.wipePending) return;
+  const activeToken = state.authSessionKey;
+  const pending = appendPendingRevocation(state.pendingRevocations, activeToken, "remove_local_data", state.authSessionExpiresAt);
+  const nextGeneration = state.sessionGeneration + 1;
+  await saveSettings({
+    auth_token: "", auth_token_expires_at: "", pending_revocations: pending,
+    signed_out: true, wipe_pending: true, session_generation: nextGeneration
+  }, ["local_origin", "legacy_claim_consent"]);
+  state.authSessionKey = "";
+  state.authSessionExpiresAt = "";
+  state.pendingRevocations = pending;
+  state.sessionGeneration = nextGeneration;
+  state.signedOut = true;
+  state.wipePending = true;
+  abortAccountRequests();
+  await showSignedOutScreen();
+}
+
+async function revokeAllHeldTokens() {
+  const held = [...state.pendingRevocations];
+  if (!held.length) return [];
+  const unresolved = [];
+  for (const entry of held) {
+    try {
+      await postJson(state.syncApiBaseUrl, "/auth/logout", {}, entry.token, {
+        deviceIdentity: state.deviceIdentity,
+        canAttachToken: canUseAccountSession("logout", entry.token)
+      });
+    } catch (error) {
+      if (!(error?.statusCode === 401 && error?.payload?.error === "session_invalid")) unresolved.push(entry);
+    }
+  }
+  return unresolved;
+}
+
+async function removeLocalDataFlow(removeAnyway = false) {
+  if ((els["remove-local-data-confirmation"].value || "").trim() !== "REMOVE") {
+    els["remove-local-data-error"].hidden = false;
+    els["remove-local-data-error"].textContent = 'Type "REMOVE" to continue.';
+    return;
+  }
+  try {
+    await beginDurableWipeLock();
+    const unresolved = removeAnyway ? state.pendingRevocations : await revokeAllHeldTokens();
+    if (unresolved.length && !removeAnyway) {
+      els["remove-local-data-panel"].hidden = false;
+      els["remove-local-data-error"].hidden = false;
+      state.removeLocalDataSessionWarning = `${unresolved.length} server session${unresolved.length === 1 ? "" : "s"} for this device stay valid until they expire (up to 30 days) or you use Sign out everywhere from another device.`;
+      els["remove-local-data-error"].textContent = `Couldn't end ${unresolved.length} of this device's server sessions. Try again, or remove anyway. ${state.removeLocalDataSessionWarning}`;
+      els["remove-local-data-anyway"].hidden = false;
+      return;
+    }
+    await wipeAllLocalData(state.removeLocalDataConfirmedCount);
+  } catch (error) {
+    els["remove-local-data-panel"].hidden = false;
+    els["remove-local-data-error"].hidden = false;
+    if (Number.isFinite(error?.updatedRemovalCount)) {
+      state.removeLocalDataConfirmedCount = error.updatedRemovalCount;
+      els["remove-local-data-copy"].textContent = removalDataLossWarning(error.updatedRemovalCount);
+      els["remove-local-data-confirmation"].value = "";
+      els["remove-local-data-error"].textContent = [
+        "The number of records not confirmed as backed up changed. Review the updated warning and type REMOVE again.",
+        state.removeLocalDataSessionWarning
+      ].filter(Boolean).join(" ");
+    } else {
+      els["remove-local-data-error"].textContent = error.message || "Unable to remove local data right now.";
+    }
+  }
+}
+
+async function wipeAllLocalData(confirmedRemovalCount) {
+  const stores = ["records", "syncQueue", "customLabels", "usage", "voiceCorrections", "anomaly_log", "settings"];
+  let nextWipeEpoch = state.wipeEpoch;
+  await new Promise((resolve, reject) => {
+    const tx = state.db.transaction(stores, "readwrite");
+    const settings = tx.objectStore("settings");
+    let countIncreasedTo = null;
+    const epochRequest = settings.get("wipe_epoch");
+    const countPromise = readRemovalCountFromStores(tx.objectStore("records"), tx.objectStore("syncQueue"));
+    Promise.all([
+      countPromise,
+      new Promise((done, fail) => {
+        epochRequest.onsuccess = () => done(Number(epochRequest.result?.value || 0));
+        epochRequest.onerror = () => fail(epochRequest.error);
+      })
+    ]).then(([currentCount, currentEpoch]) => {
+      if (currentCount > Number(confirmedRemovalCount)) {
+        countIncreasedTo = currentCount;
+        tx.abort();
+        return;
+      }
+      nextWipeEpoch = currentEpoch + 1;
+      stores.filter((name) => name !== "settings").forEach((name) => tx.objectStore(name).clear());
+      settings.clear();
+      // Keep the server URL and a non-secret epoch that invalidates writes
+      // which began in another tab before this wipe committed.
+      if (state.syncApiBaseUrl) settings.put({ key: "sync_api_base_url", value: state.syncApiBaseUrl });
+      settings.put({ key: "wipe_epoch", value: nextWipeEpoch });
+    }, () => {
+      try {
+        tx.abort();
+      } catch {
+        // A test fault or storage failure may already have aborted it.
+      }
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("Local-data wipe failed."));
+    tx.onabort = () => {
+      if (countIncreasedTo != null) {
+        const error = new Error("The removal count changed before the wipe could finish.");
+        error.updatedRemovalCount = countIncreasedTo;
+        reject(error);
+        return;
+      }
+      reject(tx.error || new Error("Local-data wipe was interrupted."));
+    };
+  });
+  state.profile = null;
+  state.boundAccount = "";
+  state.pendingRevocations = [];
+  state.wipeEpoch = nextWipeEpoch;
+  state.signedOut = false;
+  state.wipePending = false;
+  state.localOrigin = "";
+  state.startupClass = "S7";
+  state.authSessionKey = "";
+  state.authSessionExpiresAt = "";
+  state.authPhoneCountry = "";
+  state.devicePrivateKey = null;
+  state.devicePublicKey = "";
+  state.deviceIdentity = "";
+  state.publicKeyFingerprint = "";
+  state.onboardingStep = 1;
+  state.onboardingProfileDirty.clear();
+  document.body.classList.remove("account-locked");
+  closeRemoveLocalData();
+  renderOnboarding();
+  showScreen("screen-onboarding");
+}
+
+async function logoutEverywhere() {
+  const token = state.authSessionKey;
+  const generation = state.sessionGeneration;
+  try {
+    await fetchAuthenticatedJson("/auth/logout-all", { method: "POST", authToken: token, generation });
+    await logoutFromServerSession();
+    state.accountLockedMessage = "Signed out on all devices.";
+    await showSignedOutScreen();
+  } catch (error) {
+    if (error?.statusCode === 401 && error?.payload?.error === "session_invalid") {
+      // The refusal handler signed this device out; it cannot establish the
+      // fate of other devices.
+      state.accountLockedMessage = "Couldn't confirm other devices were signed out. Sign in and try again.";
+      await showSignedOutScreen();
+      return;
+    }
+    if (els["settings-account-status"]) {
+      els["settings-account-status"].textContent = "Couldn't confirm whether other devices were signed out. Check your sign-in and try again.";
+    }
+  }
 }
 
 function buildProfileSyncPayload(profile = state.profile) {
@@ -6233,11 +6977,15 @@ async function pushProfile() {
   if (!(state.profile && isAuthSessionValid() && state.syncApiBaseUrl)) return;
   const payload = buildProfileSyncPayload();
   if (!payload) return;
+  const generation = state.sessionGeneration;
+  const token = state.authSessionKey;
   try {
-    await postJson(state.syncApiBaseUrl, "/profile", payload, state.authSessionKey, {
-      deviceIdentity: state.deviceIdentity
+    await postJson(state.syncApiBaseUrl, "/profile", payload, token, {
+      deviceIdentity: state.deviceIdentity,
+      canAttachToken: canUseAccountSession("ordinary", token)
     });
   } catch (error) {
+    await handleAuthenticatedRefusal(error, token, generation);
     console.warn("Profile push skipped.", error);
   }
 }
@@ -6271,14 +7019,19 @@ function mergeServerProfile(serverProfile, fallbackCountry = getSelectedCountryI
 }
 
 async function pullProfile(fallbackCountry = getSelectedCountryId()) {
-  const response = await fetchAuthenticatedJson("/profile");
+  const token = state.authSessionKey;
+  const generation = state.sessionGeneration;
+  const guard = { ...captureRecordWriteGuard(), authToken: token };
+  const response = await fetchAuthenticatedJson("/profile", { authToken: token, generation });
   if (!response.profile) {
     return null;
   }
 
-  state.profile = mergeServerProfile(response.profile, fallbackCountry);
+  const profile = mergeServerProfile(response.profile, fallbackCountry);
+  const saved = await saveServerResponseProfile(profile, guard);
+  if (!saved) return null;
+  state.profile = profile;
   initializeAuthPhoneCountry();
-  await saveProfile(state.profile, { skipPush: true });
   syncDevQaSnapshot("profile_pulled");
   return response.profile;
 }
@@ -6325,21 +7078,43 @@ function normalizeImportedRecord(record, index) {
   };
 }
 
-async function replaceLocalRecordsWithImported(records) {
+async function replaceLocalRecordsWithImported(records, { token, generation } = {}) {
   const importedRecords = records.map((record, index) => normalizeImportedRecord(record, index));
-  await new Promise((resolve, reject) => {
-    const tx = state.db.transaction(["records", "syncQueue"], "readwrite");
+  const replaced = await new Promise((resolve, reject) => {
+    const tx = state.db.transaction(["settings", "records", "syncQueue"], "readwrite");
+    const settingsStore = tx.objectStore("settings");
     const recordsStore = tx.objectStore("records");
     const syncQueueStore = tx.objectStore("syncQueue");
-    recordsStore.clear();
-    syncQueueStore.clear();
-    importedRecords.forEach((record) => {
-      recordsStore.add(record);
+    const settingKeys = ["auth_token", "session_generation", "signed_out", "wipe_pending", "bound_account"];
+    const settings = new Map();
+    let stale = false;
+
+    settingKeys.forEach((key) => {
+      const request = settingsStore.get(key);
+      request.onsuccess = () => {
+        settings.set(key, request.result?.value);
+        if (settings.size !== settingKeys.length) return;
+        const sessionMatches = settings.get("auth_token") === token
+          && Number(settings.get("session_generation") || 0) === Number(generation);
+        if (!sessionMatches || settings.get("signed_out") === true || settings.get("wipe_pending") === true
+          || !String(settings.get("bound_account") || "")) {
+          stale = true;
+          tx.abort();
+          return;
+        }
+        recordsStore.clear();
+        syncQueueStore.clear();
+        importedRecords.forEach((record) => {
+          recordsStore.add(record);
+        });
+      };
     });
-    tx.oncomplete = () => resolve();
+    tx.oncomplete = () => resolve(true);
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => stale ? resolve(false) : reject(tx.error || new Error("Record replacement was interrupted."));
   });
-  await refreshSyncQueueCount();
+  if (replaced) await refreshSyncQueueCount();
+  return replaced;
 }
 
 function getRecordMergeKey(record) {
@@ -6348,55 +7123,89 @@ function getRecordMergeKey(record) {
   return `local:${record?.id || ""}:${record?.confirmed_at || ""}:${record?.amount_minor || ""}:${record?.label || ""}`;
 }
 
-async function mergeLocalRecordsWithImported(records) {
+async function mergeLocalRecordsWithImported(records, { token, generation } = {}) {
   const importedRecords = records.map((record, index) => normalizeImportedRecord(record, index));
   if (!importedRecords.length) return 0;
 
-  const localRecords = await getRecords();
-  const merged = new Map();
-  [...localRecords, ...importedRecords].forEach((record) => {
-    const key = getRecordMergeKey(record);
-    if (!key) return;
-    const existing = merged.get(key);
-    merged.set(key, {
-      ...(existing || {}),
-      ...record,
-      evidence_level: record.evidence_level || existing?.evidence_level || null
-    });
-  });
-
-  const mergedRecords = [...merged.values()].sort((a, b) => {
-    const timeDiff = getRecordConfirmedAtMs(a) - getRecordConfirmedAtMs(b);
-    if (timeDiff) return timeDiff;
-    return Number(a.server_entry_id || a.id || 0) - Number(b.server_entry_id || b.id || 0);
-  });
-
-  await new Promise((resolve, reject) => {
-    const tx = state.db.transaction("records", "readwrite");
+  const merged = await new Promise((resolve, reject) => {
+    const tx = state.db.transaction(["settings", "records"], "readwrite");
+    const settingsStore = tx.objectStore("settings");
     const recordsStore = tx.objectStore("records");
-    recordsStore.clear();
-    mergedRecords.forEach((record) => {
-      recordsStore.add(record);
+    const settingKeys = ["auth_token", "session_generation", "signed_out", "wipe_pending", "bound_account"];
+    const settings = new Map();
+    let localRecords = null;
+    let stale = false;
+    let writesQueued = false;
+
+    const queueMergeWrites = () => {
+      if (writesQueued || localRecords == null || settings.size !== settingKeys.length) return;
+      const sessionMatches = settings.get("auth_token") === token
+        && Number(settings.get("session_generation") || 0) === Number(generation);
+      if (!sessionMatches || settings.get("signed_out") === true || settings.get("wipe_pending") === true
+        || !String(settings.get("bound_account") || "")) {
+        stale = true;
+        tx.abort();
+        return;
+      }
+
+      writesQueued = true;
+      const byKey = new Map();
+      [...localRecords, ...importedRecords].forEach((record) => {
+        const key = getRecordMergeKey(record);
+        if (!key) return;
+        const existing = byKey.get(key);
+        byKey.set(key, {
+          ...(existing || {}),
+          ...record,
+          evidence_level: record.evidence_level || existing?.evidence_level || null
+        });
+      });
+      const mergedRecords = [...byKey.values()].sort((a, b) => {
+        const timeDiff = getRecordConfirmedAtMs(a) - getRecordConfirmedAtMs(b);
+        if (timeDiff) return timeDiff;
+        return Number(a.server_entry_id || a.id || 0) - Number(b.server_entry_id || b.id || 0);
+      });
+      recordsStore.clear();
+      mergedRecords.forEach((record) => {
+        recordsStore.add(record);
+      });
+    };
+
+    settingKeys.forEach((key) => {
+      const request = settingsStore.get(key);
+      request.onsuccess = () => {
+        settings.set(key, request.result?.value);
+        queueMergeWrites();
+      };
     });
-    tx.oncomplete = () => resolve();
+    const localRequest = recordsStore.getAll();
+    localRequest.onsuccess = () => {
+      localRecords = localRequest.result || [];
+      queueMergeWrites();
+    };
+
+    tx.oncomplete = () => resolve(true);
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => stale ? resolve(false) : reject(tx.error || new Error("Record merge was interrupted."));
   });
 
-  return importedRecords.length;
+  return merged ? importedRecords.length : 0;
 }
 
-async function pullRecordsFromServer() {
-  const response = await fetchAuthenticatedJson("/records");
+async function pullRecordsFromServer({ token, generation } = {}) {
+  const response = await fetchAuthenticatedJson("/records", { authToken: token, generation });
   return Array.isArray(response.records) ? response.records : [];
 }
 
 async function restoreServerRecordsIntoLocal({ quiet = false } = {}) {
   if (!(state.db && isAuthSessionValid() && state.syncApiBaseUrl)) return 0;
+  const token = state.authSessionKey;
+  const generation = state.sessionGeneration;
 
   try {
     await flushSyncQueue();
-    const records = await pullRecordsFromServer();
-    const importedCount = await mergeLocalRecordsWithImported(records);
+    const records = await pullRecordsFromServer({ token, generation });
+    const importedCount = await mergeLocalRecordsWithImported(records, { token, generation });
     if (importedCount && !quiet) {
       state.syncStatus = `Restored ${importedCount} server record${importedCount === 1 ? "" : "s"} to this device.`;
       await updateSyncBadge();
@@ -6693,7 +7502,8 @@ async function revokeDevice(deviceIdentity) {
   await postJson(state.syncApiBaseUrl, "/identity/revoke", {
     device_identity: deviceIdentity
   }, state.authSessionKey, {
-    deviceIdentity: state.deviceIdentity
+    deviceIdentity: state.deviceIdentity,
+    canAttachToken: canUseAccountSession("ordinary")
   });
 }
 
@@ -6832,12 +7642,15 @@ function renderOnboardingProfileStep() {
     state.profile.language = "en";
   }
   syncCountryAwareInputs();
-  els["onboarding-name"].value = state.profile?.display_name || "";
-  els["onboarding-phone"].value = formatPhoneForInput(state.profile?.phone_number || "", getPhoneInputCountry());
-  els["onboarding-email"].value = state.profile?.email || "";
-  els["onboarding-state"].value = state.profile?.region || "";
-  els["onboarding-birth-year"].value = state.profile?.birth_year || "";
-  els["onboarding-gender"].value = state.profile?.gender || "";
+  const setIfUntouched = (id, value) => {
+    if (!state.onboardingProfileDirty.has(id) && els[id]) els[id].value = value;
+  };
+  setIfUntouched("onboarding-name", state.profile?.display_name || "");
+  setIfUntouched("onboarding-phone", formatPhoneForInput(state.profile?.phone_number || "", getPhoneInputCountry()));
+  setIfUntouched("onboarding-email", state.profile?.email || "");
+  setIfUntouched("onboarding-state", state.profile?.region || "");
+  setIfUntouched("onboarding-birth-year", state.profile?.birth_year || "");
+  setIfUntouched("onboarding-gender", state.profile?.gender || "");
   syncOnboardingRegionNote();
   clearOnboardingProfileError();
   updateFinishOnboardingState();
@@ -7193,6 +8006,29 @@ function saveProfile(profile, { skipPush = false } = {}) {
   });
 }
 
+async function saveFirstProfileWithOrigin(profile) {
+  const existingProfile = await getProfile();
+  if (existingProfile) {
+    await saveProfile(profile);
+    return;
+  }
+  const empty = await isInstallEmpty();
+  if (!empty) {
+    await saveProfile(profile);
+    return;
+  }
+  await new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readwrite");
+    const nextProfile = normalizeLocalProfile(profile) || {};
+    tx.objectStore("settings").put({ ...nextProfile, key: "profile" });
+    tx.objectStore("settings").put({ key: "local_origin", value: "this_version" });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("Unable to save the first local profile."));
+    tx.onabort = () => reject(tx.error || new Error("First-profile transaction was aborted."));
+  });
+  state.localOrigin = "this_version";
+}
+
 function getSetting(key) {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("settings", "readonly");
@@ -7208,6 +8044,21 @@ function saveSetting(key, value) {
     tx.objectStore("settings").put({ key, value });
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+  });
+}
+
+// Account transitions use this helper so IndexedDB cannot persist half of a
+// sign-out, binding, or durable-wipe lock. Callers update in-memory state only
+// after this promise resolves on the transaction's oncomplete event.
+function saveSettings(entries = {}, deletes = []) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readwrite");
+    const store = tx.objectStore("settings");
+    Object.entries(entries).forEach(([key, value]) => store.put({ key, value }));
+    deletes.forEach((key) => store.delete(key));
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("Unable to save account state."));
+    tx.onabort = () => reject(tx.error || new Error("Account-state transaction was aborted."));
   });
 }
 
@@ -7273,12 +8124,179 @@ async function updateSyncBadge() {
   badge.title = "Sync status: Synced";
 }
 
-function addSyncQueueEntry(item) {
+function recordWriteBlockedError() {
+  const error = new Error("This record wasn't saved because local data was removed or the account was locked.");
+  error.code = "record_write_blocked";
+  return error;
+}
+
+function captureRecordWriteGuard() {
+  return {
+    sessionGeneration: state.sessionGeneration,
+    wipeEpoch: state.wipeEpoch
+  };
+}
+
+function queueWriteAfterInstallGuard(settingsStore, guard, tx, write, block) {
+  const guardsAuthToken = Object.prototype.hasOwnProperty.call(guard, "authToken");
+  const keys = ["session_generation", "signed_out", "wipe_pending", "wipe_epoch"];
+  if (guardsAuthToken) keys.push("auth_token");
+  const values = new Map();
+  keys.forEach((key) => {
+    const request = settingsStore.get(key);
+    request.onsuccess = () => {
+      values.set(key, request.result?.value);
+      if (values.size !== keys.length) return;
+      const sameInstall = Number(values.get("session_generation") || 0) === Number(guard.sessionGeneration || 0)
+        && Number(values.get("wipe_epoch") || 0) === Number(guard.wipeEpoch || 0);
+      const sameToken = !guardsAuthToken || String(values.get("auth_token") || "") === String(guard.authToken || "");
+      if (!sameInstall || !sameToken || values.get("signed_out") === true || values.get("wipe_pending") === true) {
+        block();
+        tx.abort();
+        return;
+      }
+      write();
+    };
+  });
+}
+
+function commitSyncResponse(queueEntries, response, guard) {
+  const syncedAt = new Date().toISOString();
+  const receipt = response.server_receipt || "";
+  const recordIds = new Set(
+    queueEntries.map((item) => Number(item.entry_payload?.id || 0)).filter(Boolean)
+  );
   return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("syncQueue", "readwrite");
-    tx.objectStore("syncQueue").add(item);
+    const tx = state.db.transaction(["settings", "records", "syncQueue"], "readwrite");
+    const settingsStore = tx.objectStore("settings");
+    const recordsStore = tx.objectStore("records");
+    const queueStore = tx.objectStore("syncQueue");
+    let blocked = false;
+    queueWriteAfterInstallGuard(settingsStore, guard, tx, () => {
+      recordIds.forEach((recordId) => {
+        const request = recordsStore.get(recordId);
+        request.onsuccess = () => {
+          const record = request.result;
+          if (!record) return;
+          record.evidence_level = "server_attested";
+          if (state.deviceIdentity) {
+            record.device_identity = record.device_identity || state.deviceIdentity;
+            record.server_entry_id = record.server_entry_id || record.id;
+          }
+          recordsStore.put(record);
+        };
+      });
+      queueEntries.forEach((item) => queueStore.delete(item.queue_id));
+      settingsStore.put({ key: "last_sync_at", value: syncedAt });
+      settingsStore.put({ key: "last_sync_receipt", value: receipt });
+    }, () => { blocked = true; });
+    tx.oncomplete = () => resolve({ committed: true, syncedAt, receipt });
+    tx.onerror = () => reject(tx.error || new Error("Unable to commit the sync response."));
+    tx.onabort = () => blocked
+      ? resolve({ committed: false, syncedAt: "", receipt: "" })
+      : reject(tx.error || new Error("Sync response transaction was interrupted."));
+  });
+}
+
+function saveServerResponseSettings(entries, guard, deletes = []) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readwrite");
+    const store = tx.objectStore("settings");
+    let blocked = false;
+    queueWriteAfterInstallGuard(store, guard, tx, () => {
+      Object.entries(entries).forEach(([key, value]) => store.put({ key, value }));
+      deletes.forEach((key) => store.delete(key));
+    }, () => { blocked = true; });
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error || new Error("Unable to save server response metadata."));
+    tx.onabort = () => blocked ? resolve(false) : reject(tx.error || new Error("Server response metadata write was interrupted."));
+  });
+}
+
+function saveVerifiedSessionAfterGuard(entries, guard, deletes = []) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readwrite");
+    const store = tx.objectStore("settings");
+    const keys = ["session_generation", "wipe_epoch", "auth_token", "wipe_pending"];
+    const values = new Map();
+    let blocked = false;
+    keys.forEach((key) => {
+      const request = store.get(key);
+      request.onsuccess = () => {
+        values.set(key, request.result?.value);
+        if (values.size !== keys.length) return;
+        const unchanged = Number(values.get("session_generation") || 0) === Number(guard.sessionGeneration || 0)
+          && Number(values.get("wipe_epoch") || 0) === Number(guard.wipeEpoch || 0)
+          && String(values.get("auth_token") || "") === String(guard.authToken || "")
+          && values.get("wipe_pending") !== true;
+        if (!unchanged) {
+          blocked = true;
+          tx.abort();
+          return;
+        }
+        Object.entries(entries).forEach(([key, value]) => store.put({ key, value }));
+        deletes.forEach((key) => store.delete(key));
+      };
+    });
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error || new Error("Unable to install the verified session."));
+    tx.onabort = () => blocked ? resolve(false) : reject(tx.error || new Error("Verified-session transaction was interrupted."));
+  });
+}
+
+function savePendingRevocationsAfterGuard(pending, guard) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readwrite");
+    const store = tx.objectStore("settings");
+    const values = new Map();
+    let blocked = false;
+    ["session_generation", "wipe_epoch"].forEach((key) => {
+      const request = store.get(key);
+      request.onsuccess = () => {
+        values.set(key, request.result?.value);
+        if (values.size !== 2) return;
+        const unchanged = Number(values.get("session_generation") || 0) === Number(guard.sessionGeneration || 0)
+          && Number(values.get("wipe_epoch") || 0) === Number(guard.wipeEpoch || 0);
+        if (!unchanged) {
+          blocked = true;
+          tx.abort();
+          return;
+        }
+        store.put({ key: "pending_revocations", value: pending });
+      };
+    });
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error || new Error("Unable to update pending revocations."));
+    tx.onabort = () => blocked ? resolve(false) : reject(tx.error || new Error("Pending-revocation update was interrupted."));
+  });
+}
+
+function saveServerResponseProfile(profile, guard, entries = {}) {
+  const normalizedProfile = { ...(normalizeLocalProfile(profile) || {}), key: "profile" };
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readwrite");
+    const store = tx.objectStore("settings");
+    let blocked = false;
+    queueWriteAfterInstallGuard(store, guard, tx, () => {
+      store.put(normalizedProfile);
+      Object.entries(entries).forEach(([key, value]) => store.put({ key, value }));
+    }, () => { blocked = true; });
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error || new Error("Unable to save the server profile."));
+    tx.onabort = () => blocked ? resolve(false) : reject(tx.error || new Error("Server profile write was interrupted."));
+  });
+}
+
+function addSyncQueueEntry(item, guard) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction(["settings", "syncQueue"], "readwrite");
+    let writeBlocked = false;
+    queueWriteAfterInstallGuard(tx.objectStore("settings"), guard, tx, () => {
+      tx.objectStore("syncQueue").add(item);
+    }, () => { writeBlocked = true; });
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error || new Error("Unable to queue this record."));
+    tx.onabort = () => reject(writeBlocked ? recordWriteBlockedError() : (tx.error || new Error("Record queue write was interrupted.")));
   });
 }
 
@@ -7334,7 +8352,7 @@ function getRecords() {
   });
 }
 
-async function appendLedgerRecord(record) {
+async function appendLedgerRecord(record, guard) {
   const last = await getLastRecord();
   const id = last ? last.id + 1 : 1;
   const confirmedAt = Math.floor(Date.now() / 1000);
@@ -7354,10 +8372,14 @@ async function appendLedgerRecord(record) {
   };
 
   return new Promise((resolve, reject) => {
-    const tx = state.db.transaction("records", "readwrite");
-    tx.objectStore("records").add(payload);
+    const tx = state.db.transaction(["settings", "records"], "readwrite");
+    let writeBlocked = false;
+    queueWriteAfterInstallGuard(tx.objectStore("settings"), guard, tx, () => {
+      tx.objectStore("records").add(payload);
+    }, () => { writeBlocked = true; });
     tx.oncomplete = () => resolve(payload);
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error || new Error("Unable to save this record."));
+    tx.onabort = () => reject(writeBlocked ? recordWriteBlockedError() : (tx.error || new Error("Record write was interrupted.")));
   });
 }
 
@@ -7397,18 +8419,36 @@ async function loadDeviceTrustState() {
 
 async function loadSyncState() {
   if (!state.db) return;
-  const [authSessionKey, authSessionExpiresAt, syncApiBaseUrl, lastSyncAt, lastSyncReceipt] = await Promise.all([
+  const [authSessionKey, authSessionExpiresAt, syncApiBaseUrl, lastSyncAt, lastSyncReceipt,
+    boundAccount, pendingRevocations, sessionGeneration, signedOut, wipePending, localOrigin,
+    legacyClaimConsent, wipeEpoch] = await Promise.all([
     getSetting("auth_" + "to" + "ken"),
     getSetting("auth_" + "to" + "ken_expires_at"),
     getSetting("sync_api_base_url"),
     getSetting("last_sync_at"),
-    getSetting("last_sync_receipt")
+    getSetting("last_sync_receipt"),
+    getSetting("bound_account"),
+    getSetting("pending_revocations"),
+    getSetting("session_generation"),
+    getSetting("signed_out"),
+    getSetting("wipe_pending"),
+    getSetting("local_origin"),
+    getSetting("legacy_claim_consent"),
+    getSetting("wipe_epoch")
   ]);
   state.authSessionKey = authSessionKey || "";
   state.authSessionExpiresAt = authSessionExpiresAt || "";
   state.syncApiBaseUrl = syncApiBaseUrl || getDefaultSyncApiBaseUrl();
   state.lastSyncAt = lastSyncAt || "";
   state.lastSyncReceipt = lastSyncReceipt || "";
+  state.boundAccount = String(boundAccount || "");
+  state.pendingRevocations = Array.isArray(pendingRevocations) ? pendingRevocations.filter((entry) => entry?.token) : [];
+  state.sessionGeneration = Number(sessionGeneration || 0);
+  state.signedOut = signedOut === true;
+  state.wipePending = wipePending === true;
+  state.localOrigin = localOrigin === "this_version" ? localOrigin : "";
+  state.legacyClaimConsent = normalizeLegacyClaimConsent(legacyClaimConsent);
+  state.wipeEpoch = Number(wipeEpoch || 0);
   if (!syncApiBaseUrl && state.syncApiBaseUrl) {
     await saveSetting("sync_api_base_url", state.syncApiBaseUrl);
   }
@@ -7418,6 +8458,189 @@ async function loadSyncState() {
     : (state.authSessionKey
       ? getExpiredAuthSessionMessage()
       : "Waiting for server OTP verification.");
+}
+
+const EMPTY_INSTALL_SETTING_ALLOWLIST = new Set(["sync_api_base_url", "auth_phone_country", "wipe_epoch"]);
+const ACCOUNT_DATA_STORES = ["records", "syncQueue", "customLabels", "usage", "voiceCorrections", "anomaly_log"];
+
+function normalizeLegacyClaimConsent(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (value.channel !== "email" && value.channel !== "sms") return null;
+  const channel = value.channel;
+  const identifier = channel === "sms"
+    ? normalizePhoneNumber(value.identifier || "", state.authPhoneCountry || "NG")
+    : normalizeEmailAddress(value.identifier || "");
+  return identifier ? { channel, identifier } : null;
+}
+
+function legacyConsentMatches(value, channel, identifier) {
+  const consent = normalizeLegacyClaimConsent(value);
+  return Boolean(consent && consent.channel === channel && consent.identifier === identifier);
+}
+
+function readStoreCount(store) {
+  return new Promise((resolve, reject) => {
+    const request = store.count();
+    request.onsuccess = () => resolve(request.result || 0);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getInstallInventory() {
+  const stores = [...ACCOUNT_DATA_STORES, "settings"];
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction(stores, "readonly");
+    const counts = {};
+    let settings = [];
+    Promise.all([
+      ...ACCOUNT_DATA_STORES.map(async (name) => { counts[name] = await readStoreCount(tx.objectStore(name)); }),
+      new Promise((done, fail) => {
+        const request = tx.objectStore("settings").getAll();
+        request.onsuccess = () => { settings = request.result || []; done(); };
+        request.onerror = () => fail(request.error);
+      })
+    ]).then(() => resolve({ counts, settings }), reject);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function isInstallEmpty({ ignoreAccountState = false } = {}) {
+  const inventory = await getInstallInventory();
+  if (ACCOUNT_DATA_STORES.some((name) => inventory.counts[name] > 0)) return false;
+  const ignored = ignoreAccountState
+    ? new Set(["auth_token", "auth_token_expires_at", "session_generation", "signed_out", "bound_account", "pending_revocations"])
+    : new Set();
+  return inventory.settings.every((entry) => EMPTY_INSTALL_SETTING_ALLOWLIST.has(entry.key) || ignored.has(entry.key));
+}
+
+async function getLocalRecordCount() {
+  const inventory = await getInstallInventory();
+  return inventory.counts.records || 0;
+}
+
+async function clearIgnoredMarker() {
+  if (!state.localOrigin) return;
+  await saveSettings({}, ["local_origin"]);
+  state.localOrigin = "";
+}
+
+async function resolveAccountStartup() {
+  state.accountStartupChecked = true;
+  void flushPendingRevocations();
+  if (state.wipePending) {
+    state.startupClass = "S1";
+    await clearIgnoredMarker();
+    state.signedOut = true;
+    state.accountLockedMessage = "Finish removing local data.";
+    return true;
+  }
+  if (state.signedOut) {
+    state.startupClass = "S2";
+    await clearIgnoredMarker();
+    return true;
+  }
+  if (state.authSessionKey && !getTokenSessionId(state.authSessionKey)) {
+    state.startupClass = "S3";
+    if (state.authSessionKey) {
+      const nextGeneration = state.sessionGeneration + 1;
+      await saveSettings({}, ["auth_token", "auth_token_expires_at", "session_generation"]);
+      state.authSessionKey = "";
+      state.authSessionExpiresAt = "";
+      state.sessionGeneration = nextGeneration;
+    }
+  }
+  if (state.boundAccount && state.authSessionKey) {
+    state.startupClass = "S5";
+    await clearIgnoredMarker();
+    return false;
+  }
+  if (state.boundAccount && !state.authSessionKey) {
+    state.startupClass = "S6";
+    await clearIgnoredMarker();
+    state.accountLockedMessage = "Sign in to the same account to open the records on this device.";
+    return true;
+  }
+  if (!state.authSessionKey) {
+    if (await isInstallEmpty()) {
+      state.startupClass = "S7";
+      return false;
+    }
+    if (state.localOrigin) {
+      state.startupClass = "S8";
+      return false;
+    }
+    state.startupClass = "S9";
+    state.legacyRecordCount = await getLocalRecordCount();
+    state.accountLockedMessage = "Verify your email to open the records on this device.";
+    return true;
+  }
+  // A post-Slice-A token from a cached older app is only bound after the
+  // server confirms it, not after decoding its untrusted JWT payload.
+  const token = state.authSessionKey;
+  const generation = state.sessionGeneration;
+  const guard = { ...captureRecordWriteGuard(), authToken: token };
+  try {
+    state.startupClass = "S4";
+    const response = await fetchAuthenticatedJson("/profile", { authToken: token, generation, purpose: "startup_profile_check" });
+    const accountId = String(response.account_id || "");
+    if (!accountId || generation !== state.sessionGeneration || token !== state.authSessionKey) return true;
+    if (!(await isInstallEmpty({ ignoreAccountState: true })) && !state.localOrigin) {
+      state.startupClass = "S4_LEGACY";
+      state.startupProfileAccount = accountId;
+      state.legacyRecordCount = await getLocalRecordCount();
+      state.accountLockedMessage = "Choose whether to keep or remove the records made before sign-in.";
+      return true;
+    }
+    const saved = await saveServerResponseSettings(
+      { bound_account: accountId, signed_out: false },
+      guard,
+      ["local_origin", "legacy_claim_consent"]
+    );
+    if (!saved) return true;
+    state.boundAccount = accountId;
+    state.localOrigin = "";
+    state.legacyClaimConsent = null;
+    state.signedOut = false;
+    return false;
+  } catch (error) {
+    const code = error?.payload?.error;
+    if (error?.statusCode === 401 && code === "session_invalid") return true;
+    if (error?.statusCode === 401 && code === "device_mismatch") return true;
+    // availability and token_missing are intentionally non-destructive.
+    state.accountLockedMessage = "Checking this device…";
+    return true;
+  }
+}
+
+async function flushPendingRevocations() {
+  if (!navigator.onLine || !state.syncApiBaseUrl || !state.pendingRevocations.length) return;
+  const revocationGuard = captureRecordWriteGuard();
+  const pending = [...state.pendingRevocations];
+  let next = pending;
+  for (const entry of pending) {
+    if (entry.exp && entry.exp <= Date.now()) {
+      next = next.filter((candidate) => candidate.token !== entry.token);
+      continue;
+    }
+    try {
+      await postJson(state.syncApiBaseUrl, "/auth/logout", {}, entry.token, {
+        deviceIdentity: state.deviceIdentity,
+        canAttachToken: canUseAccountSession("logout", entry.token)
+      });
+      next = next.filter((candidate) => candidate.token !== entry.token);
+    } catch (error) {
+      // Only 401 session_invalid proves this queued session is no longer live.
+      if (error?.statusCode === 401 && error?.payload?.error === "session_invalid") {
+        next = next.filter((candidate) => candidate.token !== entry.token);
+      }
+    }
+  }
+  if (next.length !== state.pendingRevocations.length) {
+    const saved = await savePendingRevocationsAfterGuard(next, revocationGuard);
+    if (!saved) return;
+    state.pendingRevocations = next;
+    if (state.signedOut) void showSignedOutScreen({ onlyIfActive: true });
+  }
 }
 
 async function createAndStoreDeviceKeyMaterial() {
@@ -7486,7 +8709,7 @@ async function signEntryHash(entryHash) {
   return btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
 }
 
-async function queueSyncRecord(record) {
+async function queueSyncRecord(record, guard) {
   await addSyncQueueEntry({
     entry_id: record.id,
     entry_hash: record.entry_hash,
@@ -7495,7 +8718,7 @@ async function queueSyncRecord(record) {
     attempt_count: 0,
     queued_at: Date.now(),
     entry_payload: record
-  });
+  }, guard);
   await refreshSyncQueueCount();
   state.syncStatus = isAuthSessionValid()
     ? "Entry queued for server sync."
@@ -7504,6 +8727,12 @@ async function queueSyncRecord(record) {
 
 async function flushSyncQueue() {
   if (state.syncInFlight || !state.db) {
+    await updateSyncBadge();
+    return;
+  }
+  if (!canUseAccountSession("ordinary")) {
+    state.syncStatus = "Account records are locked; sync is paused.";
+    await refreshSyncQueueCount();
     await updateSyncBadge();
     return;
   }
@@ -7539,29 +8768,29 @@ async function flushSyncQueue() {
 
   state.syncInFlight = true;
   state.syncStatus = `Syncing ${queuedEntries.length} queued entr${queuedEntries.length === 1 ? "y" : "ies"}...`;
+  const syncGeneration = state.sessionGeneration;
+  const syncToken = state.authSessionKey;
+  const syncGuard = { ...captureRecordWriteGuard(), authToken: syncToken };
 
   try {
-    const response = await syncQueuedEntries(state.syncApiBaseUrl, state.authSessionKey, {
+    if (!canUseAccountSession("ordinary", syncToken)) return;
+    const response = await syncQueuedEntries(state.syncApiBaseUrl, syncToken, {
       device_identity: state.deviceIdentity,
       public_key: state.devicePublicKey,
       entries: queuedEntries.map((item) => item.entry_payload)
-    }, state.deviceIdentity);
-    await markRecordsEvidenceLevel(
-      queuedEntries.map((item) => Number(item.entry_payload?.id || 0)).filter(Boolean),
-      "server_attested"
-    );
-    await removeSyncQueueEntries(queuedEntries.map((item) => item.queue_id));
-    state.lastSyncAt = new Date().toISOString();
-    state.lastSyncReceipt = response.server_receipt || "";
-    await Promise.all([
-      saveSetting("last_sync_at", state.lastSyncAt),
-      saveSetting("last_sync_receipt", state.lastSyncReceipt)
-    ]);
+    }, state.deviceIdentity, canUseAccountSession("ordinary", syncToken));
+    if (syncGeneration !== state.sessionGeneration || syncToken !== state.authSessionKey) return;
+    const committed = await commitSyncResponse(queuedEntries, response, syncGuard);
+    if (!committed.committed) return;
+    state.lastSyncAt = committed.syncedAt;
+    state.lastSyncReceipt = committed.receipt;
     await refreshSyncQueueCount();
     state.syncStatus = response.synced_count
       ? `Synced ${response.synced_count} entr${response.synced_count === 1 ? "y" : "ies"} to the server.`
       : "Server already had the queued entries.";
   } catch (error) {
+    await handleAuthenticatedRefusal(error, syncToken, syncGeneration);
+    if (syncGeneration !== state.sessionGeneration || syncToken !== state.authSessionKey) return;
     if (error.statusCode === 401) {
       state.syncStatus = `Sync auth expired. Re-open ${getVerificationChannelLabel().toLowerCase()}.`;
     } else if (error.statusCode === 409) {
