@@ -178,6 +178,14 @@ async function init() {
     void updateSyncBadge();
   });
   registerPwa();
+  // A signed-in install whose profile lacks a display name (for example one
+  // restored from an account with no saved name) opens onboarding instead of
+  // the app, which skips the startup requests that would surface a revoked
+  // session. Check the session before any account field is rendered.
+  if (state.profile && !state.profile.display_name && !(await confirmSessionBeforeProfileStep())) {
+    syncDevQaSnapshot("init");
+    return;
+  }
   renderOnboarding();
   renderActionRows();
   await notifyAnomaly();
@@ -207,6 +215,19 @@ async function init() {
     showScreen("screen-onboarding");
   }
   syncDevQaSnapshot("init");
+}
+
+// Returns false only when the server refused this install's session; the
+// refusal handler has then already locked the app. Offline, unavailable or
+// expired-locally outcomes keep today's offline-first behaviour.
+async function confirmSessionBeforeProfileStep() {
+  if (!(state.boundAccount && state.authSessionKey && navigator.onLine && state.syncApiBaseUrl)) return true;
+  try {
+    await fetchAuthenticatedJson("/profile");
+    return true;
+  } catch {
+    return !state.signedOut;
+  }
 }
 
 function cacheElements() {

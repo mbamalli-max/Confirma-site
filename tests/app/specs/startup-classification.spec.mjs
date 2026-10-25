@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   armFault, completeOnboarding, deleteLocalSettings, installIdbFault, nextAccount, openVerification,
-  putStoreValue, readLocalState, requestCode, revokeOnServer, sessionState, signInThroughUi,
+  putStoreValue, readLocalState, readStoredProfile, requestCode, revokeOnServer, sessionState, signInThroughUi,
   verifyWithCode, writeLocalState
 } from "./helpers.mjs";
 
@@ -467,4 +467,51 @@ test("S6 a bound install without a token stays locked until the same account ver
   expect(state.settings.bound_account).toBe(account.accountId);
   expect(state.settings.auth_token).toBeTruthy();
   expect(state.stores.records).toEqual(expect.arrayContaining([expect.objectContaining({ id: 601 })]));
+});
+
+async function dropStoredDisplayName(page) {
+  const profile = await readStoredProfile(page);
+  expect(profile?.display_name).toBeTruthy();
+  await putStoreValue(page, "settings", { ...profile, key: "profile", display_name: "" });
+}
+
+async function visibleAndFieldText(page) {
+  return page.evaluate(() => [
+    document.body.innerText,
+    ...[...document.querySelectorAll("input, textarea, select")].map((element) => element.value || "")
+  ].join("\n"));
+}
+
+test("S5 without a display name: a revoked session locks before any account field is rendered", async ({ page }) => {
+  const account = await signInThroughUi(page, nextAccount("s5-noname-revoked"));
+  await dropStoredDisplayName(page);
+  await revokeOnServer(page, account.token);
+  expect(sessionState(account.token)?.active).toBe(false);
+  // Without the startup session check no /profile request is made at all.
+  const profileCheck = page.waitForResponse((response) => response.url().endsWith("/profile") && response.request().method() === "GET", { timeout: 15_000 });
+  await page.reload();
+  expect((await profileCheck).status()).toBe(401);
+  await expect(page.locator("#screen-signed-out.active")).toBeVisible();
+  await expect(page.locator("#screen-onboarding.active")).toHaveCount(0);
+  const text = await visibleAndFieldText(page);
+  expect(text.includes(account.email), "account email must not be rendered").toBe(false);
+  expect(text.includes(account.phone), "account phone must not be rendered").toBe(false);
+  const local = await readLocalState(page);
+  expect(local.settings.auth_token || "").toBe("");
+  expect(local.settings.signed_out).toBe(true);
+});
+
+test("S5 without a display name: a valid session checks the server, then opens the profile step", async ({ page }) => {
+  const account = await signInThroughUi(page, nextAccount("s5-noname-valid"));
+  await dropStoredDisplayName(page);
+  // Without the startup session check no /profile request is made at all.
+  const profileCheck = page.waitForResponse((response) => response.url().endsWith("/profile") && response.request().method() === "GET", { timeout: 15_000 });
+  await page.reload();
+  expect((await profileCheck).status()).toBe(200);
+  await expect(page.locator("#screen-onboarding.active")).toBeVisible();
+  await expect(page.locator("#onboarding-step-copy")).toHaveText("Step 6 of 6");
+  const local = await readLocalState(page);
+  expect(local.settings.auth_token).toBe(account.token);
+  expect(local.settings.signed_out).not.toBe(true);
+  expect(sessionState(account.token)?.active).toBe(true);
 });
