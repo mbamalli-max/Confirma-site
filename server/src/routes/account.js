@@ -1,5 +1,6 @@
 import { authenticateRequest, isValidEmail, normalizeEmail, normalizePhoneNumber } from "../auth-utils.js";
 import { query } from "../db.js";
+import { BUSINESS_TYPE_CATALOG, SECTOR_IDS, UNLISTED_BUSINESS_TYPE_ID } from "../business-catalog.js";
 
 function normalizeCountry(value) {
   const country = String(value || "").trim().toUpperCase();
@@ -18,6 +19,60 @@ function normalizePreferredLabels(value) {
     .filter(Boolean);
 }
 
+const BUSINESS_DESCRIPTION_MIN = 3;
+const BUSINESS_DESCRIPTION_MAX = 60;
+
+function cleanBusinessDescription(value) {
+  // Strip control characters, then trim. Length is counted in characters, as Postgres char_length does.
+  return String(value ?? "").replace(/[\u0000-\u001F\u007F-\u009F]/g, "").trim();
+}
+
+// The server owns the business type / sector / description pairing; the phone's sector and any review
+// field are never trusted. Returns { error } or the values to store plus whether to keep the stored description.
+function resolveBusinessFields(body) {
+  const businessTypeId = String(body.business_type_id || "").trim();
+
+  if (businessTypeId === UNLISTED_BUSINESS_TYPE_ID) {
+    const hasDescription = Object.hasOwn(body, "business_description");
+    if (!hasDescription) {
+      // Older app versions do not send the field: keep whatever description is stored.
+      return { businessTypeId, sectorId: null, preferredLabels: [], description: null, keepStoredDescription: true };
+    }
+    const description = cleanBusinessDescription(body.business_description);
+    const length = [...description].length;
+    if (length < BUSINESS_DESCRIPTION_MIN || length > BUSINESS_DESCRIPTION_MAX) {
+      return { error: `Describe your business in ${BUSINESS_DESCRIPTION_MIN} to ${BUSINESS_DESCRIPTION_MAX} characters.` };
+    }
+    return { businessTypeId, sectorId: null, preferredLabels: [], description, keepStoredDescription: false };
+  }
+
+  if (businessTypeId) {
+    const catalogEntry = Object.hasOwn(BUSINESS_TYPE_CATALOG, businessTypeId) ? BUSINESS_TYPE_CATALOG[businessTypeId] : null;
+    if (!catalogEntry) {
+      return { error: "Unknown business type." };
+    }
+    return {
+      businessTypeId,
+      sectorId: catalogEntry.sector_id,
+      preferredLabels: normalizePreferredLabels(body.preferred_labels),
+      description: null,
+      keepStoredDescription: false
+    };
+  }
+
+  // Legacy profile with a sector but no business type.
+  const sectorId = String(body.sector_id || "").trim();
+  if (sectorId && !SECTOR_IDS.includes(sectorId)) {
+    return { error: "Unknown business sector." };
+  }
+  return {
+    businessTypeId: null,
+    sectorId: sectorId || null,
+    preferredLabels: normalizePreferredLabels(body.preferred_labels),
+    description: null,
+    keepStoredDescription: false
+  };
+}
 
 async function getUserRow(phoneNumber) {
   const result = await query(
@@ -47,6 +102,7 @@ function buildProfileResponse(row, fallbackPhoneNumber, accountId = null) {
       language: row.language || "en",
       business_type_id: row.business_type_id || "",
       sector_id: row.sector_id || "",
+      business_description: row.business_description || "",
       preferred_labels: normalizePreferredLabels(row.preferred_labels),
       phone: row.phone_number || fallbackPhoneNumber || "",
       email: row.email || "",
@@ -143,6 +199,7 @@ export async function registerAccountRoutes(app) {
           p.language,
           p.business_type_id,
           p.sector_id,
+          p.business_description,
           p.preferred_labels,
           p.plan,
           p.plan_activated_at,
@@ -173,10 +230,27 @@ export async function registerAccountRoutes(app) {
       return reply.code(404).send({ error: "User account not found." });
     }
 
-    const body = request.body || {};
+    const body = request.body && typeof request.body === "object" ? request.body : {};
     const email = isValidEmail(body.email) ? normalizeEmail(body.email) : null;
     if (String(body.email || "").trim() && !email) {
       return reply.code(400).send({ error: "Enter a valid email address." });
+    }
+
+    const business = resolveBusinessFields(body);
+    if (business.error) {
+      return reply.code(400).send({ error: business.error });
+    }
+    if (business.keepStoredDescription) {
+      const stored = await query(
+        `SELECT business_description FROM profiles WHERE user_id = $1 LIMIT 1`,
+        [user.id]
+      );
+      if (!stored.rows[0]?.business_description) {
+        return reply.code(400).send({ error: "Describe your business in 3 to 60 characters." });
+      }
+      // CHECK constraints apply to the proposed insert row too, so carry the stored value;
+      // the UPDATE branch still keeps whatever is stored at write time.
+      business.description = stored.rows[0].business_description;
     }
 
     if (email) {
@@ -190,48 +264,63 @@ export async function registerAccountRoutes(app) {
       );
     }
 
-    await query(
-      `
-        INSERT INTO profiles (
-          user_id,
-          name,
-          business_name,
-          phone_number,
-          country,
-          operating_region,
-          language,
-          business_type_id,
-          sector_id,
-          preferred_labels,
-          updated_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NOW())
-        ON CONFLICT (user_id)
-        DO UPDATE SET
-          name = EXCLUDED.name,
-          business_name = EXCLUDED.business_name,
-          phone_number = EXCLUDED.phone_number,
-          country = EXCLUDED.country,
-          operating_region = EXCLUDED.operating_region,
-          language = EXCLUDED.language,
-          business_type_id = EXCLUDED.business_type_id,
-          sector_id = EXCLUDED.sector_id,
-          preferred_labels = EXCLUDED.preferred_labels,
-          updated_at = NOW()
-      `,
-      [
-        user.id,
-        String(body.name || "").trim() || null,
-        String(body.business_name || "").trim() || null,
-        user.phone_number,
-        normalizeCountry(body.country),
-        normalizeCountry(body.operating_region || body.country),
-        normalizeLanguage(body.language),
-        String(body.business_type_id || "").trim() || null,
-        String(body.sector_id || "").trim() || null,
-        JSON.stringify(normalizePreferredLabels(body.preferred_labels))
-      ]
-    );
+    try {
+      await query(
+        `
+          INSERT INTO profiles (
+            user_id,
+            name,
+            business_name,
+            phone_number,
+            country,
+            operating_region,
+            language,
+            business_type_id,
+            sector_id,
+            preferred_labels,
+            business_description,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, NOW())
+          ON CONFLICT (user_id)
+          DO UPDATE SET
+            name = EXCLUDED.name,
+            business_name = EXCLUDED.business_name,
+            phone_number = EXCLUDED.phone_number,
+            country = EXCLUDED.country,
+            operating_region = EXCLUDED.operating_region,
+            language = EXCLUDED.language,
+            business_type_id = EXCLUDED.business_type_id,
+            sector_id = EXCLUDED.sector_id,
+            preferred_labels = EXCLUDED.preferred_labels,
+            business_description = CASE
+              WHEN $12::boolean THEN profiles.business_description
+              ELSE EXCLUDED.business_description
+            END,
+            updated_at = NOW()
+        `,
+        [
+          user.id,
+          String(body.name || "").trim() || null,
+          String(body.business_name || "").trim() || null,
+          user.phone_number,
+          normalizeCountry(body.country),
+          normalizeCountry(body.operating_region || body.country),
+          normalizeLanguage(body.language),
+          business.businessTypeId,
+          business.sectorId,
+          JSON.stringify(business.preferredLabels),
+          business.description,
+          business.keepStoredDescription
+        ]
+      );
+    } catch (error) {
+      // A concurrent save can clear the stored description between the check above and this write.
+      if (error?.code === "23514" && /profiles_(unlisted_description_pairing|business_description_length)/.test(error.constraint || "")) {
+        return reply.code(400).send({ error: "Describe your business in 3 to 60 characters." });
+      }
+      throw error;
+    }
 
     return { ok: true };
   });

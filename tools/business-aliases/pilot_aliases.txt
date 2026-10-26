@@ -1,0 +1,134 @@
+# Nigeria pilot review set — a subset of aliases.txt. Each line: alias | target type id
+# Only Nigerian English, Pidgin and Hausa; every row must be searchable in Nigeria under the pilot rule.
+market woman | ng_market_trader
+foodstuff seller | ng_market_trader
+petty trader | ng_market_trader
+yam seller | ng_market_trader
+garri seller | ng_market_trader
+palm oil seller | ng_market_trader
+fish seller | ng_market_trader
+ɗan kasuwa | ng_market_trader
+'yar kasuwa | ng_market_trader
+provision store | ng_provision_shop
+provisions | ng_provision_shop
+supermarket | ng_provision_shop
+mini mart | ng_provision_shop
+drinks depot | ng_provision_shop
+pure water seller | ng_provision_shop
+table shop | ng_provision_shop
+mai shago | ng_provision_shop
+food seller | ng_food_vendor
+mama put | ng_food_vendor
+buka | ng_food_vendor
+bukateria | ng_food_vendor
+chop house | ng_food_vendor
+canteen | ng_food_vendor
+suya spot | ng_food_vendor
+akara seller | ng_food_vendor
+boli seller | ng_food_vendor
+abacha seller | ng_food_vendor
+mai abinci | ng_food_vendor
+mai shayi | ng_food_vendor
+mai suya | ng_food_vendor
+danfo | ng_transport_worker
+bus driver | ng_transport_worker
+taxi driver | ng_transport_worker
+taxi man | ng_transport_worker
+commercial driver | ng_transport_worker
+truck driver | ng_transport_worker
+lorry driver | ng_transport_worker
+truck pusher | ng_transport_worker
+direba | ng_transport_worker
+plumber | ng_artisan
+electrician | ng_artisan
+welder | ng_artisan
+mason | ng_artisan
+carpenter | ng_artisan
+painter | ng_artisan
+mechanic | ng_artisan
+panel beater | ng_artisan
+vulcaniser | ng_artisan
+vulcanizer | ng_artisan
+vulca | ng_artisan
+generator repair | ng_artisan
+aluminium fabricator | ng_artisan
+pop ceiling | ng_artisan
+kafinta | ng_artisan
+makanike | ng_artisan
+mai walda | ng_artisan
+consultant | ng_service_provider
+event planner | ng_service_provider
+photographer | ng_service_provider
+hairdresser | ng_service_provider
+salon | ng_service_provider
+barbing salon | ng_service_provider
+barbing saloon | ng_service_provider
+laundry | ng_service_provider
+dry cleaner | ng_service_provider
+wanzami | ng_service_provider
+mai kitso | ng_service_provider
+mai wanki | ng_service_provider
+online vendor | ng_online_seller
+online shop | ng_online_seller
+social media seller | ng_online_seller
+kiosk | ng_kiosk_phone_business
+airtime seller | ng_kiosk_phone_business
+recharge card | ng_kiosk_phone_business
+data seller | ng_kiosk_phone_business
+vtu business | ng_kiosk_phone_business
+tailor | ng_fashion_tailor
+fashion designer | ng_fashion_tailor
+aso ebi | ng_fashion_tailor
+fabric seller | ng_fashion_tailor
+ankara seller | ng_fashion_tailor
+okrika seller | ng_fashion_tailor
+bend down select | ng_fashion_tailor
+tela | ng_fashion_tailor
+mai dinki | ng_fashion_tailor
+okada | ng_okada_keke_rider
+okada man | ng_okada_keke_rider
+keke | ng_okada_keke_rider
+keke napep | ng_okada_keke_rider
+keke man | ng_okada_keke_rider
+achaba | ng_okada_keke_rider
+adaidaita sahu | ng_okada_keke_rider
+dispatch rider | ng_okada_keke_rider
+shop | global_trade_retail
+trader | global_trade_retail
+wholesaler | global_trade_retail
+distributor | global_trade_retail
+tokunbo dealer | global_trade_retail
+restaurant | global_food_hospitality
+eatery | global_food_hospitality
+hotel | global_food_hospitality
+driver | global_transport_logistics
+delivery | global_transport_logistics
+logistics | global_transport_logistics
+builder | global_skilled_construction
+contractor | global_skilled_construction
+services | global_personal_professional
+online business | global_digital_online
+business centre | global_document_services
+business center | global_document_services
+cyber cafe | global_document_services
+cyber | global_document_services
+photocopy | global_document_services
+printing | global_document_services
+typing | global_document_services
+lamination | global_document_services
+passport photos | global_document_services
+computer centre | global_document_services
+tutor | global_tutoring
+lesson teacher | global_tutoring
+home lessons | global_tutoring
+extra lessons | global_tutoring
+lesson centre | global_tutoring
+jamb lessons | global_tutoring
+arabic teacher | global_tutoring
+islamiyya teacher | global_tutoring
+phone repair | global_device_repair
+phone engineer | global_device_repair
+gsm repairer | global_device_repair
+laptop repair | global_device_repair
+phone doctor | global_device_repair
+mai gyaran waya | global_device_repair
