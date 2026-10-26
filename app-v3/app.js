@@ -832,7 +832,8 @@ function renderBusinessGrid() {
     : "Pick a country and sector first.";
 
   items.forEach((item) => {
-    els["business-grid"].appendChild(buildVisualCard(item.icon, item.name, sectorName, () => {
+    const cardNote = item.country === "GLOBAL" ? "Available everywhere" : sectorName;
+    els["business-grid"].appendChild(buildVisualCard(item.icon, item.name, cardNote, () => {
       state.profile = {
         ...state.profile,
         business_type_id: item.id,
@@ -4546,9 +4547,13 @@ function getCatalogForCurrentProfile(options = {}) {
 
 function getAvailableBusinessTypes() {
   if (!state.profile || !state.profile.operating_region || !state.profile.sector_id) return [];
-  const exactMatches = BUSINESS_TYPES.filter((item) => item.country === state.profile.operating_region && item.sector_id === state.profile.sector_id);
-  if (exactMatches.length) return exactMatches;
-  return BUSINESS_TYPES.filter((item) => item.country === "GLOBAL" && item.sector_id === state.profile.sector_id);
+  // The region's own types come first, but GLOBAL types are always offered too:
+  // a country having its own list must never hide a business that exists everywhere.
+  const inSector = BUSINESS_TYPES.filter((item) => item.sector_id === state.profile.sector_id);
+  return [
+    ...inSector.filter((item) => item.country === state.profile.operating_region),
+    ...inSector.filter((item) => item.country === "GLOBAL")
+  ];
 }
 
 function buildLabel(id, displayName, icon, synonyms, contexts, countries, businessTypes) {

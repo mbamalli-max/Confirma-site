@@ -337,6 +337,14 @@ export function sessionState(tokenOrSessionId) {
   return json ? JSON.parse(json) : null;
 }
 
+// Read-only: the synced ledger rows for one device, as the server's statement code receives them.
+export function ledgerEntriesForDevice(deviceIdentity) {
+  const id = String(deviceIdentity || "");
+  if (!/^[0-9a-f]{16,128}$/i.test(id)) throw new Error("expected a hex device identity");
+  const json = databaseCommand(`SELECT coalesce(json_agg(row_to_json(entry)), '[]'::json) FROM (SELECT entry_hash, confirmed_at, payload FROM ledger_entries WHERE device_identity = '${id}' ORDER BY entry_id) entry;`);
+  return JSON.parse(json || "[]");
+}
+
 export function accountSessionCount(accountId) {
   const id = String(accountId || "");
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("expected a UUID account id");

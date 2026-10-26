@@ -387,7 +387,10 @@ export const BUSINESS_TYPES = [
   { id: "global_transport_logistics", country: "GLOBAL", sector_id: "transport_logistics", name: "Transport & Logistics", icon: "🚚" },
   { id: "global_skilled_construction", country: "GLOBAL", sector_id: "skilled_construction", name: "Skilled Work / Construction", icon: "🛠️" },
   { id: "global_personal_professional", country: "GLOBAL", sector_id: "personal_professional", name: "Personal / Professional Services", icon: "💼" },
-  { id: "global_digital_online", country: "GLOBAL", sector_id: "digital_online", name: "Digital / Online Business", icon: "💻" }
+  { id: "global_digital_online", country: "GLOBAL", sector_id: "digital_online", name: "Digital / Online Business", icon: "💻" },
+  { id: "global_document_services", country: "GLOBAL", sector_id: "personal_professional", name: "Document & Print Services", icon: "🖨️" },
+  { id: "global_tutoring", country: "GLOBAL", sector_id: "personal_professional", name: "Tutoring / Lessons", icon: "📚" },
+  { id: "global_device_repair", country: "GLOBAL", sector_id: "skilled_construction", name: "Device Repair", icon: "🔌" }
 ];
 
 export const QUICK_PICKS = {
@@ -528,6 +531,24 @@ export const QUICK_PICKS = {
     purchase: ["Software", "Equipment", "Domain/Hosting", "Packaging", "Product Photos"],
     payment: ["Internet", "Marketplace Fee", "Marketing", "Contractor Pay", "Shipping Cost"],
     receipt: ["Client Payment", "Marketplace Payout", "Affiliate Payout", "Transfer Received"]
+  },
+  global_document_services: {
+    sell: ["Photocopy", "Printing", "Typing", "Lamination", "Scanning", "Passport Photos", "Binding"],
+    purchase: ["Paper (Ream)", "Toner/Ink", "Lamination Film", "Binding Supplies", "Photo Paper"],
+    payment: ["Shop Rent", "Electricity", "Machine Repair", "Internet", "Staff Pay"],
+    receipt: []
+  },
+  global_tutoring: {
+    sell: ["Lesson Fee", "Exam Prep", "Monthly Tuition", "Group Class", "Online Class"],
+    purchase: ["Textbooks", "Course Materials", "Stationery"],
+    payment: ["Transport", "Venue Rent", "Internet", "Assistant Pay"],
+    receipt: []
+  },
+  global_device_repair: {
+    sell: ["Screen Replacement", "Battery Replacement", "Device Repair", "Software Service", "Accessories Sale", "Diagnostics"],
+    purchase: ["Spare Parts", "Screens", "Batteries", "Accessories Stock"],
+    payment: ["Shop Rent", "Electricity", "Transport", "Staff Pay"],
+    receipt: []
   }
 };
 
