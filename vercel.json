@@ -35,6 +35,7 @@
     { "src": "/lenders\\.html", "status": 308, "headers": { "Location": "/institutions.html" } },
     { "src": "/banks\\.html", "status": 308, "headers": { "Location": "/institutions.html" } },
     { "src": "/", "dest": "/website-v2/index.html" },
+    { "src": "/admin(/.*)?", "status": 404 },
     { "src": "/(.*)", "dest": "/website-v2/$1" }
   ]
 }

@@ -1,0 +1,47 @@
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #1a1a1a;
+  background: #f6f7f9;
+  overflow-wrap: anywhere;
+}
+[hidden] { display: none !important; }
+.screen { max-width: 960px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.4rem; margin: 0 0 16px; }
+form { display: flex; flex-direction: column; gap: 8px; max-width: 420px; }
+label { font-weight: 600; }
+input, select, button {
+  font: inherit;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 12px;
+  border: 1px solid #8a8f98;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  max-width: 100%;
+}
+button { background: #1d3557; color: #fff; border-color: #1d3557; cursor: pointer; }
+button:disabled { opacity: 0.6; cursor: default; }
+:focus-visible { outline: 3px solid #e09f3e; outline-offset: 2px; }
+#signin-error { color: #b00020; min-height: 1.5em; margin: 4px 0 0; }
+.topbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.topbar p { margin: 0; }
+#operator-label { font-weight: 700; color: #7a1f1f; }
+#provisional-banner { background: #fff3cd; border: 1px solid #c99a00; padding: 12px; border-radius: 6px; font-weight: 700; }
+#stale-note, #metrics-unavailable { background: #fdecea; border: 1px solid #b00020; padding: 12px; border-radius: 6px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#metric-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 16px 0; }
+@media (min-width: 720px) { #metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.metric-tile { background: #fff; border: 1px solid #d4d7dd; border-radius: 8px; padding: 12px; min-width: 0; }
+.metric-name { font-size: 1.05rem; margin: 0 0 4px; }
+.metric-definition { margin: 0 0 4px; color: #333; }
+.metric-scope { margin: 0 0 8px; font-size: 0.9rem; color: #555; }
+.metric-tile table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 0.9rem; }
+.metric-tile th, .metric-tile td { border: 1px solid #d4d7dd; padding: 4px; text-align: center; overflow-wrap: anywhere; }
+.metric-tile th { font-weight: 600; background: #f0f2f5; }
+#footer-note, #activation-note { font-size: 0.9rem; color: #444; }

@@ -19,7 +19,11 @@ const child = spawn(process.execPath, [server], {
     ALLOW_DEV_OTP: "true",
     JWT_SECRET: "local-app-playwright-secret",
     SERVER_RECEIPT_SECRET: "local-app-playwright-receipt",
-    CORS_ORIGINS: [app.origin, oldApp.origin].join(",")
+    CORS_ORIGINS: [app.origin, oldApp.origin].join(","),
+    // Test-only admin values; duplicated in specs/admin-helpers.mjs (keep in sync).
+    ADMIN_CORS_ORIGINS: app.origin,
+    ADMIN_JWT_SECRET: "local-app-playwright-admin-jwt-secret-0123456789abcdef",
+    ADMIN_TOTP_ENC_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
   }
 });
 
