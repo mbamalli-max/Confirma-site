@@ -1,16 +1,12 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPool } from "./src/db.js";
+import { listMigrationFiles } from "./src/migration-files.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const migrationsDir = path.join(__dirname, "migrations");
-
-function parseMigrationVersion(filename) {
-  const match = String(filename || "").match(/^(\d+)_.*\.sql$/i);
-  return match ? Number.parseInt(match[1], 10) : null;
-}
 
 function stripLineComments(sql) {
   return String(sql || "").replace(/--.*$/gm, "").trim();
@@ -29,15 +25,8 @@ async function getPendingMigrations(pool) {
   const appliedResult = await pool.query("SELECT version FROM schema_migrations");
   const appliedVersions = new Set(appliedResult.rows.map((row) => Number(row.version)));
 
-  const entries = await readdir(migrationsDir);
-  return entries
-    .filter((filename) => filename.endsWith(".sql"))
-    .map((filename) => ({
-      filename,
-      version: parseMigrationVersion(filename)
-    }))
-    .filter((entry) => Number.isInteger(entry.version))
-    .sort((a, b) => a.version - b.version || a.filename.localeCompare(b.filename))
+  const migrations = await listMigrationFiles(migrationsDir);
+  return migrations
     .filter((entry) => !appliedVersions.has(entry.version));
 }
 

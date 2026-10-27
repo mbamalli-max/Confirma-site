@@ -4,7 +4,7 @@ import Fastify from "fastify";
 import jwt from "jsonwebtoken";
 import { config } from "../src/config.js";
 import { getPool } from "../src/db.js";
-import { hashOtp } from "../src/auth-utils.js";
+import { hashOtp, normalizeEmail } from "../src/auth-utils.js";
 import { registerAuthRoutes } from "../src/routes/auth.js";
 import {
   assertLocalTestDatabase,
@@ -52,6 +52,7 @@ async function requestCode(email, phoneNumber) {
 }
 
 async function verifyEmail(email, code, options = {}) {
+  const defaultDeviceIdentity = `test-device-${normalizeEmail(email)}`;
   return app.inject({
     method: "POST",
     url: "/auth/otp/verify",
@@ -59,6 +60,8 @@ async function verifyEmail(email, code, options = {}) {
       channel: "email",
       email,
       code,
+      device_identity: defaultDeviceIdentity,
+      public_key: `test-key-${normalizeEmail(email)}`,
       ...options
     }
   });
@@ -199,7 +202,7 @@ test("2: two verified emails never merge when the second request trims to the sa
   assert.equal(second.json().error, GENERIC_CONFLICT);
   const users = await database.query("SELECT phone_number, email FROM users");
   assert.deepEqual(users.rows, [{ phone_number: phone, email: email1 }]);
-  assert.deepEqual(await tableCounts(), { users: 1, devices: 0, consumed: 2 });
+  assert.deepEqual(await tableCounts(), { users: 1, devices: 1, consumed: 2 });
 });
 
 test("3: existing-email sign-in ignores absent, different, invalid, and another account's phone", async () => {
@@ -291,7 +294,7 @@ test("6a: twenty parallel sign-ups for one phone create one immutable account", 
   assert.equal(constraints.rows.length, 2);
   assert.ok(constraints.rows.every((row) => row.indisunique));
   assert.ok(constraints.rows.some((row) => row.name === "users_pkey" && row.indisprimary));
-  assert.deepEqual(await tableCounts(), { users: 1, devices: 0, consumed: 20 });
+  assert.deepEqual(await tableCounts(), { users: 1, devices: 1, consumed: 20 });
 });
 
 test("6b: forced uncommitted phone collision blocks the route backend and refuses safely", async () => {
@@ -324,7 +327,7 @@ test("7: ten parallel uses of one code consume it atomically exactly once", asyn
   assert.equal(responses.filter((response) => response.statusCode === 200).length, 1);
   assert.equal(responses.filter((response) => response.statusCode === 401).length, 9);
   assert.equal(responses.filter((response) => response.json().auth_token).length, 1);
-  assert.deepEqual(await tableCounts(), { users: 1, devices: 0, consumed: 1 });
+  assert.deepEqual(await tableCounts(), { users: 1, devices: 1, consumed: 1 });
 });
 
 test("8: a code consumed by an identity-conflict refusal cannot be replayed", async () => {
@@ -401,7 +404,7 @@ test("11: dormant SMS verification never sets or changes email from the request"
   const created = await app.inject({
     method: "POST",
     url: "/auth/otp/verify",
-    payload: { channel: "sms", phone_number: newPhone, code: "123456", email: requestedEmail }
+    payload: { channel: "sms", phone_number: newPhone, code: "123456", email: requestedEmail, device_identity: "sms-new-device", public_key: "sms-new-key" }
   });
   assert.equal(created.statusCode, 200, created.body);
   assert.equal((await database.query("SELECT email FROM users WHERE phone_number = $1", [newPhone])).rows[0].email, null);
@@ -413,7 +416,7 @@ test("11: dormant SMS verification never sets or changes email from the request"
   const updated = await app.inject({
     method: "POST",
     url: "/auth/otp/verify",
-    payload: { channel: "sms", phone_number: existingPhone, code: "654321", email: requestedEmail }
+    payload: { channel: "sms", phone_number: existingPhone, code: "654321", email: requestedEmail, device_identity: "sms-existing-device", public_key: "sms-existing-key" }
   });
   assert.equal(updated.statusCode, 200, updated.body);
   const user = await database.query("SELECT email, email_verified, phone_verified FROM users WHERE phone_number = $1", [existingPhone]);

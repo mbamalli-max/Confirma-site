@@ -1,0 +1,11 @@
+{
+  "name": "confirma-signout-app-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

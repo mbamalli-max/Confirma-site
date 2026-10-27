@@ -1,0 +1,440 @@
+# Part 2 alias draft 2 — search aids only; they never rename a type or change its shortcuts.
+# alias | target type id | kind | used in | note
+# kind: synonym | variant (spelling) | regional (local English usage / widely used loanword) | pidgin | hausa | brand
+# used in: any | NG | US | GH | KE | UG | TZ | ZA | EA (East Africa) | WA (West Africa) | FR-WA (francophone West Africa)
+# Pan-African terms point to GLOBAL types, so a user outside Nigeria/US sees them first.
+# Other languages (Yoruba, Igbo, Swahili, French, Twi, ...) are flagged for later development — see "Later languages".
+
+## ng_market_trader — Market Trader
+market woman | ng_market_trader | regional | NG |
+market stall | ng_market_trader | synonym | any |
+foodstuff seller | ng_market_trader | regional | NG |
+foodstuff trader | ng_market_trader | regional | NG |
+foodstuff shop | ng_market_trader | regional | NG |
+grains seller | ng_market_trader | synonym | NG |
+pepper seller | ng_market_trader | regional | NG |
+tomato seller | ng_market_trader | regional | NG |
+yam seller | ng_market_trader | regional | NG |
+garri seller | ng_market_trader | regional | NG |
+palm oil seller | ng_market_trader | regional | NG |
+fish seller | ng_market_trader | synonym | any |
+petty trader | ng_market_trader | regional | NG |
+ɗan kasuwa | ng_market_trader | hausa | NG | "trader"; tests ɗ → d normalisation
+'yar kasuwa | ng_market_trader | hausa | NG | female trader
+
+## ng_provision_shop — Provision Shop
+provision store | ng_provision_shop | regional | NG |
+provisions | ng_provision_shop | regional | NG |
+provision seller | ng_provision_shop | regional | NG |
+corner shop | ng_provision_shop | synonym | any |
+mini mart | ng_provision_shop | synonym | any |
+minimart | ng_provision_shop | variant | any |
+supermarket | ng_provision_shop | synonym | any | small supermarkets
+drinks depot | ng_provision_shop | regional | NG |
+pure water seller | ng_provision_shop | pidgin | NG | sachet water
+table shop | ng_provision_shop | pidgin | NG | roadside table stall
+mai shago | ng_provision_shop | hausa | NG | "shop owner"
+mai ruwa | ng_provision_shop | hausa | NG | "water seller"
+
+## ng_food_vendor — Food Vendor
+food seller | ng_food_vendor | synonym | any |
+mama put | ng_food_vendor | pidgin | NG |
+buka | ng_food_vendor | regional | NG |
+bukateria | ng_food_vendor | regional | NG |
+canteen | ng_food_vendor | synonym | any |
+local restaurant | ng_food_vendor | regional | NG |
+chop house | ng_food_vendor | pidgin | NG |
+amala spot | ng_food_vendor | regional | NG |
+suya spot | ng_food_vendor | regional | NG |
+akara seller | ng_food_vendor | regional | NG |
+puff-puff seller | ng_food_vendor | pidgin | NG |
+boli seller | ng_food_vendor | regional | NG | roasted plantain; also "bole" (Port Harcourt)
+bole seller | ng_food_vendor | variant | NG |
+abacha seller | ng_food_vendor | regional | NG |
+roadside food | ng_food_vendor | regional | NG |
+mai abinci | ng_food_vendor | hausa | NG | "food seller"
+mai shayi | ng_food_vendor | hausa | NG | tea and bread stall; widely used in pidgin too
+mai suya | ng_food_vendor | hausa | NG |
+
+## ng_transport_worker — Transport Worker
+danfo | ng_transport_worker | regional | NG |
+danfo driver | ng_transport_worker | regional | NG |
+bus driver | ng_transport_worker | synonym | any |
+bus conductor | ng_transport_worker | regional | NG |
+commercial bus | ng_transport_worker | regional | NG |
+korope | ng_transport_worker | regional | NG |
+taxi driver | ng_transport_worker | synonym | any |
+taxi man | ng_transport_worker | pidgin | NG |
+cab driver | ng_transport_worker | synonym | any |
+commercial driver | ng_transport_worker | regional | NG |
+truck driver | ng_transport_worker | synonym | any |
+lorry driver | ng_transport_worker | regional | NG |
+tipper driver | ng_transport_worker | regional | NG |
+truck pusher | ng_transport_worker | pidgin | NG | hand-cart pusher
+haulage | ng_transport_worker | synonym | any |
+ride-hailing driver | ng_transport_worker | synonym | any |
+direba | ng_transport_worker | hausa | NG | "driver"
+bolt driver | ng_transport_worker | brand | NG | see Decisions D2
+uber driver | ng_transport_worker | brand | any | see Decisions D2
+
+## ng_artisan — Artisan
+handyman | ng_artisan | synonym | any |
+plumber | ng_artisan | synonym | any |
+electrician | ng_artisan | synonym | any |
+welder | ng_artisan | synonym | any |
+mason | ng_artisan | synonym | any |
+bricklayer | ng_artisan | synonym | any |
+carpenter | ng_artisan | synonym | any |
+painter | ng_artisan | synonym | any |
+tiler | ng_artisan | synonym | any |
+mechanic | ng_artisan | synonym | any |
+panel beater | ng_artisan | regional | NG |
+vulcaniser | ng_artisan | regional | NG |
+vulcanizer | ng_artisan | variant | NG |
+vulca | ng_artisan | pidgin | NG | short form
+rewire man | ng_artisan | pidgin | NG | auto electrician
+ac repair | ng_artisan | synonym | any |
+fridge repair | ng_artisan | synonym | any |
+generator repair | ng_artisan | regional | NG |
+gen repairer | ng_artisan | pidgin | NG |
+aluminium fabricator | ng_artisan | regional | NG |
+pop ceiling | ng_artisan | regional | NG |
+furniture maker | ng_artisan | synonym | any |
+kafinta | ng_artisan | hausa | NG | "carpenter"
+makanike | ng_artisan | hausa | NG | "mechanic"
+mai walda | ng_artisan | hausa | NG | "welder"
+
+## ng_service_provider — Service Provider
+consultant | ng_service_provider | synonym | any |
+freelancer | ng_service_provider | synonym | any |
+event planner | ng_service_provider | synonym | any |
+event decorator | ng_service_provider | synonym | any |
+photographer | ng_service_provider | synonym | any |
+videographer | ng_service_provider | synonym | any |
+dj | ng_service_provider | synonym | any |
+mc | ng_service_provider | regional | NG | master of ceremonies
+estate agent | ng_service_provider | regional | NG |
+real estate agent | ng_service_provider | synonym | any |
+accountant | ng_service_provider | synonym | any |
+bookkeeper | ng_service_provider | synonym | any |
+lawyer | ng_service_provider | synonym | any |
+hairdresser | ng_service_provider | synonym | any | NG has no beauty type; see Decisions D3
+salon | ng_service_provider | synonym | any | see Decisions D3
+barber | ng_service_provider | synonym | any | see Decisions D3
+barbing salon | ng_service_provider | regional | NG | see Decisions D3
+barbing saloon | ng_service_provider | variant | NG | common NG spelling
+laundry | ng_service_provider | synonym | any |
+dry cleaner | ng_service_provider | synonym | any |
+dry cleaning | ng_service_provider | variant | any |
+wanzami | ng_service_provider | hausa | NG | "barber"
+mai kitso | ng_service_provider | hausa | NG | "hair plaiter"
+mai wanki | ng_service_provider | hausa | NG | "laundry person"
+
+## ng_online_seller — Online Seller
+online vendor | ng_online_seller | regional | NG |
+online shop | ng_online_seller | synonym | any |
+online store | ng_online_seller | synonym | any |
+instagram seller | ng_online_seller | brand | any | see Decisions D2
+whatsapp seller | ng_online_seller | brand | any | see Decisions D2
+social media seller | ng_online_seller | synonym | any |
+e-commerce | ng_online_seller | synonym | any |
+ecommerce | ng_online_seller | variant | any |
+dropshipping | ng_online_seller | synonym | any |
+jumia seller | ng_online_seller | brand | NG | see Decisions D2
+
+## ng_kiosk_phone_business — Kiosk / Phone Business
+kiosk | ng_kiosk_phone_business | regional | NG |
+phone kiosk | ng_kiosk_phone_business | regional | NG |
+airtime seller | ng_kiosk_phone_business | regional | NG | shortcut misclassification already logged (Airtime Float)
+recharge card seller | ng_kiosk_phone_business | regional | NG |
+recharge card | ng_kiosk_phone_business | regional | NG |
+data seller | ng_kiosk_phone_business | regional | NG |
+vtu business | ng_kiosk_phone_business | regional | NG | virtual top-up
+call centre | ng_kiosk_phone_business | regional | NG | older NG usage for phone-call kiosks
+gsm accessories | ng_kiosk_phone_business | regional | NG | also Device Repair; see Shared aliases
+
+## ng_fashion_tailor — Fashion / Tailor
+tailor | ng_fashion_tailor | synonym | any |
+seamstress | ng_fashion_tailor | synonym | any |
+fashion designer | ng_fashion_tailor | synonym | any |
+dressmaker | ng_fashion_tailor | synonym | any |
+fashion house | ng_fashion_tailor | regional | NG |
+aso ebi | ng_fashion_tailor | regional | NG | loanword used nationally
+fabric seller | ng_fashion_tailor | regional | NG |
+ankara seller | ng_fashion_tailor | regional | NG |
+lace seller | ng_fashion_tailor | regional | NG |
+okrika seller | ng_fashion_tailor | pidgin | NG | second-hand clothes; see Decisions D9
+bend down select | ng_fashion_tailor | pidgin | NG | second-hand clothes market; see Decisions D9
+tela | ng_fashion_tailor | hausa | NG | "tailor"
+mai dinki | ng_fashion_tailor | hausa | NG | "one who sews"
+
+## ng_okada_keke_rider — Okada / Keke Rider
+okada | ng_okada_keke_rider | regional | NG |
+okada rider | ng_okada_keke_rider | regional | NG |
+okada man | ng_okada_keke_rider | pidgin | NG |
+bike man | ng_okada_keke_rider | pidgin | NG |
+motorcycle taxi | ng_okada_keke_rider | synonym | any |
+keke | ng_okada_keke_rider | regional | NG |
+keke man | ng_okada_keke_rider | pidgin | NG |
+keke napep | ng_okada_keke_rider | regional | NG |
+napep | ng_okada_keke_rider | regional | NG |
+tricycle | ng_okada_keke_rider | synonym | any |
+tricycle rider | ng_okada_keke_rider | synonym | any |
+achaba | ng_okada_keke_rider | hausa | NG | northern term
+adaidaita sahu | ng_okada_keke_rider | hausa | NG | Kano term
+dispatch rider | ng_okada_keke_rider | regional | NG | also Transport & Logistics; see Shared aliases
+
+## us_retail — Retail
+retail store | us_retail | synonym | US |
+store | us_retail | synonym | US |
+boutique | us_retail | synonym | any |
+reseller | us_retail | synonym | US |
+thrift store | us_retail | synonym | US |
+flea market vendor | us_retail | regional | US |
+convenience store | us_retail | regional | US |
+
+## us_food_service — Food Service
+restaurant | us_food_service | synonym | any |
+food truck | us_food_service | regional | US |
+caterer | us_food_service | synonym | any |
+catering | us_food_service | synonym | any |
+diner | us_food_service | regional | US |
+coffee shop | us_food_service | synonym | any |
+bakery | us_food_service | synonym | any |
+meal prep | us_food_service | synonym | US |
+
+## us_logistics — Logistics
+courier | us_logistics | synonym | any |
+delivery driver | us_logistics | synonym | any |
+gig driver | us_logistics | regional | US |
+trucking | us_logistics | regional | US |
+owner-operator | us_logistics | regional | US |
+box truck | us_logistics | regional | US |
+moving company | us_logistics | synonym | any |
+doordash driver | us_logistics | brand | US | see Decisions D2
+
+## us_contractor — Contractor
+general contractor | us_contractor | regional | US |
+handyman | us_contractor | synonym | US |
+plumber | us_contractor | synonym | any |
+electrician | us_contractor | synonym | any |
+roofer | us_contractor | synonym | any |
+remodeler | us_contractor | regional | US |
+hvac | us_contractor | regional | US |
+painter | us_contractor | synonym | any |
+
+## us_beauty_services — Beauty Services
+hair stylist | us_beauty_services | synonym | any |
+hairdresser | us_beauty_services | synonym | any |
+barber | us_beauty_services | synonym | any |
+salon | us_beauty_services | synonym | any |
+nail tech | us_beauty_services | regional | US |
+esthetician | us_beauty_services | regional | US |
+lash tech | us_beauty_services | regional | US |
+makeup artist | us_beauty_services | synonym | any |
+braider | us_beauty_services | synonym | any |
+
+## us_digital_business — Digital Business
+freelancer | us_digital_business | synonym | any |
+web developer | us_digital_business | synonym | any |
+web designer | us_digital_business | synonym | any |
+content creator | us_digital_business | synonym | any |
+youtuber | us_digital_business | brand | any | see Decisions D2
+social media manager | us_digital_business | synonym | any |
+online course | us_digital_business | synonym | any |
+saas | us_digital_business | synonym | US |
+
+## us_personal_services_side_hustle — Personal Services / Side Hustle
+side hustle | us_personal_services_side_hustle | regional | US |
+house cleaning | us_personal_services_side_hustle | synonym | any |
+cleaner | us_personal_services_side_hustle | synonym | any |
+dog walker | us_personal_services_side_hustle | regional | US |
+pet sitter | us_personal_services_side_hustle | synonym | US |
+babysitter | us_personal_services_side_hustle | synonym | any |
+nanny | us_personal_services_side_hustle | synonym | any |
+lawn care | us_personal_services_side_hustle | regional | US |
+errands | us_personal_services_side_hustle | synonym | any |
+odd jobs | us_personal_services_side_hustle | synonym | US |
+
+## global_trade_retail — Retail / Trading
+shop | global_trade_retail | synonym | any |
+store | global_trade_retail | synonym | any |
+trader | global_trade_retail | synonym | any |
+trading | global_trade_retail | synonym | any |
+retail | global_trade_retail | synonym | any |
+wholesale | global_trade_retail | synonym | any |
+wholesaler | global_trade_retail | synonym | any |
+distributor | global_trade_retail | synonym | any |
+boutique | global_trade_retail | synonym | any |
+general merchandise | global_trade_retail | synonym | any |
+hawker | global_trade_retail | synonym | any |
+seller | global_trade_retail | synonym | any |
+market trader | global_trade_retail | synonym | any |
+spare parts dealer | global_trade_retail | regional | WA | e.g. Ladipo, Nnewi, Kumasi Suame
+tokunbo dealer | global_trade_retail | regional | NG | used cars and goods; loanword used nationally
+second-hand clothes | global_trade_retail | synonym | any | see Decisions D9
+spaza shop | global_trade_retail | regional | ZA | township home shop
+tuck shop | global_trade_retail | regional | ZA | also Zimbabwe, schools across Anglophone Africa
+duka | global_trade_retail | regional | EA | Swahili loanword used in English
+mama mboga | global_trade_retail | regional | KE | vegetable seller
+mitumba | global_trade_retail | regional | EA | second-hand clothes
+kiosk shop | global_trade_retail | regional | EA |
+
+## global_food_hospitality — Food & Hospitality
+restaurant | global_food_hospitality | synonym | any |
+eatery | global_food_hospitality | synonym | any |
+cafe | global_food_hospitality | synonym | any |
+caterer | global_food_hospitality | synonym | any |
+catering | global_food_hospitality | synonym | any |
+bakery | global_food_hospitality | synonym | any |
+hotel | global_food_hospitality | synonym | any |
+guest house | global_food_hospitality | synonym | any |
+bar | global_food_hospitality | synonym | any |
+lounge | global_food_hospitality | synonym | any |
+fast food | global_food_hospitality | synonym | any |
+food truck | global_food_hospitality | synonym | any |
+food vendor | global_food_hospitality | synonym | any |
+chop bar | global_food_hospitality | regional | GH | local restaurant; also used in NG
+waakye seller | global_food_hospitality | regional | GH |
+kenkey seller | global_food_hospitality | regional | GH |
+kibanda | global_food_hospitality | regional | EA | small food kiosk
+nyama choma | global_food_hospitality | regional | KE | grilled-meat spot
+shebeen | global_food_hospitality | regional | ZA | informal tavern
+tavern | global_food_hospitality | synonym | any |
+maquis | global_food_hospitality | regional | FR-WA | open-air restaurant, Côte d'Ivoire
+
+## global_transport_logistics — Transport & Logistics
+driver | global_transport_logistics | synonym | any |
+taxi | global_transport_logistics | synonym | any |
+delivery | global_transport_logistics | synonym | any |
+courier | global_transport_logistics | synonym | any |
+dispatch rider | global_transport_logistics | regional | any |
+logistics | global_transport_logistics | synonym | any |
+haulage | global_transport_logistics | synonym | any |
+trucking | global_transport_logistics | synonym | any |
+moving company | global_transport_logistics | synonym | any |
+trotro | global_transport_logistics | regional | GH | minibus
+trotro driver | global_transport_logistics | regional | GH |
+matatu | global_transport_logistics | regional | KE | minibus
+boda boda | global_transport_logistics | regional | EA | motorbike taxi
+tuk tuk | global_transport_logistics | regional | EA |
+bajaji | global_transport_logistics | regional | TZ | tricycle taxi
+pragya | global_transport_logistics | regional | GH | tricycle taxi
+minibus taxi | global_transport_logistics | regional | ZA |
+zemidjan | global_transport_logistics | regional | FR-WA | Benin/Togo motorbike taxi
+zem | global_transport_logistics | regional | FR-WA | short form
+motorbike taxi | global_transport_logistics | synonym | any |
+kayayo | global_transport_logistics | regional | GH | head porter
+porter | global_transport_logistics | synonym | any |
+
+## global_skilled_construction — Skilled Work / Construction
+builder | global_skilled_construction | synonym | any |
+construction | global_skilled_construction | synonym | any |
+contractor | global_skilled_construction | synonym | any |
+plumber | global_skilled_construction | synonym | any |
+electrician | global_skilled_construction | synonym | any |
+welder | global_skilled_construction | synonym | any |
+mason | global_skilled_construction | synonym | any |
+carpenter | global_skilled_construction | synonym | any |
+mechanic | global_skilled_construction | synonym | any |
+painter | global_skilled_construction | synonym | any |
+tiler | global_skilled_construction | synonym | any |
+handyman | global_skilled_construction | synonym | any |
+artisan | global_skilled_construction | synonym | any |
+fundi | global_skilled_construction | regional | EA | Swahili loanword: craftsman
+jua kali | global_skilled_construction | regional | KE | informal artisan sector
+fitter | global_skilled_construction | regional | any | fitting mechanic (GH, NG usage)
+
+## global_personal_professional — Personal / Professional Services
+services | global_personal_professional | synonym | any |
+service provider | global_personal_professional | synonym | any |
+consultant | global_personal_professional | synonym | any |
+salon | global_personal_professional | synonym | any |
+barber | global_personal_professional | synonym | any |
+hairdresser | global_personal_professional | synonym | any |
+hair braider | global_personal_professional | synonym | any |
+laundry | global_personal_professional | synonym | any |
+dry cleaner | global_personal_professional | synonym | any |
+cleaner | global_personal_professional | synonym | any |
+photographer | global_personal_professional | synonym | any |
+event planner | global_personal_professional | synonym | any |
+accountant | global_personal_professional | synonym | any |
+lawyer | global_personal_professional | synonym | any |
+tailor | global_personal_professional | synonym | any | no GLOBAL fashion type; see Decisions D10
+seamstress | global_personal_professional | synonym | any | see Decisions D10
+
+## global_digital_online — Digital / Online Business
+online business | global_digital_online | synonym | any |
+online seller | global_digital_online | synonym | any |
+e-commerce | global_digital_online | synonym | any |
+freelancer | global_digital_online | synonym | any |
+web designer | global_digital_online | synonym | any |
+developer | global_digital_online | synonym | any |
+content creator | global_digital_online | synonym | any |
+digital marketing | global_digital_online | synonym | any |
+graphic designer | global_digital_online | synonym | any |
+social media manager | global_digital_online | synonym | any |
+
+## global_document_services — Document & Print Services
+business centre | global_document_services | regional | NG | Part 2 test 3; also GH
+business center | global_document_services | variant | any |
+cyber cafe | global_document_services | regional | any | Part 2 test 3
+cybercafe | global_document_services | variant | any |
+cyber | global_document_services | pidgin | NG | short form
+internet cafe | global_document_services | synonym | any |
+browsing centre | global_document_services | regional | NG |
+photocopy | global_document_services | synonym | any |
+photocopying | global_document_services | variant | any |
+printing | global_document_services | synonym | any |
+print shop | global_document_services | synonym | any |
+printer | global_document_services | synonym | any | ambiguous (the machine); kept as search aid
+typing | global_document_services | synonym | any |
+typist | global_document_services | synonym | any |
+lamination | global_document_services | synonym | any |
+laminating | global_document_services | variant | any |
+scanning | global_document_services | synonym | any |
+passport photos | global_document_services | synonym | any |
+binding | global_document_services | synonym | any |
+secretarial services | global_document_services | synonym | any |
+secretarial bureau | global_document_services | regional | EA |
+computer centre | global_document_services | regional | NG |
+printing press | global_document_services | synonym | any | see Decisions D4
+jamb registration | global_document_services | regional | NG | search aid only, not a shortcut; see Decisions D5
+cac registration | global_document_services | regional | NG | search aid only, not a shortcut; see Decisions D5
+
+## global_tutoring — Tutoring / Lessons
+tutor | global_tutoring | synonym | any |
+tutoring | global_tutoring | synonym | any | also Side Hustle (US); see Shared aliases
+lesson teacher | global_tutoring | regional | NG |
+home lessons | global_tutoring | regional | NG |
+private lessons | global_tutoring | synonym | any |
+extra lessons | global_tutoring | regional | any | NG, GH
+extra classes | global_tutoring | regional | any |
+lesson centre | global_tutoring | regional | NG |
+tutorial centre | global_tutoring | regional | NG |
+coaching | global_tutoring | synonym | any |
+exam prep | global_tutoring | synonym | any |
+jamb lessons | global_tutoring | regional | NG |
+waec lessons | global_tutoring | regional | WA | WAEC covers NG, GH, SL, LR, GM
+tuition | global_tutoring | synonym | any |
+music teacher | global_tutoring | synonym | any |
+language teacher | global_tutoring | synonym | any |
+arabic teacher | global_tutoring | regional | any | see Decisions D6
+islamiyya teacher | global_tutoring | regional | NG | see Decisions D6
+quran teacher | global_tutoring | synonym | any | see Decisions D6
+
+## global_device_repair — Device Repair
+phone repair | global_device_repair | synonym | any |
+phone repairer | global_device_repair | synonym | any |
+phone engineer | global_device_repair | regional | NG |
+phone technician | global_device_repair | synonym | any |
+phone doctor | global_device_repair | pidgin | any | NG, GH
+gsm repairer | global_device_repair | regional | NG |
+gsm engineer | global_device_repair | regional | NG |
+laptop repair | global_device_repair | synonym | any |
+computer repair | global_device_repair | synonym | any |
+screen replacement | global_device_repair | synonym | any |
+tv repair | global_device_repair | synonym | any |
+electronics repair | global_device_repair | synonym | any |
+gsm accessories | global_device_repair | regional | NG |
+mai gyaran waya | global_device_repair | hausa | NG | "phone repairer"

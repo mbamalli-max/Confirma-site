@@ -86,7 +86,15 @@ CREATE TABLE IF NOT EXISTS profiles (
   phone_number TEXT,
   plan TEXT,
   plan_activated_at TIMESTAMPTZ,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  -- Set only when business_type_id = 'unlisted' (migration 015).
+  business_description TEXT
+    CONSTRAINT profiles_business_description_length
+    CHECK (business_description IS NULL OR char_length(business_description) BETWEEN 3 AND 60),
+  -- Server-only; written by future admin tooling, never from the client.
+  classification_review TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT profiles_unlisted_description_pairing
+    CHECK ((COALESCE(business_type_id, '') = 'unlisted') = (business_description IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS attestations (

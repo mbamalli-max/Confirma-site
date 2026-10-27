@@ -37,6 +37,150 @@ export async function getBackendPid(client) {
   return Number(result.rows[0].pid);
 }
 
+function normalizeExpectedWaiters(expectedWaiters) {
+  if (!Array.isArray(expectedWaiters) || expectedWaiters.length === 0) {
+    throw new TypeError("expectedWaiters must be a non-empty array of query patterns.");
+  }
+
+  return expectedWaiters.map((expected, index) => {
+    const hasPattern = expected
+      && typeof expected === "object"
+      && !(expected instanceof RegExp)
+      && Object.hasOwn(expected, "pattern");
+    const pattern = hasPattern ? expected.pattern : expected;
+    if (!(pattern instanceof RegExp) && typeof pattern !== "string") {
+      throw new TypeError(`Expected waiter ${index + 1} must provide a string or RegExp query pattern.`);
+    }
+    const pid = hasPattern ? expected.pid : undefined;
+    if (pid !== undefined && !Number.isInteger(pid)) {
+      throw new TypeError(`Expected waiter ${index + 1} pid must be an integer.`);
+    }
+    return {
+      description: hasPattern && expected.description ? expected.description : String(pattern),
+      pattern,
+      pid
+    };
+  });
+}
+
+function queryMatchesPattern(query, pattern) {
+  if (typeof pattern === "string") return query.includes(pattern);
+  pattern.lastIndex = 0;
+  return pattern.test(query);
+}
+
+function formatWaiters(waiters) {
+  if (waiters.length === 0) return "none";
+  return waiters
+    .map(({ pid, query }) => `${pid}: ${JSON.stringify(query.trim())}`)
+    .join("; ");
+}
+
+function assignExpectedWaiters(waiters, expectedWaiters) {
+  const candidates = expectedWaiters.map(({ pattern, pid: expectedPid }) => waiters
+    .filter(({ pid, query }) => (expectedPid === undefined || pid === expectedPid)
+      && queryMatchesPattern(query, pattern))
+    .map(({ pid }) => pid));
+
+  const assignment = Array(expectedWaiters.length).fill(null);
+  function assign(index, usedPids) {
+    if (index === candidates.length) return true;
+    for (const pid of candidates[index]) {
+      if (usedPids.has(pid)) continue;
+      assignment[index] = pid;
+      usedPids.add(pid);
+      if (assign(index + 1, usedPids)) return true;
+      usedPids.delete(pid);
+      assignment[index] = null;
+    }
+    return false;
+  }
+
+  return assign(0, new Set()) ? assignment : null;
+}
+
+export async function waitForBackendsBlockedBy(pool, blockerPid, expectedWaiters, timeoutMs = 5000) {
+  const expected = normalizeExpectedWaiters(expectedWaiters);
+  const deadline = Date.now() + timeoutMs;
+  let lastWaiters = [];
+  while (Date.now() < deadline) {
+    const result = await pool.query(
+      `
+        WITH RECURSIVE lock_waiters AS (
+          SELECT activity.pid, activity.query
+          FROM pg_stat_activity AS activity
+          WHERE activity.datname = current_database()
+            AND activity.wait_event_type = 'Lock'
+            AND activity.pid <> $1
+            AND activity.pid <> pg_backend_pid()
+        ), blocking_chain AS (
+          SELECT waiter.pid AS waiter_pid,
+                 blocker.pid AS blocking_pid,
+                 ARRAY[waiter.pid, blocker.pid] AS path
+          FROM lock_waiters AS waiter
+          CROSS JOIN LATERAL unnest(pg_blocking_pids(waiter.pid)) AS blocker(pid)
+
+          UNION ALL
+
+          SELECT chain.waiter_pid,
+                 blocker.pid AS blocking_pid,
+                 array_append(chain.path, blocker.pid)
+          FROM blocking_chain AS chain
+          CROSS JOIN LATERAL unnest(pg_blocking_pids(chain.blocking_pid)) AS blocker(pid)
+          WHERE NOT blocker.pid = ANY(chain.path)
+        )
+        SELECT DISTINCT ON (chain.waiter_pid)
+               chain.waiter_pid,
+               waiters.query
+        FROM blocking_chain AS chain
+        INNER JOIN lock_waiters AS waiters
+          ON waiters.pid = chain.waiter_pid
+        WHERE chain.blocking_pid = $1
+        ORDER BY chain.waiter_pid
+      `,
+      [blockerPid]
+    );
+    const waiters = result.rows.map((row) => ({
+      pid: Number(row.waiter_pid),
+      query: String(row.query || "")
+    }));
+    lastWaiters = waiters;
+    const unexpected = waiters.filter(({ query }) => !expected.some(({ pattern }) => (
+      queryMatchesPattern(query, pattern)
+    )));
+
+    if (unexpected.length > 0) {
+      throw new Error(
+        `Unexpected Lock-waiter(s) blocked by backend ${blockerPid}: ${formatWaiters(unexpected)}. `
+        + `Expected: ${expected.map(({ description }) => description).join("; ")}.`
+      );
+    }
+    if (waiters.length > expected.length) {
+      throw new Error(
+        `Found ${waiters.length} Lock-waiters blocked by backend ${blockerPid}; expected exactly `
+        + `${expected.length}. Waiters: ${formatWaiters(waiters)}.`
+      );
+    }
+    if (waiters.length === expected.length) {
+      const assignedPids = assignExpectedWaiters(waiters, expected);
+      if (!assignedPids) {
+        throw new Error(
+          `Lock-waiters blocked by backend ${blockerPid} did not match distinct expected requests. `
+          + `Waiters: ${formatWaiters(waiters)}. `
+          + `Expected: ${expected.map(({ description }) => description).join("; ")}.`
+        );
+      }
+      return assignedPids;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(
+    `Timed out waiting for ${expected.length} expected Lock-waiter(s) to be blocked by backend `
+    + `${blockerPid}. Last observed waiters: ${formatWaiters(lastWaiters)}. `
+    + `Expected: ${expected.map(({ description }) => description).join("; ")}.`
+  );
+}
+
 export async function waitForBlockingRelationship(pool, requestPid, blockerPid, timeoutMs = 5000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -76,7 +220,9 @@ export function instrumentApplicationPool(pool) {
     maxActive: 0,
     checkoutPids: [],
     transactionPids: [],
-    failCommit: false
+    queryTexts: [],
+    failCommit: false,
+    failQueryPattern: null
   };
 
   async function instrumentClient(client) {
@@ -91,12 +237,30 @@ export function instrumentApplicationPool(pool) {
 
     client.query = function instrumentedQuery(...args) {
       const text = typeof args[0] === "string" ? args[0] : args[0]?.text;
+      const callback = typeof args[args.length - 1] === "function"
+        ? args[args.length - 1]
+        : null;
       if (/^\s*BEGIN\b/i.test(String(text || ""))) {
         state.transactionPids.push(pid);
       }
+      state.queryTexts.push(String(text || ""));
       if (state.failCommit && /^\s*COMMIT\b/i.test(String(text || ""))) {
         state.failCommit = false;
-        return Promise.reject(new Error("Forced test commit failure."));
+        const error = new Error("Forced test commit failure.");
+        if (callback) {
+          process.nextTick(callback, error);
+          return undefined;
+        }
+        return Promise.reject(error);
+      }
+      if (state.failQueryPattern?.test(String(text || ""))) {
+        state.failQueryPattern = null;
+        const error = new Error("Forced test query failure.");
+        if (callback) {
+          process.nextTick(callback, error);
+          return undefined;
+        }
+        return Promise.reject(error);
       }
       return originalQuery(...args);
     };
@@ -142,10 +306,15 @@ export function instrumentApplicationPool(pool) {
       state.maxActive = 0;
       state.checkoutPids.length = 0;
       state.transactionPids.length = 0;
+      state.queryTexts.length = 0;
       state.failCommit = false;
+      state.failQueryPattern = null;
     },
     failNextCommit() {
       state.failCommit = true;
+    },
+    failNextQueryMatching(pattern) {
+      state.failQueryPattern = pattern;
     },
     restore() {
       pool.connect = originalConnect;

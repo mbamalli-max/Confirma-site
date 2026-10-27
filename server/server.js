@@ -18,6 +18,7 @@ import { registerAdminAuthRoutes } from "./src/routes/admin/auth.js";
 import { registerAdminClassificationRoutes } from "./src/routes/admin/classification.js";
 import { registerAdminMetricsRoutes } from "./src/routes/admin/metrics.js";
 import { registerAdminSuppressedRoutes } from "./src/routes/admin/suppressed.js";
+import { registerReadinessRoute } from "./src/routes/health.js";
 
 async function registerRouteGroup(app, name, registerFn) {
   try {
@@ -83,6 +84,8 @@ async function main() {
       env: process.env.NODE_ENV || "development"
     });
   });
+
+  registerReadinessRoute(app);
 
   await registerRouteGroup(app, "auth", registerAuthRoutes);
   await registerRouteGroup(app, "account", registerAccountRoutes);

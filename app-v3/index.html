@@ -351,6 +351,37 @@
       </div>
     </section>
 
+    <section class="screen" id="screen-signed-out" aria-labelledby="signed-out-title">
+      <header class="topbar">
+        <div>
+          <strong>Konfirmata</strong>
+          <span>Local records stay on this device</span>
+        </div>
+      </header>
+      <div class="panel signed-out-panel">
+        <h2 id="signed-out-title">Signed out</h2>
+        <p class="subtle" id="signed-out-copy" aria-live="polite"></p>
+        <p class="record-meta" id="signed-out-pending" aria-live="polite"></p>
+        <div class="button-stack">
+          <button class="btn btn-primary" id="signed-out-sign-in" type="button">Sign in</button>
+          <button class="btn btn-secondary" id="signed-out-remove-data" type="button">Remove local data</button>
+        </div>
+      </div>
+      <div class="panel" id="remove-local-data-panel" hidden>
+        <h2>Remove local data</h2>
+        <p class="subtle" id="remove-local-data-copy"></p>
+        <label class="field">Type REMOVE to continue
+          <input id="remove-local-data-confirmation" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="error" id="remove-local-data-error" role="alert" hidden></p>
+        <div class="button-stack">
+          <button class="btn btn-danger" id="remove-local-data-confirm" type="button">Remove local data</button>
+          <button class="btn btn-secondary" id="remove-local-data-anyway" type="button" hidden>Remove anyway</button>
+          <button class="btn btn-secondary" id="remove-local-data-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </section>
+
     <section class="screen" id="screen-capture">
       <header class="topbar">
         <div>
@@ -709,7 +740,10 @@
           <button class="btn btn-primary" id="settings-open-trust-v3" type="button">Verify by email</button>
           <button class="btn btn-secondary" id="settings-change-profile-v2" type="button">Change business profile</button>
           <button class="btn btn-secondary" id="settings-open-export-v2" type="button" data-target-screen="screen-export">Open export</button>
-          <button class="btn btn-secondary" id="settings-logout-v2" type="button">Log out</button>
+          <button class="btn btn-secondary" id="settings-logout-v2" type="button">Sign out</button>
+          <button class="btn btn-secondary" id="settings-logout-all-v2" type="button">Sign out everywhere</button>
+          <button class="btn btn-danger" id="settings-remove-local-data" type="button">Remove local data</button>
+          <p class="record-meta" id="settings-account-status" aria-live="polite"></p>
         </div>
       </div>
       <div class="panel" id="install-app-panel" hidden>
