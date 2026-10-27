@@ -27,6 +27,9 @@ import {
   normalizeActionKey, layerBActionKey, layerBContextFromActionKey,
   slugifyLabel, friendlyActionLabel
 } from "./label-scorer.js";
+import {
+  UNLISTED_BUSINESS_TYPE_ID, searchBusinessTypes, cleanBusinessDescription, businessDescriptionError
+} from "./business-search.js";
 
 const DB_NAME = "confirma-v3-db";
 const DB_VERSION = 5;
@@ -102,6 +105,8 @@ const state = {
   syncApiBaseUrl: "",
   syncStatus: "Sync not configured yet.",
   syncInFlight: false,
+  // A sync asked for while one is running (e.g. a record confirmed mid-sync) runs once that one ends.
+  syncRequestedDuringFlight: false,
   syncQueueCount: 0,
   removeLocalDataConfirmedCount: 0,
   removeLocalDataSessionWarning: "",
@@ -232,7 +237,9 @@ async function confirmSessionBeforeProfileStep() {
 
 function cacheElements() {
   [
-    "country-grid", "operating-region-grid", "operating-region-note", "operating-region-next", "restore-account-link", "sector-grid", "business-grid", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
+    "country-grid", "operating-region-grid", "operating-region-note", "operating-region-next", "restore-account-link", "sector-grid", "business-grid",
+    "business-search", "business-search-results", "business-search-status", "business-not-listed", "unlisted-panel",
+    "business-description", "business-description-error", "unlisted-continue", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
     "onboarding-next", "onboarding-name", "onboarding-phone", "onboarding-email", "onboarding-state",
     "onboarding-birth-year", "onboarding-gender", "onboarding-profile-error",
     "business-helper", "profile-summary", "anomaly-banner", "anomaly-banner-text", "anomaly-banner-cta", "primary-actions", "advanced-panel", "transfer-actions", "liability-actions",
@@ -280,6 +287,7 @@ function cacheElements() {
 }
 
 function wireEvents() {
+  wireBusinessSearch();
   document.getElementById("finish-onboarding").addEventListener("click", finishOnboarding);
   document.getElementById("onboarding-next").addEventListener("click", () => updateOnboardingStep(ONBOARDING_PROFILE_STEP));
   document.getElementById("operating-region-next")?.addEventListener("click", () => {
@@ -812,6 +820,7 @@ function renderSectorGrid() {
         ...(state.profile || {}),
         sector_id: sector.id,
         business_type_id: null,
+        business_description: "",
         preferred_labels: []
       };
       renderBusinessGrid();
@@ -834,17 +843,213 @@ function renderBusinessGrid() {
   items.forEach((item) => {
     const cardNote = item.country === "GLOBAL" ? "Available everywhere" : sectorName;
     els["business-grid"].appendChild(buildVisualCard(item.icon, item.name, cardNote, () => {
-      state.profile = {
-        ...state.profile,
-        business_type_id: item.id,
-        preferred_labels: []
-      };
-      renderBusinessGrid();
-      renderCommonLabelGrid();
-      renderOnboardingProfileStep();
-      updateOnboardingStep(5);
+      selectListedBusinessType(item);
     }, state.profile && state.profile.business_type_id === item.id));
   });
+}
+
+// Choosing a listed type, from search or by browsing, always ends in the same profile state.
+function selectListedBusinessType(item) {
+  state.profile = {
+    ...state.profile,
+    sector_id: item.sector_id,
+    business_type_id: item.id,
+    business_description: "",
+    preferred_labels: []
+  };
+  closeBusinessSearch();
+  hideUnlistedPanel();
+  renderSectorGrid();
+  renderBusinessGrid();
+  renderCommonLabelGrid();
+  renderOnboardingProfileStep();
+  updateOnboardingStep(5);
+}
+
+function isUnlistedBusiness(profile = state.profile) {
+  return profile?.business_type_id === UNLISTED_BUSINESS_TYPE_ID;
+}
+
+// What to call the user's business in summaries, exports and Settings.
+function getBusinessTypeLabel(profile = state.profile) {
+  if (isUnlistedBusiness(profile)) return profile.business_description || "Business not listed";
+  return BUSINESS_TYPES.find((item) => item.id === profile?.business_type_id)?.name || "";
+}
+
+const businessSearchState = { options: [], activeIndex: -1 };
+
+function wireBusinessSearch() {
+  const input = els["business-search"];
+  if (!input) return;
+  input.addEventListener("input", () => renderBusinessSearchResults());
+  input.addEventListener("keydown", handleBusinessSearchKeydown);
+  els["business-search-results"].addEventListener("mousedown", (event) => event.preventDefault());
+  els["business-search-results"].addEventListener("click", (event) => {
+    const option = event.target.closest('[role="option"]');
+    if (!option) return;
+    const index = businessSearchState.options.findIndex((item) => item.id === option.id);
+    if (index >= 0) chooseBusinessSearchOption(index);
+  });
+  els["business-not-listed"].addEventListener("click", () => showUnlistedPanel());
+  els["unlisted-continue"].addEventListener("click", () => saveUnlistedBusiness());
+  els["business-description"].addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveUnlistedBusiness();
+    }
+  });
+}
+
+function renderBusinessSearchResults() {
+  const input = els["business-search"];
+  const list = els["business-search-results"];
+  const status = els["business-search-status"];
+  const region = getRecognizedCountryId(state.profile?.operating_region || state.profile?.country) || "";
+  const { query, results } = searchBusinessTypes(input.value, { region });
+  list.innerHTML = "";
+  businessSearchState.options = [];
+  businessSearchState.activeIndex = -1;
+  input.removeAttribute("aria-activedescendant");
+  if (!query) {
+    closeBusinessSearch();
+    status.textContent = "";
+    return;
+  }
+
+  results.forEach(({ type, tier, matchedAlias }, index) => {
+    const id = `business-option-${index}`;
+    const note = [
+      // Never name a country here: results only ever include types the user can choose.
+      type.country === "GLOBAL" ? "Available everywhere" : (SECTORS.find((sector) => sector.id === type.sector_id)?.name || ""),
+      tier === 3 ? "close spelling" : (matchedAlias ? `matches "${matchedAlias}"` : "")
+    ].filter(Boolean).join(" · ");
+    const option = document.createElement("li");
+    option.id = id;
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", "false");
+    option.dataset.businessTypeId = type.id;
+    option.innerHTML = `<span><span aria-hidden="true">${escapeHtml(type.icon || "")}</span> <span class="option-name">${escapeHtml(type.name)}</span></span><small>${escapeHtml(note)}</small>`;
+    list.appendChild(option);
+    businessSearchState.options.push({ id, kind: "type", type });
+  });
+
+  if (!results.length) {
+    const empty = document.createElement("li");
+    empty.className = "business-search-empty";
+    empty.setAttribute("role", "presentation");
+    empty.textContent = "No matches";
+    list.appendChild(empty);
+  }
+  const unlisted = document.createElement("li");
+  unlisted.id = "business-option-unlisted";
+  unlisted.setAttribute("role", "option");
+  unlisted.setAttribute("aria-selected", "false");
+  unlisted.innerHTML = `<span><span class="option-name">My business isn't listed</span></span><small>Describe it in your own words</small>`;
+  list.appendChild(unlisted);
+  businessSearchState.options.push({ id: unlisted.id, kind: "unlisted" });
+
+  list.hidden = false;
+  input.setAttribute("aria-expanded", "true");
+  status.textContent = results.length
+    ? `${results.length} ${results.length === 1 ? "match" : "matches"}`
+    : "No matches";
+}
+
+function setActiveBusinessOption(index) {
+  const options = businessSearchState.options;
+  if (!options.length) return;
+  businessSearchState.activeIndex = (index + options.length) % options.length;
+  options.forEach((item, position) => {
+    document.getElementById(item.id)?.setAttribute("aria-selected", String(position === businessSearchState.activeIndex));
+  });
+  const active = document.getElementById(options[businessSearchState.activeIndex].id);
+  els["business-search"].setAttribute("aria-activedescendant", active.id);
+  active.scrollIntoView({ block: "nearest" });
+}
+
+function handleBusinessSearchKeydown(event) {
+  const expanded = els["business-search"].getAttribute("aria-expanded") === "true";
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (!expanded) renderBusinessSearchResults();
+    if (!businessSearchState.options.length) return;
+    event.preventDefault();
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    const start = businessSearchState.activeIndex < 0 ? (step > 0 ? -1 : 0) : businessSearchState.activeIndex;
+    setActiveBusinessOption(start + step);
+  } else if (event.key === "Enter") {
+    // Nothing is chosen unless an option is highlighted: no auto-selection.
+    event.preventDefault();
+    if (expanded && businessSearchState.activeIndex >= 0) chooseBusinessSearchOption(businessSearchState.activeIndex);
+  } else if (event.key === "Escape") {
+    if (expanded) {
+      event.preventDefault();
+      closeBusinessSearch();
+    }
+  }
+}
+
+function closeBusinessSearch() {
+  const input = els["business-search"];
+  if (!input) return;
+  els["business-search-results"].hidden = true;
+  input.setAttribute("aria-expanded", "false");
+  input.removeAttribute("aria-activedescendant");
+  businessSearchState.activeIndex = -1;
+}
+
+function chooseBusinessSearchOption(index) {
+  const option = businessSearchState.options[index];
+  if (!option) return;
+  if (option.kind === "unlisted") {
+    closeBusinessSearch();
+    showUnlistedPanel();
+    return;
+  }
+  selectListedBusinessType(option.type);
+}
+
+function showUnlistedPanel() {
+  els["unlisted-panel"].hidden = false;
+  els["business-description"].value = isUnlistedBusiness() ? (state.profile.business_description || "") : "";
+  setUnlistedError("");
+  els["business-description"].focus();
+}
+
+function hideUnlistedPanel() {
+  if (!els["unlisted-panel"]) return;
+  els["unlisted-panel"].hidden = true;
+  setUnlistedError("");
+}
+
+function setUnlistedError(message) {
+  const error = els["business-description-error"];
+  error.textContent = message;
+  error.hidden = !message;
+  if (message) els["business-description"].setAttribute("aria-invalid", "true");
+  else els["business-description"].removeAttribute("aria-invalid");
+}
+
+function saveUnlistedBusiness() {
+  const message = businessDescriptionError(els["business-description"].value);
+  if (message) {
+    setUnlistedError(message);
+    els["business-description"].focus();
+    return;
+  }
+  state.profile = {
+    ...state.profile,
+    business_type_id: UNLISTED_BUSINESS_TYPE_ID,
+    business_description: cleanBusinessDescription(els["business-description"].value),
+    sector_id: null,
+    preferred_labels: []
+  };
+  hideUnlistedPanel();
+  renderSectorGrid();
+  renderBusinessGrid();
+  renderCommonLabelGrid();
+  renderOnboardingProfileStep();
+  // Unlisted businesses have no shortcuts, so the shortcut step is skipped.
+  updateOnboardingStep(ONBOARDING_PROFILE_STEP);
 }
 
 function renderCommonLabelGrid(containerId = "common-label-grid") {
@@ -903,7 +1108,8 @@ function updateOnboardingStep(step) {
 
 function goToPreviousOnboardingStep() {
   if (state.onboardingStep <= 1) return;
-  const targetStep = state.onboardingStep - 1;
+  let targetStep = state.onboardingStep - 1;
+  if (isUnlistedBusiness() && (targetStep === 5 || targetStep === 4)) targetStep = 3;
   if (targetStep === 2) {
     renderCountryGrid("operating_region");
   }
@@ -1016,12 +1222,15 @@ async function finishOnboarding() {
 }
 
 function hydrateProfileUi() {
-  const businessType = BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id);
   const sector = SECTORS.find((item) => item.id === state.profile.sector_id);
   const nameDisplay = state.profile.display_name
     ? `${state.profile.display_name} · `
     : "";
-  els["profile-summary"].textContent = `${nameDisplay}${countryName(state.profile.operating_region)} · ${sector?.name || ""} · ${businessType?.name || ""}`;
+  els["profile-summary"].textContent = [
+    `${nameDisplay}${countryName(state.profile.operating_region)}`,
+    sector?.name,
+    getBusinessTypeLabel()
+  ].filter(Boolean).join(" · ");
   updateAmountInputStep();
 }
 
@@ -1285,7 +1494,6 @@ async function renderSettings() {
   refreshTrustSetupButtons();
   const records = await getRecords();
   const effectiveRecords = getOperationalRecords(records);
-  const businessType = BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id);
   const sector = SECTORS.find((item) => item.id === state.profile.sector_id);
   const preferred = normalizePreferredLabels(state.profile.preferred_labels, state.profile.business_type_id);
   state.profile.preferred_labels = preferred;
@@ -1303,7 +1511,7 @@ async function renderSettings() {
     ${renderSettingsRow("Phone country", countryName(state.profile.phone_country) || "Not detected yet")}
     ${renderSettingsRow("Language", getLanguageName(state.profile.language))}
     ${renderSettingsRow("Sector", sector?.name || "Not selected")}
-    ${renderSettingsRow("Business type", businessType?.name || "Not selected")}
+    ${renderSettingsRow(isUnlistedBusiness() ? "Business (not listed)" : "Business type", getBusinessTypeLabel() || "Not selected")}
     ${state.profile.display_name ? renderSettingsRow("Name", state.profile.display_name) : ""}
     ${state.profile.phone_number ? renderSettingsRow("Phone", maskContact(state.profile.phone_number)) : ""}
     ${state.profile.email ? renderSettingsRow("Email", maskContact(state.profile.email)) : ""}
@@ -2130,6 +2338,10 @@ function normalizeLocalProfile(profile, { trackReminderMigration = false, trackD
     ...profile,
     plan: normalizePlan(profile.plan),
     preferred_labels: normalizePreferredLabels(profile.preferred_labels, profile.business_type_id),
+    business_description: profile.business_type_id === UNLISTED_BUSINESS_TYPE_ID
+      ? cleanBusinessDescription(profile.business_description)
+      : "",
+    ...(profile.business_type_id === UNLISTED_BUSINESS_TYPE_ID ? { sector_id: null } : {}),
     operating_region: normalizedOperatingRegion,
     phone_country: normalizedPhoneCountry,
     language: normalizedLanguage
@@ -2899,7 +3111,7 @@ async function generateExport() {
     "KONFIRMATA V3 EXPORT",
     "Note: This local export reflects records available on this device.",
     `Generated: ${new Date().toLocaleString()}`,
-    `Profile: ${countryName(state.profile.operating_region)} / ${BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id)?.name || "Unknown"}`,
+    `Profile: ${countryName(state.profile.operating_region)} / ${getBusinessTypeLabel() || "Unknown"}`,
     state.profile.display_name ? `Name: ${state.profile.display_name}` : null,
     state.profile.region ? `Region: ${state.profile.region}` : null,
     `Language: ${getLanguageName(state.profile.language)}`,
@@ -3215,7 +3427,7 @@ async function buildClientVerifiablePdfReport() {
 
   const detailRows = [
     ["Generated", issuedAt.toLocaleString()],
-    ["Profile", `${countryName(state.profile.operating_region)} / ${BUSINESS_TYPES.find((item) => item.id === state.profile.business_type_id)?.name || "Unknown"}`],
+    ["Profile", `${countryName(state.profile.operating_region)} / ${getBusinessTypeLabel() || "Unknown"}`],
     ["Entry count", String(records.length)],
     ["Ledger root hash", attestation?.ledger_root_hash || ledgerRootHash],
     ["Device fingerprint", attestation?.device_fingerprint || state.publicKeyFingerprint?.slice(0, 8) || "Not available"],
@@ -4067,6 +4279,8 @@ function normalizePreferredLabels(labels, businessTypeId = state.profile?.busine
   const availableLabels = businessTypeId
     ? new Set(getCommonTransactionOptions(businessTypeId).map((item) => item.display_name))
     : null;
+  // An unlisted or unknown business type has no shortcuts, so no old preferences survive.
+  if (availableLabels && !availableLabels.size) return [];
   const normalized = [];
 
   values.forEach((label) => {
@@ -4087,7 +4301,10 @@ async function togglePreferredLabel(label) {
   else selected.add(label);
   state.profile.preferred_labels = normalizePreferredLabels([...selected], state.profile.business_type_id);
   try {
-    await saveProfile(state.profile);
+    // During first onboarding nothing is stored yet. Finishing onboarding makes the first save, which also
+    // marks the profile as created on this device; saving here first would skip that marker and the next
+    // start would treat the device as signed out.
+    if (await getProfile()) await saveProfile(state.profile);
   } catch (error) {
     state.profile.preferred_labels = previous;
     console.error("Unable to save preferred labels.", error);
@@ -6995,6 +7212,10 @@ function buildProfileSyncPayload(profile = state.profile) {
     business_type_id: String(profile.business_type_id || "").trim() || null,
     sector_id: String(profile.sector_id || "").trim() || null,
     preferred_labels: normalizePreferredLabels(profile.preferred_labels, profile.business_type_id),
+    // Sent only when there is one to send; the server keeps a stored description when the field is absent.
+    ...(profile.business_type_id === UNLISTED_BUSINESS_TYPE_ID && cleanBusinessDescription(profile.business_description)
+      ? { business_description: cleanBusinessDescription(profile.business_description) }
+      : {}),
     email: normalizeEmailAddress(profile.email || "") || null
   };
 }
@@ -7030,6 +7251,7 @@ function mergeServerProfile(serverProfile, fallbackCountry = getSelectedCountryI
     language: normalizeLanguageId(serverProfile.language || state.profile?.language || "en"),
     business_type_id: String(serverProfile.business_type_id || state.profile?.business_type_id || "").trim() || null,
     sector_id: String(serverProfile.sector_id || state.profile?.sector_id || "").trim() || null,
+    business_description: String(serverProfile.business_description || state.profile?.business_description || ""),
     preferred_labels: normalizePreferredLabels(
       serverProfile.preferred_labels,
       serverProfile.business_type_id || state.profile?.business_type_id
@@ -8752,10 +8974,16 @@ async function queueSyncRecord(record, guard) {
 }
 
 async function flushSyncQueue() {
-  if (state.syncInFlight || !state.db) {
+  if (state.syncInFlight) {
+    state.syncRequestedDuringFlight = true;
     await updateSyncBadge();
     return;
   }
+  if (!state.db) {
+    await updateSyncBadge();
+    return;
+  }
+  state.syncRequestedDuringFlight = false;
   if (!canUseAccountSession("ordinary")) {
     state.syncStatus = "Account records are locked; sync is paused.";
     await refreshSyncQueueCount();
@@ -8827,6 +9055,10 @@ async function flushSyncQueue() {
   } finally {
     state.syncInFlight = false;
     await updateSyncBadge();
+    if (state.syncRequestedDuringFlight) {
+      state.syncRequestedDuringFlight = false;
+      void flushSyncQueue();
+    }
   }
 }
 

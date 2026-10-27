@@ -236,7 +236,30 @@
         </div>
 
         <div class="step" data-step="3">
-          <h2>Choose your sector</h2>
+          <h2>What business do you do?</h2>
+          <p class="subtle">Search for your business, or browse by sector below.</p>
+          <div class="business-search">
+            <label class="field" for="business-search">
+              Search business types
+              <input id="business-search" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false"
+                aria-controls="business-search-results" autocomplete="off" autocapitalize="none" spellcheck="false"
+                placeholder="e.g. print, food, repair">
+            </label>
+            <ul class="business-search-results" id="business-search-results" role="listbox" aria-label="Matching business types" hidden></ul>
+            <p class="sr-only" id="business-search-status" aria-live="polite"></p>
+          </div>
+          <button class="restore-link" id="business-not-listed" type="button">My business isn't listed</button>
+          <div class="unlisted-panel" id="unlisted-panel" hidden>
+            <label class="field" for="business-description">
+              Describe your business
+              <input id="business-description" type="text" autocomplete="off" aria-describedby="business-description-help business-description-error"
+                placeholder="e.g. Document courier and errands">
+            </label>
+            <p class="subtle" id="business-description-help">3 to 60 characters. You'll choose sale, buy or payment yourself when recording.</p>
+            <p class="error" id="business-description-error" role="alert" hidden></p>
+            <button class="btn btn-secondary" id="unlisted-continue" type="button">Continue</button>
+          </div>
+          <h3 class="browse-heading">Or browse by sector</h3>
           <div class="visual-grid" id="sector-grid"></div>
         </div>
 

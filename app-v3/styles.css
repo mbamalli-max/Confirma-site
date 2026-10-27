@@ -1373,3 +1373,74 @@ body.account-locked .sync-status-badge {
   margin-top: 1rem;
 }
 
+
+/* Business search (onboarding step 3) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.business-search .field input {
+  min-height: 48px;
+}
+
+.business-search-results {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 4px;
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.business-search-results [role="option"] {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.business-search-results [role="option"] small {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.business-search-results [role="option"][aria-selected="true"],
+.business-search-results [role="option"]:hover {
+  background: var(--primary-50);
+  outline: 2px solid var(--primary-light);
+}
+
+.business-search-results .business-search-empty {
+  padding: 8px 12px;
+  color: var(--muted);
+}
+
+#business-not-listed,
+#unlisted-continue {
+  min-height: 44px;
+}
+
+.unlisted-panel {
+  margin: 4px 0 16px;
+}
+
+.browse-heading {
+  margin: 16px 0 8px;
+  font-size: 16px;
+}

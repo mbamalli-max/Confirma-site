@@ -1,10 +1,13 @@
-const CACHE_NAME = "konfirmata-cache-v36";
+const CACHE_NAME = "konfirmata-cache-v37";
 const FILES = [
   "/app",
   "/app/index.html",
   "/app/styles.css",
   "/app/app.js",
   "/app/catalog-data.js",
+  "/app/business-search.js",
+  "/app/business-text.js",
+  "/app/business-aliases.js",
   "/app/label-scorer.js",
   "/app/nlp-parser.js",
   "/app/passcode-crypto.js",
