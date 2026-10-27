@@ -345,6 +345,28 @@ export function ledgerEntriesForDevice(deviceIdentity) {
   return JSON.parse(json || "[]");
 }
 
+// Read-only: the server profile row for a test account, found by its email.
+export function profileRowForEmail(email) {
+  const normalized = String(email || "").toLowerCase();
+  if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+$/i.test(normalized)) throw new Error("expected a test email address");
+  const json = databaseCommand(`SELECT row_to_json(profile) FROM (SELECT p.business_type_id, p.sector_id, p.preferred_labels, p.business_description, p.classification_review FROM profiles p INNER JOIN users u ON u.id = p.user_id WHERE lower(u.email) = '${normalized}') profile;`);
+  return json ? JSON.parse(json) : null;
+}
+
+// Restore an existing account on a fresh device through the "Restore your account" link.
+export async function restoreThroughUi(page, account) {
+  await page.locator("#restore-account-link").click();
+  await page.locator("#restore-email-input").fill(account.email);
+  await paceOtp("request", 4);
+  await page.locator("#restore-send-code").click();
+  await expect(page.locator("#restore-helper-text")).toContainText("Development code:", { timeout: 70_000 });
+  const code = (await page.locator("#restore-helper-text").textContent())?.match(/Development code:\s*(\d{6})/)?.[1];
+  if (!code) throw new Error("local API did not expose its development restore code");
+  await paceOtp("verify", 8);
+  await page.locator("#restore-code-input").fill(code);
+  await page.locator("#restore-verify-code").click();
+}
+
 export function accountSessionCount(accountId) {
   const id = String(accountId || "");
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("expected a UUID account id");
@@ -389,7 +411,7 @@ export async function completeOnboarding(page, account, { navigate = true, clock
   await page.locator("#country-grid").getByRole("button", { name: /Nigeria/ }).click();
   await expectOnboardingStep(2, "Where does your business primarily operate?");
   await page.locator("#operating-region-grid").getByRole("button", { name: /Nigeria/ }).click();
-  await expectOnboardingStep(3, "Choose your sector");
+  await expectOnboardingStep(3, "What business do you do?");
   await page.locator("#sector-grid").getByRole("button", { name: /Trade & Retail/ }).click();
   await expectOnboardingStep(4, "Choose your business type");
   await page.locator("#business-grid").getByRole("button", { name: /Market Trader/ }).click();

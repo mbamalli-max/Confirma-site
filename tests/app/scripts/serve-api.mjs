@@ -4,6 +4,8 @@ import { assertLocalDatabaseUrl, assertLocalUrl } from "./local-only.mjs";
 
 const api = assertLocalUrl("APP_TEST_API_URL", process.env.APP_TEST_API_URL || "http://127.0.0.1:8787");
 const app = assertLocalUrl("APP_TEST_URL", process.env.APP_TEST_URL || "http://127.0.0.1:5500");
+// The previous app release is served here by the picker compatibility test.
+const oldApp = assertLocalUrl("APP_TEST_OLD_APP_URL", process.env.APP_TEST_OLD_APP_URL || "http://127.0.0.1:5501");
 const database = assertLocalDatabaseUrl(process.env.APP_TEST_DATABASE_URL);
 const server = fileURLToPath(new URL("../../../server/server.js", import.meta.url));
 const child = spawn(process.execPath, [server], {
@@ -17,7 +19,7 @@ const child = spawn(process.execPath, [server], {
     ALLOW_DEV_OTP: "true",
     JWT_SECRET: "local-app-playwright-secret",
     SERVER_RECEIPT_SECRET: "local-app-playwright-receipt",
-    CORS_ORIGINS: app.origin
+    CORS_ORIGINS: [app.origin, oldApp.origin].join(",")
   }
 });
 
