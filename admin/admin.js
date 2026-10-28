@@ -306,7 +306,7 @@ function renderSeries(container, metric, data) {
   const bucket = data.bucket === "week" ? "week" : "month";
   const width = 640;
   const height = 200;
-  const top = 12;
+  const top = 26; // room for the value printed above the tallest bar
   const bottom = 28;
   const plot = height - top - bottom;
   const max = Math.max(1, ...periods.map((p) => Number(p.external) || 0));
@@ -329,6 +329,12 @@ function renderSeries(container, metric, data) {
     });
     bar.dataset.period = p.period_start;
     chart.append(bar);
+    if (value > 0) {
+      const count = svg("text", { x: (index * slot + slot / 2).toFixed(1), y: top + plot - Math.max(barHeight, 1) - 6, "text-anchor": "middle", class: "value" });
+      count.textContent = String(value);
+      count.dataset.period = p.period_start;
+      chart.append(count);
+    }
     if (index % labelEvery === 0 || p.partial) {
       const label = svg("text", { x: (index * slot + slot / 2).toFixed(1), y: height - 8, "text-anchor": "middle", class: "tick" });
       label.textContent = `${periodLabel(p.period_start, bucket)}${p.partial ? "*" : ""}`;

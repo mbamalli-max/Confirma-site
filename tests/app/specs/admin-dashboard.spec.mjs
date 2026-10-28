@@ -796,7 +796,14 @@ test("D1. an older server or a different version shows no figures, only the out-
 
 test("D2. growth charts mark only the current period as in progress, in chart and table", async ({ browser }) => {
   const asked = [];
-  const { ctx, target } = await servedPage(browser, async ({ url }) => { asked.push(url.pathname + url.search); return undefined; });
+  const { ctx, target } = await servedPage(browser, async ({ url, send }) => {
+    asked.push(url.pathname + url.search);
+    if (url.pathname !== "/admin/v2/timeseries") return undefined;
+    // One empty month, so zero bars are checked too.
+    const data = sampleSeries(url.searchParams.get("metric"), url.searchParams.get("bucket"), Number(url.searchParams.get("periods")));
+    data.periods[1] = { ...data.periods[1], external: 0, total: data.periods[1].excluded };
+    return send(200, data);
+  });
   try {
     await servedSignIn(target);
     for (const metric of ["accounts_registered", "records_received"]) {
@@ -809,6 +816,20 @@ test("D2. growth charts mark only the current period as in progress, in chart an
       await expect(panel.locator("tbody tr td:first-child", { hasText: "in progress" })).toHaveCount(1);
       await expect(panel.locator("tbody tr").first().locator("td.num")).toHaveText("1");
       await expect(panel).toContainText("does not mean a decline");
+      // The current period is filled (lighter, dashed edge), never drawn as an empty outline.
+      const partialStyle = await panel.locator("rect.bar.partial").evaluate((bar) => {
+        const style = getComputedStyle(bar);
+        return { fill: style.fill, opacity: Number(style.fillOpacity), dash: style.strokeDasharray };
+      });
+      expect(partialStyle.fill).not.toBe("none");
+      expect(partialStyle.opacity).toBeGreaterThan(0.2);
+      expect(partialStyle.opacity).toBeLessThan(1);
+      expect(partialStyle.dash).not.toBe("none");
+      // Every non-zero bar carries its number, matching the table; zero bars carry none.
+      const tableValues = await panel.locator("tbody tr").evaluateAll((rows) => rows.map((row) => [row.dataset.period, row.querySelector("td.num").textContent]));
+      const printed = await panel.locator("text.value").evaluateAll((labels) => labels.map((label) => [label.dataset.period, label.textContent]));
+      expect(printed).toEqual(tableValues.filter(([, value]) => value !== "0"));
+      expect(printed.some(([period]) => period === tableValues.at(-1)[0])).toBe(tableValues.at(-1)[1] !== "0");
     }
     await target.selectOption("#growth-bucket", "week");
     await expect(target.locator("#growth-records_received rect.bar")).toHaveCount(26);

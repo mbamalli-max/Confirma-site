@@ -162,10 +162,12 @@ details.info[open] > p {
 .chart .axis { stroke: #D8CFC3; stroke-width: 1; }
 .chart .bar-accounts_registered { fill: var(--forest-light); }
 .chart .bar-records_received { fill: var(--forest-mid); }
-.chart .bar.partial { fill: none; stroke-dasharray: 4 3; stroke-width: 1.5; }
+/* The current period is still filling: a lighter fill with a dashed edge, never an empty outline. */
+.chart .bar.partial { fill-opacity: 0.4; stroke-dasharray: 4 3; stroke-width: 1.5; }
 .chart .bar-accounts_registered.partial { stroke: var(--forest-mid); }
 .chart .bar-records_received.partial { stroke: var(--forest-deep); }
 .chart .tick { fill: var(--muted); font-size: 16px; font-family: var(--sans); }
+.chart .value { fill: var(--report-ink); font-size: 16px; font-weight: 600; font-family: var(--sans); font-variant-numeric: tabular-nums; }
 .series-details summary { cursor: pointer; color: var(--forest-mid); min-height: 44px; display: flex; align-items: center; }
 .series-table, table.op { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .series-table th, .series-table td, table.op th, table.op td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; }
