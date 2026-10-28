@@ -7,7 +7,6 @@ import {
   METRICS_REBUILD_LOCK_KEY,
   ensureFreshRollups,
   readOverview,
-  readProvisional,
   readRollupState,
   readStatus,
   readTimeseries,
@@ -254,7 +253,8 @@ before(async () => {
       new URL("../migrations/009_admin_backend.sql", import.meta.url),
       new URL("../migrations/010_account_classification.sql", import.meta.url),
       new URL("../migrations/011_admin_metrics_rollup.sql", import.meta.url),
-      new URL("../migrations/012_admin_dimension_snapshot.sql", import.meta.url)
+      new URL("../migrations/012_admin_dimension_snapshot.sql", import.meta.url),
+      new URL("../migrations/016_admin_exclusion_model.sql", import.meta.url)
     ]
   });
   config.adminJwtSecret = crypto.randomBytes(32).toString("hex");
@@ -292,6 +292,7 @@ test("1: overview figures agree with independent source counts", async () => {
       accounts_registered: 3,
       records_received: 4,
       attestations_issued: 1,
+      accounts_submitting_records: 3,
       accounts_phone_verified: 1,
       accounts_email_verified: 1,
       devices_active: 3,
@@ -309,8 +310,8 @@ test("2: six-week and three-month series agree with the source dates", async () 
   const app = await buildApp();
   const access = await ownerAccess(app);
   try {
-    const weekly = await app.inject({ method: "GET", url: "/admin/metrics/timeseries?metric=records_received&bucket=week&periods=6", headers: access.headers });
-    const monthly = await app.inject({ method: "GET", url: "/admin/metrics/timeseries?metric=attestations_issued&bucket=month&periods=3", headers: access.headers });
+    const weekly = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=records_received&bucket=week&periods=6", headers: access.headers });
+    const monthly = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=attestations_issued&bucket=month&periods=3", headers: access.headers });
     assert.equal(weekly.json().periods.length, 6);
     assert.equal(monthly.json().periods.length, 3);
     assert.equal(weekly.json().periods.reduce((sum, item) => sum + item.total, 0), 1);
@@ -318,21 +319,63 @@ test("2: six-week and three-month series agree with the source dates", async () 
   } finally { await app.close(); }
 });
 
-test("3: every returned total reconciles to its three buckets", async () => {
+test("3: every returned total reconciles to its two buckets", async () => {
   await seedUser({ records: [{ syncedAt: new Date() }] });
+  await seedUser({ classification: "DEMO", records: [{ syncedAt: new Date() }] });
   await rebuildRollups();
   const overview = await readOverview({ range: "all" });
   for (const item of overview.metrics) {
-    assert.equal(item.total, item.external + item.internal_demo + item.unclassified);
+    assert.equal(item.total, item.external + item.excluded);
+    assert.deepEqual(Object.keys(item).filter((key) => ["external", "excluded", "internal_demo", "unclassified", "total"].includes(key)), ["external", "excluded", "total"]);
   }
 });
 
-test("4: an empty database returns every metric with four zeroes", async () => {
+test("4: an empty database returns every metric with three zeroes", async () => {
   await rebuildRollups();
   const overview = await readOverview({ range: "all" });
-  assert.equal(overview.metrics.length, 10);
+  assert.equal(overview.metrics.length, 11);
   for (const item of overview.metrics) {
-    assert.deepEqual([item.external, item.internal_demo, item.unclassified, item.total], [0, 0, 0, 0]);
+    assert.deepEqual([item.external, item.excluded, item.total], [0, 0, 0]);
+  }
+});
+
+test("4a: accounts submitting records counts each account once, only inside the period", async () => {
+  const now = new Date();
+  const old = new Date(Date.now() - 200 * 86_400_000);
+  await seedUser({ records: [{ syncedAt: now }, { syncedAt: now }, { syncedAt: now }] });
+  await seedUser({ records: [{ syncedAt: old }] });
+  await seedUser({ classification: "INTERNAL_TEST", records: [{ syncedAt: now }] });
+  await seedUser();
+  await rebuildRollups();
+  const counts = async (range) => {
+    const item = metric(await readOverview({ range }), "accounts_submitting_records");
+    return [item.external, item.excluded, item.total];
+  };
+  assert.deepEqual(await counts("30d"), [1, 1, 2]);
+  assert.deepEqual(await counts("90d"), [1, 1, 2]);
+  assert.deepEqual(await counts("12m"), [2, 1, 3]);
+  assert.deepEqual(await counts("all"), [2, 1, 3]);
+  const item = metric(await readOverview({ range: "30d" }), "accounts_submitting_records");
+  assert.equal(item.point_in_time, false);
+  assert.match(item.definition, /each counted once/);
+});
+
+test("4b: accounts submitting records is not a time-series metric", async () => {
+  await rebuildRollups();
+  const app = await buildApp();
+  const access = await ownerAccess(app);
+  try {
+    const response = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=accounts_submitting_records&bucket=week&periods=1", headers: access.headers });
+    assert.equal(response.statusCode, 400);
+  } finally { await app.close(); }
+});
+
+test("4c: devices carry the registration-status name, not an activity name (D2)", () => {
+  const devices = METRIC_DEFINITIONS.find(({ key }) => key === "devices_active");
+  assert.equal(devices.name, "Devices in ACTIVE registration status");
+  assert.match(devices.definition, /Not a count of people or of recent use/);
+  for (const { name, definition } of METRIC_DEFINITIONS) {
+    assert.doesNotMatch(`${name} ${definition}`, /active users?|active accounts/i);
   }
 });
 
@@ -410,23 +453,20 @@ test("slice 3c 5: setup-field subset chains hold in every bucket over thirty acc
   const setupWithRecords = metric(overview, "accounts_setup_fields_with_records");
   const allAccounts = metric(overview, "accounts_registered");
   const withRecords = metric(overview, "accounts_with_records");
-  for (const bucket of ["external", "internal_demo", "unclassified", "total"]) {
+  for (const bucket of ["external", "excluded", "total"]) {
     assert.ok(setupWithRecords[bucket] <= setup[bucket], bucket);
     assert.ok(setup[bucket] <= allAccounts[bucket], bucket);
     assert.ok(setupWithRecords[bucket] <= withRecords[bucket], bucket);
   }
 });
 
-test("slice 3c 6: setup-field figures use external, internal-demo, and unclassified buckets", async () => {
+test("slice 3c 6: setup-field figures use the external and excluded buckets", async () => {
   await seedUser({ classification: "EXTERNAL", name: "External", businessType: "one" });
   await seedUser({ classification: "DEMO", name: "Demo", businessType: "two" });
-  await seedUser({ name: "Unclassified", businessType: "three" });
+  await seedUser({ name: "No row", businessType: "three" });
   await rebuildRollups();
   const counts = metric(await readOverview({ range: "all" }), "accounts_setup_fields_stored");
-  assert.deepEqual(
-    [counts.external, counts.internal_demo, counts.unclassified, counts.total],
-    [1, 1, 1, 3]
-  );
+  assert.deepEqual([counts.external, counts.excluded, counts.total], [2, 1, 3]);
 });
 
 test("slice 3c 7: operator overview exposes both point-in-time setup figures for every range", async () => {
@@ -437,7 +477,7 @@ test("slice 3c 7: operator overview exposes both point-in-time setup figures for
   const keys = ["accounts_setup_fields_stored", "accounts_setup_fields_with_records"];
   try {
     for (const range of ["30d", "90d", "12m", "all"]) {
-      const response = await app.inject({ method: "GET", url: `/admin/metrics/overview?range=${range}`, headers: access.headers });
+      const response = await app.inject({ method: "GET", url: `/admin/v2/overview?range=${range}`, headers: access.headers });
       assert.equal(response.statusCode, 200);
       for (const key of keys) {
         const actual = metric(response.json(), key);
@@ -447,8 +487,8 @@ test("slice 3c 7: operator overview exposes both point-in-time setup figures for
         assert.equal(actual.point_in_time, true);
         assert.equal(actual.range_ignored, true);
         assert.deepEqual(
-          Object.keys(actual).filter((field) => ["external", "internal_demo", "unclassified", "total"].includes(field)),
-          ["external", "internal_demo", "unclassified", "total"]
+          Object.keys(actual).filter((field) => ["external", "excluded", "internal_demo", "unclassified", "total"].includes(field)),
+          ["external", "excluded", "total"]
         );
       }
     }
@@ -468,7 +508,7 @@ test("slice 3c 8: setup-field metrics are rejected by the time-series route", as
     for (const key of ["accounts_setup_fields_stored", "accounts_setup_fields_with_records"]) {
       const response = await app.inject({
         method: "GET",
-        url: `/admin/metrics/timeseries?metric=${key}&bucket=month&periods=1`,
+        url: `/admin/v2/timeseries?metric=${key}&bucket=month&periods=1`,
         headers: access.headers
       });
       assert.equal(response.statusCode, 400);
@@ -477,27 +517,32 @@ test("slice 3c 8: setup-field metrics are rejected by the time-series route", as
   } finally { await app.close(); }
 });
 
-test("5: classification apply moves all historical records on the next read", async () => {
+test("5: an exclusion moves all historical records out of External on the next read", async () => {
   const user = await seedUser({ records: [{ syncedAt: new Date("2024-01-02T00:00:00Z") }] });
   const app = await buildApp();
   const access = await ownerAccess(app);
   try {
     await rebuildRollups();
-    const preview = await app.inject({ method: "POST", url: "/admin/classification/preview", headers: access.headers, payload: { phone_number: user.phone_number, classification: "EXTERNAL", reason_code: "OWNER_CLASSIFIED_EXTERNAL" } });
+    const before = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
+    assert.equal(metric(before.json(), "records_received").external, 1);
+    const preview = await app.inject({ method: "POST", url: "/admin/classification/preview", headers: access.headers, payload: { phone_number: user.phone_number, classification: "INTERNAL_TEST", reason_code: "OPERATOR_TEST_ACCOUNT" } });
     await app.inject({ method: "POST", url: "/admin/classification/apply", headers: access.headers, payload: { confirmation_token: preview.json().confirmation_token } });
-    const response = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
-    assert.equal(metric(response.json(), "records_received").external, 1);
-    assert.equal(metric(response.json(), "records_received").unclassified, 0);
+    const response = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
+    assert.equal(metric(response.json(), "records_received").external, 0);
+    assert.equal(metric(response.json(), "records_received").excluded, 1);
   } finally { await app.close(); }
 });
 
-test("6: an unclassified account is never counted as external and is provisional", async () => {
+test("6: an account with no classification row is External; payment and activity are not required", async () => {
   await seedUser({ records: [{ syncedAt: new Date() }] });
+  await seedUser();
   await rebuildRollups();
   const overview = await readOverview({ range: "all" });
-  assert.equal(metric(overview, "records_received").external, 0);
-  assert.equal(metric(overview, "records_received").unclassified, 1);
-  assert.equal(overview.provisional, true);
+  assert.equal(metric(overview, "records_received").external, 1);
+  assert.equal(metric(overview, "accounts_registered").external, 2);
+  assert.equal(metric(overview, "accounts_with_records").external, 1);
+  assert.equal(metric(overview, "records_received").excluded, 0);
+  assert.equal(Object.hasOwn(overview, "provisional"), false);
 });
 
 test("7: a 1970 device date is counted using today's server receipt date", async () => {
@@ -530,7 +575,7 @@ test("10: classification apply marks stale and the next read clears it", async (
     const preview = await app.inject({ method: "POST", url: "/admin/classification/preview", headers: access.headers, payload: { phone_number: user.phone_number, classification: "DEMO", reason_code: "OPERATOR_DEMO_ACCOUNT" } });
     await app.inject({ method: "POST", url: "/admin/classification/apply", headers: access.headers, payload: { confirmation_token: preview.json().confirmation_token } });
     assert.equal((await readRollupState()).stale, true);
-    await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
+    await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
     assert.equal((await readRollupState()).stale, false);
   } finally { await app.close(); }
 });
@@ -562,7 +607,7 @@ test("13: an advisory lock makes a read serve existing stale figures without wai
   const access = await ownerAccess(app);
   try {
     await client.query(`SELECT pg_advisory_lock($1)`, [METRICS_REBUILD_LOCK_KEY]);
-    const response = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
+    const response = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().stale, true);
   } finally {
@@ -605,7 +650,7 @@ test("18: fresh read endpoints do not touch raw metric source tables", async () 
   try {
     await client.query("BEGIN");
     await client.query(`LOCK TABLE users, device_identities, ledger_entries, attestations IN ACCESS EXCLUSIVE MODE`);
-    const response = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
+    const response = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
     assert.equal(response.statusCode, 200);
   } finally {
     await client.query("ROLLBACK");
@@ -621,10 +666,10 @@ test("19: every metrics route rejects anonymous and viewer access and admits own
   const viewerSession = await createSession(viewer);
   const access = await ownerAccess(app);
   const routes = [
-    { method: "GET", url: "/admin/metrics/overview?range=all" },
-    { method: "GET", url: "/admin/metrics/timeseries?metric=records_received&bucket=week&periods=1" },
-    { method: "POST", url: "/admin/metrics/refresh" },
-    { method: "GET", url: "/admin/metrics/status" }
+    { method: "GET", url: "/admin/v2/overview?range=all" },
+    { method: "GET", url: "/admin/v2/timeseries?metric=records_received&bucket=week&periods=1" },
+    { method: "POST", url: "/admin/v2/refresh" },
+    { method: "GET", url: "/admin/v2/status" }
   ];
   try {
     for (const route of routes) {
@@ -641,15 +686,16 @@ test("20: every successful response carries operator labels and freshness contex
   const access = await ownerAccess(app);
   try {
     for (const route of [
-      { method: "GET", url: "/admin/metrics/overview?range=all" },
-      { method: "GET", url: "/admin/metrics/timeseries?metric=records_received&bucket=week&periods=1" },
-      { method: "POST", url: "/admin/metrics/refresh" },
-      { method: "GET", url: "/admin/metrics/status" }
+      { method: "GET", url: "/admin/v2/overview?range=all" },
+      { method: "GET", url: "/admin/v2/timeseries?metric=records_received&bucket=week&periods=1" },
+      { method: "POST", url: "/admin/v2/refresh" },
+      { method: "GET", url: "/admin/v2/status" }
     ]) {
       const body = (await app.inject({ ...route, headers: access.headers })).json();
       assert.equal(body.audience, "operator_only");
       assert.equal(body.suppression, "none");
-      assert.equal(typeof body.provisional, "boolean");
+      assert.equal(body.api_version, 2);
+      assert.equal(Object.hasOwn(body, "provisional"), false);
       assert.ok(Object.hasOwn(body, "as_of"));
       assert.equal(typeof body.stale, "boolean");
     }
@@ -662,11 +708,11 @@ test("21: invalid range, metric, bucket, and period values return 400", async ()
   const access = await ownerAccess(app);
   try {
     const urls = [
-      "/admin/metrics/overview?range=1d",
-      "/admin/metrics/timeseries?metric=nope&bucket=week&periods=1",
-      "/admin/metrics/timeseries?metric=accounts_phone_verified&bucket=week&periods=1",
-      "/admin/metrics/timeseries?metric=records_received&bucket=day&periods=1",
-      "/admin/metrics/timeseries?metric=records_received&bucket=week&periods=27"
+      "/admin/v2/overview?range=1d",
+      "/admin/v2/timeseries?metric=nope&bucket=week&periods=1",
+      "/admin/v2/timeseries?metric=accounts_phone_verified&bucket=week&periods=1",
+      "/admin/v2/timeseries?metric=records_received&bucket=day&periods=1",
+      "/admin/v2/timeseries?metric=records_received&bucket=week&periods=27"
     ];
     for (const url of urls) assert.equal((await app.inject({ method: "GET", url, headers: access.headers })).statusCode, 400);
   } finally { await app.close(); }
@@ -677,9 +723,9 @@ test("22: manual refresh writes one audit row and is limited to six per hour", a
   const access = await ownerAccess(app);
   try {
     for (let index = 0; index < 6; index += 1) {
-      assert.equal((await app.inject({ method: "POST", url: "/admin/metrics/refresh", headers: access.headers })).statusCode, 200);
+      assert.equal((await app.inject({ method: "POST", url: "/admin/v2/refresh", headers: access.headers })).statusCode, 200);
     }
-    assert.equal((await app.inject({ method: "POST", url: "/admin/metrics/refresh", headers: access.headers })).statusCode, 429);
+    assert.equal((await app.inject({ method: "POST", url: "/admin/v2/refresh", headers: access.headers })).statusCode, 429);
     const audits = await query(`SELECT COUNT(*)::int AS count FROM admin_audit_log WHERE action = 'admin.metrics.refresh'`);
     assert.equal(audits.rows[0].count, 6);
   } finally { await app.close(); }
@@ -703,13 +749,13 @@ test("23a: metrics responses disclose no account identifiers", async () => {
   const access = await ownerAccess(app);
   try {
     const routes = [
-      ...["30d", "90d", "12m", "all"].map((range) => ({ method: "GET", url: `/admin/metrics/overview?range=${range}` })),
+      ...["30d", "90d", "12m", "all"].map((range) => ({ method: "GET", url: `/admin/v2/overview?range=${range}` })),
       ...["accounts_registered", "records_received", "attestations_issued"].flatMap((metricKey) => ["week", "month"].map((bucket) => ({
         method: "GET",
-        url: `/admin/metrics/timeseries?metric=${metricKey}&bucket=${bucket}&periods=1`
+        url: `/admin/v2/timeseries?metric=${metricKey}&bucket=${bucket}&periods=1`
       }))),
-      { method: "POST", url: "/admin/metrics/refresh" },
-      { method: "GET", url: "/admin/metrics/status" }
+      { method: "POST", url: "/admin/v2/refresh" },
+      { method: "GET", url: "/admin/v2/status" }
     ];
     for (const route of routes) {
       const body = (await app.inject({ ...route, headers: access.headers })).body;
@@ -737,7 +783,6 @@ test("23b: metrics queries project only aggregate and state fields", async () =>
       }
     }
     await readRollupState();
-    await readProvisional();
     await readStatus();
 
     const rebuildTexts = rebuildRecorder.statements.map(({ text }) => text.toLowerCase());
@@ -796,21 +841,21 @@ test("slice 3c 16: profile markers never appear in admin responses or rollup row
   const access = await ownerAccess(app);
   try {
     const routes = [
-      ...["30d", "90d", "12m", "all"].map((range) => `/admin/metrics/overview?range=${range}`),
+      ...["30d", "90d", "12m", "all"].map((range) => `/admin/v2/overview?range=${range}`),
       ...["accounts_registered", "records_received", "attestations_issued"].flatMap((key) => [
-        `/admin/metrics/timeseries?metric=${key}&bucket=week&periods=1`,
-        `/admin/metrics/timeseries?metric=${key}&bucket=month&periods=1`
+        `/admin/v2/timeseries?metric=${key}&bucket=week&periods=1`,
+        `/admin/v2/timeseries?metric=${key}&bucket=month&periods=1`
       ]),
-      "/admin/metrics/status",
-      "/admin/suppressed/overview",
-      "/admin/suppressed/breakdown?dimension=country",
-      "/admin/suppressed/breakdown?dimension=sector"
+      "/admin/v2/status",
+      "/admin/v2/suppressed/overview",
+      "/admin/v2/breakdown?dimension=country",
+      "/admin/v2/breakdown?dimension=sector"
     ];
     for (const url of routes) {
       const body = (await app.inject({ method: "GET", url, headers: access.headers })).body;
       for (const marker of markers) assert.equal(body.includes(marker), false, `${url} disclosed ${marker}`);
     }
-    const refresh = (await app.inject({ method: "POST", url: "/admin/metrics/refresh", headers: access.headers })).body;
+    const refresh = (await app.inject({ method: "POST", url: "/admin/v2/refresh", headers: access.headers })).body;
     for (const marker of markers) assert.equal(refresh.includes(marker), false, "refresh disclosed marker");
     const rollups = await query(`
       SELECT row_to_json(rows)::text AS value
@@ -847,12 +892,11 @@ test("slice 3c 17: rebuild and read statements return no profile-field result co
       for (const bucket of ["week", "month"]) await readTimeseries({ metric: key, bucket, periods: 1 });
     }
     await readRollupState();
-    await readProvisional();
     await readStatus();
     for (const url of [
-      "/admin/suppressed/overview",
-      "/admin/suppressed/breakdown?dimension=country",
-      "/admin/suppressed/breakdown?dimension=sector"
+      "/admin/v2/suppressed/overview",
+      "/admin/v2/breakdown?dimension=country",
+      "/admin/v2/breakdown?dimension=sector"
     ]) assert.equal((await app.inject({ method: "GET", url, headers: access.headers })).statusCode, 200);
 
     const forbidden = new Set(["name", "business_name", "business_type_id"]);
@@ -873,7 +917,7 @@ test("24: metrics responses contain no identifiers or sensitive keys", async () 
   const app = await buildApp();
   const access = await ownerAccess(app);
   try {
-    const text = (await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers })).body;
+    const text = (await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers })).body;
     assert.equal(/\+?\d{10,15}/.test(text), false);
     assert.equal(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i.test(text), false);
     for (const key of ["payload", "signature", "public_key", "otp_hash"]) assert.equal(text.includes(`\"${key}\"`), false);
@@ -908,10 +952,10 @@ test("27: all metrics routes send Cache-Control no-store", async () => {
   const access = await ownerAccess(app);
   try {
     for (const route of [
-      { method: "GET", url: "/admin/metrics/overview?range=all" },
-      { method: "GET", url: "/admin/metrics/timeseries?metric=records_received&bucket=week&periods=1" },
-      { method: "POST", url: "/admin/metrics/refresh" },
-      { method: "GET", url: "/admin/metrics/status" }
+      { method: "GET", url: "/admin/v2/overview?range=all" },
+      { method: "GET", url: "/admin/v2/timeseries?metric=records_received&bucket=week&periods=1" },
+      { method: "POST", url: "/admin/v2/refresh" },
+      { method: "GET", url: "/admin/v2/status" }
     ]) assert.equal((await app.inject({ ...route, headers: access.headers })).headers["cache-control"], "no-store");
   } finally { await app.close(); }
 });
@@ -922,12 +966,12 @@ test("28: cache entries are reused only while built_at is unchanged", async () =
   const app = await buildApp();
   const access = await ownerAccess(app);
   try {
-    const first = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
+    const first = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
     await query(`UPDATE metrics_daily_rollup SET count = count + 10 WHERE metric_key = 'accounts_registered'`);
-    const cached = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
+    const cached = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
     assert.deepEqual(cached.json(), first.json());
     await query(`UPDATE metrics_rollup_state SET built_at = clock_timestamp() + INTERVAL '1 millisecond'`);
-    const changed = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
+    const changed = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
     assert.notDeepEqual(changed.json(), first.json());
   } finally { await app.close(); }
 });
@@ -1001,13 +1045,13 @@ test("34: no prior rollup plus a rebuild failure returns 503, while status remai
   const access = await ownerAccess(app);
   try {
     await rejectStateUpdate(async () => {
-      const overview = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
-      const series = await app.inject({ method: "GET", url: "/admin/metrics/timeseries?metric=records_received&bucket=week&periods=1", headers: access.headers });
+      const overview = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
+      const series = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=records_received&bucket=week&periods=1", headers: access.headers });
       assert.equal(overview.statusCode, 503);
       assert.equal(overview.json().error, "metrics_unavailable");
       assert.equal(series.statusCode, 503);
     });
-    const status = await app.inject({ method: "GET", url: "/admin/metrics/status", headers: access.headers });
+    const status = await app.inject({ method: "GET", url: "/admin/v2/status", headers: access.headers });
     assert.equal(status.statusCode, 200);
     assert.equal(status.json().built_at, null);
   } finally { await app.close(); }
@@ -1021,7 +1065,7 @@ test("35: a failed stale rebuild serves the previous figures and records failure
   const access = await ownerAccess(app);
   try {
     await rejectStateUpdate(async () => {
-      const response = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
+      const response = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
       assert.equal(response.statusCode, 200);
       assert.equal(response.json().stale, true);
       assert.equal(metric(response.json(), "accounts_registered").total, 1);
@@ -1050,7 +1094,7 @@ test("37: status reads persisted out-of-range count after cache clear", async ()
   const app = await buildApp();
   const access = await ownerAccess(app);
   try {
-    const status = await app.inject({ method: "GET", url: "/admin/metrics/status", headers: access.headers });
+    const status = await app.inject({ method: "GET", url: "/admin/v2/status", headers: access.headers });
     assert.ok(status.json().out_of_range >= 1);
   } finally { await app.close(); }
 });
@@ -1095,12 +1139,12 @@ test("40: a manual rebuild in flight never blocks reads or a second refresh", as
   try {
     await holder.query("BEGIN");
     await holder.query(`LOCK TABLE ledger_entries IN ACCESS EXCLUSIVE MODE`);
-    firstRefresh = app.inject({ method: "POST", url: "/admin/metrics/refresh", headers: access.headers });
+    firstRefresh = app.inject({ method: "POST", url: "/admin/v2/refresh", headers: access.headers });
     await sleep(100);
 
-    const overview = await withinOneSecond(app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers }));
-    const series = await withinOneSecond(app.inject({ method: "GET", url: "/admin/metrics/timeseries?metric=accounts_registered&bucket=week&periods=1", headers: access.headers }));
-    const secondRefresh = await withinOneSecond(app.inject({ method: "POST", url: "/admin/metrics/refresh", headers: access.headers }));
+    const overview = await withinOneSecond(app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers }));
+    const series = await withinOneSecond(app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=accounts_registered&bucket=week&periods=1", headers: access.headers }));
+    const secondRefresh = await withinOneSecond(app.inject({ method: "POST", url: "/admin/v2/refresh", headers: access.headers }));
     assert.equal(overview.statusCode, 200);
     assert.equal(overview.json().stale, true);
     assert.equal(metric(overview.json(), "accounts_registered").total, 1);
@@ -1126,10 +1170,10 @@ test("41: an automatic rebuild in flight never blocks a second read", async () =
   try {
     await holder.query("BEGIN");
     await holder.query(`LOCK TABLE ledger_entries IN ACCESS EXCLUSIVE MODE`);
-    firstRead = app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
+    firstRead = app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
     await sleep(100);
 
-    const secondRead = await withinOneSecond(app.inject({ method: "GET", url: "/admin/metrics/timeseries?metric=accounts_registered&bucket=month&periods=1", headers: access.headers }));
+    const secondRead = await withinOneSecond(app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=accounts_registered&bucket=month&periods=1", headers: access.headers }));
     assert.equal(secondRead.statusCode, 200);
     assert.equal(secondRead.json().stale, true);
   } finally {
@@ -1149,9 +1193,9 @@ test("42: no prior rollup plus a rebuild in flight returns 503 without waiting",
   try {
     await holder.query("BEGIN");
     await holder.query(`LOCK TABLE ledger_entries IN ACCESS EXCLUSIVE MODE`);
-    firstRefresh = app.inject({ method: "POST", url: "/admin/metrics/refresh", headers: access.headers });
+    firstRefresh = app.inject({ method: "POST", url: "/admin/v2/refresh", headers: access.headers });
     await sleep(100);
-    const response = await withinOneSecond(app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers }));
+    const response = await withinOneSecond(app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers }));
     assert.equal(response.statusCode, 503);
     assert.equal(response.json().error, "metrics_unavailable");
   } finally {
@@ -1169,7 +1213,7 @@ test("43: a fresh read issues no statement on the rebuild pool", async () => {
   const app = await buildApp();
   const access = await ownerAccess(app);
   try {
-    const response = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
+    const response = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
     assert.equal(response.statusCode, 200);
     assert.equal(recorder.statements.length, 0);
   } finally {
@@ -1186,8 +1230,8 @@ test("44: invalid metrics queries do no pool work and preserve the attempt time"
   const app = await buildApp();
   const access = await ownerAccess(app);
   try {
-    const overview = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=invalid", headers: access.headers });
-    const series = await app.inject({ method: "GET", url: "/admin/metrics/timeseries?metric=invalid&bucket=week&periods=1", headers: access.headers });
+    const overview = await app.inject({ method: "GET", url: "/admin/v2/overview?range=invalid", headers: access.headers });
+    const series = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=invalid&bucket=week&periods=1", headers: access.headers });
     assert.equal(overview.statusCode, 400);
     assert.equal(series.statusCode, 400);
     assert.equal(readRecorder.statements.length, 0);
@@ -1200,86 +1244,64 @@ test("44: invalid metrics queries do no pool work and preserve the attempt time"
   }
 });
 
-test("45: an old unclassified account makes every metrics response provisional", async () => {
+test("45: an out-of-range account is counted out of range and no response is labelled provisional", async () => {
   await seedUser({ createdAt: new Date("1999-06-01T00:00:00Z") });
   const app = await buildApp();
   const access = await ownerAccess(app);
   try {
-    const refresh = await app.inject({ method: "POST", url: "/admin/metrics/refresh", headers: access.headers });
-    const overview = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
-    const series = await app.inject({ method: "GET", url: "/admin/metrics/timeseries?metric=accounts_registered&bucket=week&periods=1", headers: access.headers });
-    const status = await app.inject({ method: "GET", url: "/admin/metrics/status", headers: access.headers });
-    for (const response of [refresh, overview, series, status]) assert.equal(response.json().provisional, true);
+    const refresh = await app.inject({ method: "POST", url: "/admin/v2/refresh", headers: access.headers });
+    const overview = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
+    const series = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=accounts_registered&bucket=week&periods=1", headers: access.headers });
+    const status = await app.inject({ method: "GET", url: "/admin/v2/status", headers: access.headers });
+    for (const response of [refresh, overview, series, status]) {
+      assert.equal(Object.hasOwn(response.json(), "provisional"), false);
+      assert.equal(response.json().api_version, 2);
+    }
     assert.ok(status.json().out_of_range >= 1);
     assert.equal(overview.body.includes("accounts_all"), false);
     assert.equal(series.body.includes("accounts_all"), false);
+    assert.equal(overview.body.includes("accounts_submitting_records_"), false);
   } finally { await app.close(); }
 });
 
-test("46: a far-future unclassified account is included in provisional and out-of-range", async () => {
-  const future = new Date();
-  future.setUTCFullYear(future.getUTCFullYear() + 10);
-  await seedUser({ createdAt: future });
-  const app = await buildApp();
-  const access = await ownerAccess(app);
-  try {
-    const refresh = await app.inject({ method: "POST", url: "/admin/metrics/refresh", headers: access.headers });
-    const overview = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
-    const series = await app.inject({ method: "GET", url: "/admin/metrics/timeseries?metric=accounts_registered&bucket=month&periods=1", headers: access.headers });
-    const status = await app.inject({ method: "GET", url: "/admin/metrics/status", headers: access.headers });
-    for (const response of [refresh, overview, series, status]) assert.equal(response.json().provisional, true);
-    assert.ok(status.json().out_of_range >= 1);
-  } finally { await app.close(); }
-});
-
-test("47: classified out-of-range accounts do not make the label provisional", async () => {
-  await seedUser({ classification: "EXTERNAL", createdAt: new Date("1999-06-01T00:00:00Z") });
-  await rebuildRollups();
-  assert.equal((await readOverview({ range: "all" })).provisional, false);
-});
-
-test("48: never-built metrics stay provisional after an initial rebuild failure", async () => {
+test("46: never-built metrics return 503 with version labels after an initial rebuild failure", async () => {
   await seedUser();
   const app = await buildApp();
   const access = await ownerAccess(app);
   try {
     await rejectStateUpdate(async () => {
-      const overview = await app.inject({ method: "GET", url: "/admin/metrics/overview?range=all", headers: access.headers });
-      const series = await app.inject({ method: "GET", url: "/admin/metrics/timeseries?metric=records_received&bucket=week&periods=1", headers: access.headers });
-      const status = await app.inject({ method: "GET", url: "/admin/metrics/status", headers: access.headers });
-
+      const overview = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
+      const series = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=records_received&bucket=week&periods=1", headers: access.headers });
+      const status = await app.inject({ method: "GET", url: "/admin/v2/status", headers: access.headers });
       assert.equal(status.statusCode, 200);
       assert.equal(status.json().built_at, null);
-      assert.equal(status.json().provisional, true);
       for (const response of [overview, series]) {
         assert.equal(response.statusCode, 503);
         assert.equal(response.json().error, "metrics_unavailable");
-        assert.equal(response.json().provisional, true);
+        assert.equal(response.json().api_version, 2);
       }
     });
   } finally { await app.close(); }
 });
 
-test("49: never-built metrics with no accounts are provisional", async () => {
+test("47: every retired pre-exclusion read route answers 410 client_outdated", async () => {
   const app = await buildApp();
   const access = await ownerAccess(app);
   try {
-    const status = await app.inject({ method: "GET", url: "/admin/metrics/status", headers: access.headers });
-    assert.equal(status.statusCode, 200);
-    assert.equal(status.json().built_at, null);
-    assert.equal(status.json().provisional, true);
-  } finally { await app.close(); }
-});
-
-test("50: a successful rebuild with every account classified is not provisional", async () => {
-  await seedUser({ classification: "EXTERNAL" });
-  await rebuildRollups();
-  const app = await buildApp();
-  const access = await ownerAccess(app);
-  try {
-    const status = await app.inject({ method: "GET", url: "/admin/metrics/status", headers: access.headers });
-    assert.equal(status.statusCode, 200);
-    assert.ok(status.json().built_at);
-    assert.equal(status.json().provisional, false);
+    for (const [method, url] of [
+      ["GET", "/admin/metrics/overview?range=all"],
+      ["GET", "/admin/metrics/timeseries?metric=records_received&bucket=week&periods=1"],
+      ["POST", "/admin/metrics/refresh"],
+      ["GET", "/admin/metrics/status"],
+      ["GET", "/admin/suppressed/overview"],
+      ["GET", "/admin/suppressed/breakdown?dimension=country"],
+      ["GET", "/admin/classification/summary"]
+    ]) {
+      for (const headers of [access.headers, {}]) {
+        const response = await app.inject({ method, url, headers });
+        assert.equal(response.statusCode, 410, `${method} ${url}`);
+        assert.deepEqual(response.json(), { error: "client_outdated", api_version: 2 });
+      }
+    }
   } finally { await app.close(); }
 });

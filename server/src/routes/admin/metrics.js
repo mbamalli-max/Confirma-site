@@ -5,7 +5,6 @@ import {
   PERIOD_METRIC_KEYS,
   ensureFreshRollups,
   readOverview,
-  readProvisional,
   readRollupState,
   readStatus,
   readTimeseries,
@@ -20,14 +19,38 @@ function iso(value) {
   return value ? new Date(value).toISOString() : null;
 }
 
-function labels(state, provisional) {
+export const API_VERSION = 2;
+
+function labels(state) {
   return {
+    api_version: API_VERSION,
     audience: "operator_only",
     suppression: "none",
-    provisional: !state?.built_at || Boolean(provisional),
     as_of: iso(state?.built_at),
     stale: Boolean(state?.stale)
   };
+}
+
+// Read routes of the earlier (pre-exclusion) model. An open tab of the old page gets a clear
+// refusal instead of new-model numbers under old labels; it shows them as unavailable.
+export const RETIRED_ROUTES = Object.freeze([
+  ["GET", "/admin/metrics/overview"],
+  ["GET", "/admin/metrics/timeseries"],
+  ["POST", "/admin/metrics/refresh"],
+  ["GET", "/admin/metrics/status"],
+  ["GET", "/admin/suppressed/overview"],
+  ["GET", "/admin/suppressed/breakdown"],
+  ["GET", "/admin/classification/summary"]
+]);
+
+export function registerRetiredRoutes(app, routes) {
+  for (const [method, url] of routes) {
+    app.route({
+      method,
+      url,
+      handler: async (request, reply) => reply.code(410).send({ error: "client_outdated", api_version: API_VERSION })
+    });
+  }
 }
 
 function cacheKey(route, query, state) {
@@ -50,7 +73,7 @@ function putCache(key, body, state) {
 }
 
 function unavailable(reply, state) {
-  return reply.code(503).send({ error: "metrics_unavailable", ...labels(state, true) });
+  return reply.code(503).send({ error: "metrics_unavailable", ...labels(state) });
 }
 
 function validTimeseriesQuery(query) {
@@ -66,7 +89,9 @@ export function clearMetricsCache() {
 }
 
 export async function registerAdminMetricsRoutes(app) {
-  app.get("/admin/metrics/overview", { preHandler: OWNER_ONLY }, async (request, reply) => {
+  registerRetiredRoutes(app, RETIRED_ROUTES.filter(([, url]) => url.startsWith("/admin/metrics/")));
+
+  app.get("/admin/v2/overview", { preHandler: OWNER_ONLY }, async (request, reply) => {
     if (!OVERVIEW_RANGES.includes(request.query?.range)) {
       return reply.code(400).send({ error: "invalid_range" });
     }
@@ -79,10 +104,10 @@ export async function registerAdminMetricsRoutes(app) {
     if (cached) return reply.send(cached);
 
     const overview = await readOverview({ range: request.query.range });
-    return reply.send(putCache(key, { ...overview, ...labels(state, overview.provisional) }, state));
+    return reply.send(putCache(key, { ...overview, ...labels(state) }, state));
   });
 
-  app.get("/admin/metrics/timeseries", { preHandler: OWNER_ONLY }, async (request, reply) => {
+  app.get("/admin/v2/timeseries", { preHandler: OWNER_ONLY }, async (request, reply) => {
     if (!validTimeseriesQuery(request.query || {})) {
       const knownPointMetric = METRIC_DEFINITIONS.some(({ key }) => key === request.query?.metric);
       return reply.code(400).send({
@@ -103,10 +128,10 @@ export async function registerAdminMetricsRoutes(app) {
     if (cached) return reply.send(cached);
 
     const series = await readTimeseries(query);
-    return reply.send(putCache(key, { ...series, ...labels(state, series.provisional) }, state));
+    return reply.send(putCache(key, { ...series, ...labels(state) }, state));
   });
 
-  app.post("/admin/metrics/refresh", {
+  app.post("/admin/v2/refresh", {
     config: { rateLimit: { max: 6, timeWindow: "1 hour" } },
     preHandler: OWNER_ONLY
   }, async (request, reply) => {
@@ -118,11 +143,10 @@ export async function registerAdminMetricsRoutes(app) {
       responseStatus: 200
     });
     const state = await readRollupState();
-    const provisional = await readProvisional();
-    return reply.send({ ...result, ...labels(state, provisional) });
+    return reply.send({ ...result, ...labels(state) });
   });
 
-  app.get("/admin/metrics/status", { preHandler: OWNER_ONLY }, async (request, reply) => {
+  app.get("/admin/v2/status", { preHandler: OWNER_ONLY }, async (request, reply) => {
     const status = await readStatus();
     return reply.send({
       built_at: iso(status.built_at),
@@ -135,7 +159,7 @@ export async function registerAdminMetricsRoutes(app) {
         metrics_daily_rollup: Number(status.daily_rollup_rows),
         metrics_snapshot: Number(status.snapshot_rows)
       },
-      ...labels(status, status.provisional)
+      ...labels(status)
     });
   });
 }

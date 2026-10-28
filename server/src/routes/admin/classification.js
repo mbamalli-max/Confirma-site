@@ -6,9 +6,11 @@ import {
   buildClassificationAuditReason,
   countByClassification,
   isValidReasonFor,
+  readExclusionState,
   resolveUserByPhone
 } from "../../admin-classification.js";
 import { enforceAdminIpAllowlist } from "./auth.js";
+import { API_VERSION, RETIRED_ROUTES, registerRetiredRoutes } from "./metrics.js";
 
 const OWNER_ONLY = [enforceAdminIpAllowlist, requireAdmin(["owner"])];
 const PREVIEW_FIELDS = new Set(["phone_number", "classification", "reason_code"]);
@@ -276,25 +278,32 @@ export async function registerAdminClassificationRoutes(app) {
     return reply.code(result.status).send(result.body);
   });
 
-  app.get("/admin/classification/summary", {
+  registerRetiredRoutes(app, RETIRED_ROUTES.filter(([, url]) => url === "/admin/classification/summary"));
+
+  app.get("/admin/v2/exclusions", {
     preHandler: OWNER_ONLY
   }, async (request, reply) => {
-    const accounts = await countByClassification(query, {
-      fromSql: "users account",
-      userIdColumn: "account.id",
-      whereSql: "TRUE",
-      params: []
-    });
+    const [accounts, state] = await Promise.all([
+      countByClassification(query, {
+        fromSql: "users account",
+        userIdColumn: "account.id",
+        whereSql: "TRUE",
+        params: []
+      }),
+      readExclusionState(query)
+    ]);
     return reply.send({
+      api_version: API_VERSION,
       accounts,
-      provisional: accounts.unclassified > 0,
+      ...state,
       audience: "operator_only",
       suppression: "none",
       definitions: {
-        external: "Accounts an owner has classified as EXTERNAL.",
-        internal_demo: "Accounts an owner has classified as INTERNAL_TEST or DEMO.",
-        unclassified: "Accounts with no classification. Not counted as external.",
-        total: "All accounts."
+        external: "All accounts except those the owner has excluded.",
+        excluded: "Accounts the owner has identified as internal test, demonstration or administrator accounts.",
+        total: "All accounts.",
+        exclusions_last_changed: "When an exclusion was last made or removed. Not a review of every account.",
+        accounts_created_since: "Accounts created after the exclusions last changed."
       },
       as_of: new Date().toISOString()
     });

@@ -61,7 +61,9 @@ async function seedAccount({
   email,
   name = null,
   businessName = null,
-  businessType = null
+  businessType = null,
+  businessDescription = null,
+  reasonCode = "CORRECTION"
 } = {}) {
   const accountPhone = phone || `+1555${crypto.randomInt(1_000_000, 9_999_999)}`;
   const userResult = await query(`
@@ -71,9 +73,9 @@ async function seedAccount({
   `, [accountPhone, email || `${crypto.randomUUID()}@example.test`, phoneVerified, emailVerified, createdAt]);
   const userId = userResult.rows[0].id;
   await query(`
-    INSERT INTO profiles (user_id, operating_region, sector_id, name, business_name, business_type_id)
-    VALUES ($1, $2, $3, $4, $5, $6)
-  `, [userId, country, sector, name, businessName, businessType]);
+    INSERT INTO profiles (user_id, operating_region, sector_id, name, business_name, business_type_id, business_description)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+  `, [userId, country, sector, name, businessName, businessType, businessDescription]);
   const deviceIdentity = `device-${crypto.randomUUID()}`;
   await query(`
     INSERT INTO device_identities (device_identity, public_key, phone_number, status)
@@ -110,8 +112,8 @@ async function seedAccount({
   if (classification) {
     await query(`
       INSERT INTO account_classification (user_id, classification, reason_code, classified_by)
-      VALUES ($1, $2, 'CORRECTION', $3)
-    `, [userId, classification, classifierId]);
+      VALUES ($1, $2, $3, $4)
+    `, [userId, classification, reasonCode, classifierId]);
   }
   return userId;
 }
@@ -128,9 +130,10 @@ async function ownerRequest(app, url) {
 
 async function suppressedResponses(app) {
   return Promise.all([
-    ownerRequest(app, "/admin/suppressed/overview"),
-    ownerRequest(app, "/admin/suppressed/breakdown?dimension=country"),
-    ownerRequest(app, "/admin/suppressed/breakdown?dimension=sector")
+    ownerRequest(app, "/admin/v2/suppressed/overview"),
+    ownerRequest(app, "/admin/v2/breakdown?dimension=country"),
+    ownerRequest(app, "/admin/v2/breakdown?dimension=sector"),
+    ownerRequest(app, "/admin/v2/breakdown?dimension=business_type")
   ]);
 }
 
@@ -190,7 +193,8 @@ before(async () => {
       new URL("../migrations/009_admin_backend.sql", import.meta.url),
       new URL("../migrations/010_account_classification.sql", import.meta.url),
       new URL("../migrations/011_admin_metrics_rollup.sql", import.meta.url),
-      new URL("../migrations/012_admin_dimension_snapshot.sql", import.meta.url)
+      new URL("../migrations/012_admin_dimension_snapshot.sql", import.meta.url),
+      new URL("../migrations/016_admin_exclusion_model.sql", import.meta.url)
     ]
   });
   config.adminJwtSecret = crypto.randomBytes(32).toString("hex");
@@ -221,8 +225,8 @@ test("suppressed routes admit only owners and reject unsupported queries", async
   const ownerSession = await createSession(owner);
   try {
     for (const url of [
-      "/admin/suppressed/overview",
-      "/admin/suppressed/breakdown?dimension=country"
+      "/admin/v2/suppressed/overview",
+      "/admin/v2/breakdown?dimension=country"
     ]) {
       assert.equal((await app.inject({ method: "GET", url })).statusCode, 401);
       assert.equal((await app.inject({ method: "GET", url, headers: auth(viewerSession) })).statusCode, 403);
@@ -233,10 +237,10 @@ test("suppressed routes admit only owners and reject unsupported queries", async
       assert.match(response.body, /Not cleared for repeated release/);
     }
     for (const url of [
-      "/admin/suppressed/overview?range=all",
-      "/admin/suppressed/breakdown",
-      "/admin/suppressed/breakdown?dimension=country&dimension=sector",
-      "/admin/suppressed/breakdown?dimension=country&range=all"
+      "/admin/v2/suppressed/overview?range=all",
+      "/admin/v2/breakdown",
+      "/admin/v2/breakdown?dimension=country&dimension=sector",
+      "/admin/v2/breakdown?dimension=country&range=all"
     ]) {
       assert.equal((await app.inject({ method: "GET", url, headers: auth(ownerSession) })).statusCode, 400);
     }
@@ -258,7 +262,7 @@ test("overview applies subset and eligible-event contributor rules", async () =>
   const owner = await seedAdmin("owner");
   const session = await createSession(owner);
   try {
-    const response = await app.inject({ method: "GET", url: "/admin/suppressed/overview", headers: auth(session) });
+    const response = await app.inject({ method: "GET", url: "/admin/v2/suppressed/overview", headers: auth(session) });
     assert.equal(response.statusCode, 200);
     assert.deepEqual(metric(response.json(), "accounts_registered"), { status: "published", value: 10 });
     assert.deepEqual(metric(response.json(), "accounts_phone_verified"), { status: "withheld" });
@@ -306,7 +310,7 @@ test("dimension rebuild normalizes unknown values and country coverage is a gate
   const owner = await seedAdmin("owner");
   const session = await createSession(owner);
   try {
-    const response = await app.inject({ method: "GET", url: "/admin/suppressed/breakdown?dimension=country", headers: auth(session) });
+    const response = await app.inject({ method: "GET", url: "/admin/v2/breakdown?dimension=country", headers: auth(session) });
     assert.equal(response.statusCode, 200);
     assert.deepEqual(response.json().result, {
       status: "withheld",
@@ -328,7 +332,7 @@ test("country breakdown combines small cells without naming them", async () => {
   const owner = await seedAdmin("owner");
   const session = await createSession(owner);
   try {
-    const response = await app.inject({ method: "GET", url: "/admin/suppressed/breakdown?dimension=country", headers: auth(session) });
+    const response = await app.inject({ method: "GET", url: "/admin/v2/breakdown?dimension=country", headers: auth(session) });
     assert.deepEqual(response.json().result, {
       status: "published",
       cells: [
@@ -359,9 +363,9 @@ test("2: suppressed responses carry owner-only single-reading labels and no shar
       assert.equal(response.headers["cache-control"], "no-store");
     }
     for (const path of [
-      "/admin/suppressed/overview",
-      "/admin/suppressed/breakdown?dimension=country",
-      "/admin/suppressed/breakdown?dimension=sector"
+      "/admin/v2/suppressed/overview",
+      "/admin/v2/breakdown?dimension=country",
+      "/admin/v2/breakdown?dimension=sector"
     ]) assert.equal(path.includes("shareable"), false);
     const sources = await Promise.all([
       "../src/admin-disclosure.js",
@@ -381,8 +385,8 @@ test("3: suppressed routes refuse an address outside the admin allow-list", asyn
   config.adminIpAllowlist = "203.0.113.10";
   try {
     for (const url of [
-      "/admin/suppressed/overview",
-      "/admin/suppressed/breakdown?dimension=country"
+      "/admin/v2/suppressed/overview",
+      "/admin/v2/breakdown?dimension=country"
     ]) {
       const response = await app.inject({
         method: "GET", url, headers: auth(session), remoteAddress: "198.51.100.20"
@@ -399,10 +403,10 @@ test("4: overview rejects every query parameter and breakdown rejects every non-
   const session = await createSession(owner);
   try {
     for (const queryString of ["dimension=country", "range=all", "unknown=value"]) {
-      assert.equal((await app.inject({ method: "GET", url: `/admin/suppressed/overview?${queryString}`, headers: auth(session) })).statusCode, 400);
+      assert.equal((await app.inject({ method: "GET", url: `/admin/v2/suppressed/overview?${queryString}`, headers: auth(session) })).statusCode, 400);
     }
     for (const extra of ["range=all", "metric=accounts_registered", "unknown=value"]) {
-      assert.equal((await app.inject({ method: "GET", url: `/admin/suppressed/breakdown?dimension=country&${extra}`, headers: auth(session) })).statusCode, 400);
+      assert.equal((await app.inject({ method: "GET", url: `/admin/v2/breakdown?dimension=country&${extra}`, headers: auth(session) })).statusCode, 400);
     }
   } finally { await app.close(); }
 });
@@ -414,10 +418,10 @@ test("5: breakdown rejects a missing, repeated, or unsupported dimension", async
   const session = await createSession(owner);
   try {
     for (const url of [
-      "/admin/suppressed/breakdown",
-      "/admin/suppressed/breakdown?dimension=country&dimension=sector",
-      "/admin/suppressed/breakdown?dimension=location",
-      "/admin/suppressed/breakdown?dimension="
+      "/admin/v2/breakdown",
+      "/admin/v2/breakdown?dimension=country&dimension=sector",
+      "/admin/v2/breakdown?dimension=location",
+      "/admin/v2/breakdown?dimension="
     ]) assert.equal((await app.inject({ method: "GET", url, headers: auth(session) })).statusCode, 400);
   } finally { await app.close(); }
 });
@@ -427,7 +431,7 @@ test("6: four External accounts suppress registration and every other overview m
   await rebuildRollups();
   const app = await buildApp();
   try {
-    const body = (await ownerRequest(app, "/admin/suppressed/overview")).json();
+    const body = (await ownerRequest(app, "/admin/v2/suppressed/overview")).json();
     assert.deepEqual(metric(body, "accounts_registered"), { status: "fewer_than_k" });
     for (const item of body.metrics.filter(({ key }) => key !== "accounts_registered")) {
       assert.ok(["withheld", "fewer_than_k"].includes(item.disclosure.status));
@@ -442,7 +446,7 @@ test("7: phone subset withholds 18 of 20 and publishes 20 of 20 and 12 of 20", a
     for (let index = 0; index < 20; index += 1) await seedAccount({ phoneVerified: index < verified });
     await rebuildRollups();
     const app = await buildApp();
-    try { return metric((await ownerRequest(app, "/admin/suppressed/overview")).json(), "accounts_phone_verified"); }
+    try { return metric((await ownerRequest(app, "/admin/v2/suppressed/overview")).json(), "accounts_phone_verified"); }
     finally { await app.close(); }
   };
   assert.deepEqual(await readCase(18), { status: "withheld" });
@@ -462,7 +466,7 @@ test("8: identical record volume is suppressed for two contributors and publishe
     }
     await rebuildRollups();
     const app = await buildApp();
-    try { return metric((await ownerRequest(app, "/admin/suppressed/overview")).json(), "records_received"); }
+    try { return metric((await ownerRequest(app, "/admin/v2/suppressed/overview")).json(), "records_received"); }
     finally { await app.close(); }
   };
   assert.deepEqual(await readCase(2), { status: "fewer_than_k" });
@@ -484,7 +488,7 @@ test("8a: overview event disclosure uses eligible contributors and eligible even
   await rebuildRollups();
   let app = await buildApp();
   try {
-    const body = (await ownerRequest(app, "/admin/suppressed/overview")).json();
+    const body = (await ownerRequest(app, "/admin/v2/suppressed/overview")).json();
     assert.deepEqual(metric(body, "records_received"), { status: "fewer_than_k" });
     assert.deepEqual(metric(body, "attestations_issued"), { status: "fewer_than_k" });
   } finally { await app.close(); }
@@ -504,7 +508,7 @@ test("8a: overview event disclosure uses eligible contributors and eligible even
   await rebuildRollups();
   app = await buildApp();
   try {
-    const body = (await ownerRequest(app, "/admin/suppressed/overview")).json();
+    const body = (await ownerRequest(app, "/admin/v2/suppressed/overview")).json();
     assert.deepEqual(metric(body, "records_received"), { status: "published", value: 5 });
     assert.deepEqual(metric(body, "attestations_issued"), { status: "published", value: 5 });
   } finally { await app.close(); }
@@ -552,16 +556,29 @@ test("9: excluded account groups do not change External overview metrics or brea
   const app = await buildApp();
   try {
     const base = (await suppressedResponses(app)).map((response) => withoutContext(response.json()));
-    for (const [classification, amount] of [["INTERNAL_TEST", 7], ["DEMO", 4], [null, 3]]) {
+    for (const [classification, amount, reasonCode] of [["INTERNAL_TEST", 7, "OPERATOR_TEST_ACCOUNT"], ["DEMO", 4, "OPERATOR_DEMO_ACCOUNT"], ["INTERNAL_TEST", 3, "OPERATOR_ADMIN_ACCOUNT"]]) {
       for (let index = 0; index < amount; index += 1) {
-        await seedAccount({ classification, country: "NG", sector: "services", records: [now], attestations: [now] });
+        await seedAccount({ classification, reasonCode, country: "NG", sector: "services", records: [now], attestations: [now] });
       }
       await rebuildRollups();
       const current = (await suppressedResponses(app)).map((response) => withoutContext(response.json()));
       assert.deepEqual(current[0].metrics, base[0].metrics);
       assert.deepEqual(current[1].result, base[1].result);
       assert.deepEqual(current[2].result, base[2].result);
+      assert.deepEqual(current[3].result, base[3].result);
     }
+  } finally { await app.close(); }
+});
+
+test("9c: accounts with no classification row are External in every suppressed response (E1)", async () => {
+  for (let index = 0; index < 6; index += 1) await seedAccount({ classification: null, country: "NG", sector: "trade_retail" });
+  await rebuildRollups();
+  const app = await buildApp();
+  try {
+    const [overview, country, sector] = (await suppressedResponses(app)).map((response) => response.json());
+    assert.deepEqual(metric(overview, "accounts_registered"), { status: "published", value: 6 });
+    assert.deepEqual(country.result, { status: "published", cells: [{ category: "NG", count: 6 }], total: 6 });
+    assert.deepEqual(sector.result, { status: "published", cells: [{ category: "trade_retail", count: 6 }], total: 6 });
   } finally { await app.close(); }
 });
 
@@ -570,15 +587,15 @@ test("9a: response keys explicitly exclude internal, demo, unclassified, and tot
   await rebuildRollups();
   const app = await buildApp();
   const allowed = new Set([
-    "audience", "release_status", "suppression", "minimum_cell_size", "scope", "range",
-    "provisional", "as_of", "stale", "statements", "metrics", "key", "definition",
+    "api_version", "audience", "release_status", "suppression", "minimum_cell_size", "scope", "range",
+    "as_of", "stale", "statements", "metrics", "key", "definition",
     "disclosure", "status", "value", "dimension", "dimension_label", "result", "reason",
     "total", "cells", "category", "count"
   ]);
   try {
     for (const response of await suppressedResponses(app)) {
       for (const key of allKeys(response.json())) assert.equal(allowed.has(key), true, `unexpected response key ${key}`);
-      for (const forbidden of ["internal", "internal_demo", "demo", "unclassified", "accounts_total"]) {
+      for (const forbidden of ["internal", "internal_demo", "demo", "unclassified", "excluded", "provisional", "accounts_total"]) {
         assert.equal(allKeys(response.json()).has(forbidden), false);
       }
     }
@@ -607,7 +624,7 @@ test("9b: reclassifying a populated account changes raw External rollups and pub
   `);
   let app = await buildApp();
   let before;
-  try { before = (await ownerRequest(app, "/admin/suppressed/overview")).json(); }
+  try { before = (await ownerRequest(app, "/admin/v2/suppressed/overview")).json(); }
   finally { await app.close(); }
 
   await query(`UPDATE account_classification SET classification = 'EXTERNAL' WHERE user_id = $1`, [added]);
@@ -630,7 +647,7 @@ test("9b: reclassifying a populated account changes raw External rollups and pub
 
   app = await buildApp();
   try {
-    const afterBody = (await ownerRequest(app, "/admin/suppressed/overview")).json();
+    const afterBody = (await ownerRequest(app, "/admin/v2/suppressed/overview")).json();
     for (const item of before.metrics) {
       const current = afterBody.metrics.find(({ key }) => key === item.key);
       assert.equal(current.disclosure.status, item.disclosure.status);
@@ -651,28 +668,23 @@ test("10: an External account created in 1999 is included in accounts_registered
   await rebuildRollups();
   const app = await buildApp();
   try {
-    assert.deepEqual(metric((await ownerRequest(app, "/admin/suppressed/overview")).json(), "accounts_registered"), { status: "published", value: 5 });
+    assert.deepEqual(metric((await ownerRequest(app, "/admin/v2/suppressed/overview")).json(), "accounts_registered"), { status: "published", value: 5 });
   } finally { await app.close(); }
 });
 
-test("11: provisional and its statement appear only while an account is unclassified", async () => {
+test("11: statements describe the exclusion method; nothing is labelled provisional", async () => {
   await seedAccount({ classification: null });
+  await seedAccount({ classification: "DEMO", reasonCode: "OPERATOR_DEMO_ACCOUNT" });
   await rebuildRollups();
-  let app = await buildApp();
+  const app = await buildApp();
   try {
     for (const response of await suppressedResponses(app)) {
-      assert.equal(response.json().provisional, true);
-      assert.ok(response.json().statements.some((statement) => statement.startsWith("Provisional:")));
-    }
-  } finally { await app.close(); }
-  await resetState();
-  await seedAccount();
-  await rebuildRollups();
-  app = await buildApp();
-  try {
-    for (const response of await suppressedResponses(app)) {
-      assert.equal(response.json().provisional, false);
-      assert.equal(response.json().statements.some((statement) => statement.startsWith("Provisional:")), false);
+      const body = response.json();
+      assert.equal(body.api_version, 2);
+      assert.equal(Object.hasOwn(body, "provisional"), false);
+      assert.equal(body.statements[0], "Counts all accounts except those the owner has identified as internal test, demonstration or administrator accounts.");
+      assert.equal(body.statements[1], "Identification is the owner's own entry. It is not an independent confirmation.");
+      assert.equal(body.statements.some((statement) => /provisional|unclassified|classified as external/i.test(statement)), false);
     }
   } finally { await app.close(); }
 });
@@ -695,26 +707,26 @@ test("slice 3c 10: suppressed overview keeps the exact eight pre-slice results",
   await rebuildRollups();
   const app = await buildApp();
   try {
-    const response = await ownerRequest(app, "/admin/suppressed/overview");
+    const response = await ownerRequest(app, "/admin/v2/suppressed/overview");
     assert.deepEqual(response.json().metrics, [
-      { key: "accounts_registered", definition: METRIC_DEFINITIONS[0].definition, disclosure: { status: "published", value: 20 } },
-      { key: "records_received", definition: METRIC_DEFINITIONS[1].definition, disclosure: { status: "published", value: 9 } },
-      { key: "attestations_issued", definition: METRIC_DEFINITIONS[2].definition, disclosure: { status: "fewer_than_k" } },
-      { key: "accounts_phone_verified", definition: METRIC_DEFINITIONS[3].definition, disclosure: { status: "fewer_than_k" } },
-      { key: "accounts_email_verified", definition: METRIC_DEFINITIONS[4].definition, disclosure: { status: "fewer_than_k" } },
-      { key: "devices_active", definition: METRIC_DEFINITIONS[5].definition, disclosure: { status: "published", value: 20 } },
-      { key: "accounts_with_records", definition: METRIC_DEFINITIONS[6].definition, disclosure: { status: "published", value: 9 } },
-      { key: "accounts_with_3plus_records", definition: METRIC_DEFINITIONS[7].definition, disclosure: { status: "fewer_than_k" } }
+      { key: "accounts_registered", definition: METRIC_DEFINITIONS.find(({ key }) => key === "accounts_registered").definition, disclosure: { status: "published", value: 20 } },
+      { key: "records_received", definition: METRIC_DEFINITIONS.find(({ key }) => key === "records_received").definition, disclosure: { status: "published", value: 9 } },
+      { key: "attestations_issued", definition: METRIC_DEFINITIONS.find(({ key }) => key === "attestations_issued").definition, disclosure: { status: "fewer_than_k" } },
+      { key: "accounts_phone_verified", definition: METRIC_DEFINITIONS.find(({ key }) => key === "accounts_phone_verified").definition, disclosure: { status: "fewer_than_k" } },
+      { key: "accounts_email_verified", definition: METRIC_DEFINITIONS.find(({ key }) => key === "accounts_email_verified").definition, disclosure: { status: "fewer_than_k" } },
+      { key: "devices_active", definition: METRIC_DEFINITIONS.find(({ key }) => key === "devices_active").definition, disclosure: { status: "published", value: 20 } },
+      { key: "accounts_with_records", definition: METRIC_DEFINITIONS.find(({ key }) => key === "accounts_with_records").definition, disclosure: { status: "published", value: 9 } },
+      { key: "accounts_with_3plus_records", definition: METRIC_DEFINITIONS.find(({ key }) => key === "accounts_with_3plus_records").definition, disclosure: { status: "fewer_than_k" } }
     ]);
   } finally { await app.close(); }
 });
 
-test("slice 3c 11: suppressed overview uses an exported eight-key list while definitions have ten entries", async () => {
+test("slice 3c 11: suppressed overview uses an exported eight-key list while definitions have eleven entries", async () => {
   await rebuildRollups();
   const app = await buildApp();
   try {
-    const response = await ownerRequest(app, "/admin/suppressed/overview");
-    assert.equal(METRIC_DEFINITIONS.length, 10);
+    const response = await ownerRequest(app, "/admin/v2/suppressed/overview");
+    assert.equal(METRIC_DEFINITIONS.length, 11);
     assert.equal(SUPPRESSED_OVERVIEW_METRIC_KEYS.length, 8);
     assert.deepEqual(response.json().metrics.map(({ key }) => key), SUPPRESSED_OVERVIEW_METRIC_KEYS);
     const source = await readFile(new URL("../src/routes/admin/suppressed.js", import.meta.url), "utf8");
@@ -740,7 +752,7 @@ test("slice 3c 12: reviewed overlap case publishes existing figures without expo
   });
   const app = await buildApp();
   try {
-    const body = (await ownerRequest(app, "/admin/suppressed/overview")).json();
+    const body = (await ownerRequest(app, "/admin/v2/suppressed/overview")).json();
     assert.deepEqual(metric(body, "accounts_registered"), { status: "published", value: 20 });
     assert.deepEqual(metric(body, "accounts_with_records"), { status: "published", value: 9 });
     assert.equal(body.metrics.some(({ key }) => key.startsWith("accounts_setup_fields")), false);
@@ -755,12 +767,13 @@ test("12: never-built and failed rebuilds return 503 and provisional true on bot
   const app = await buildApp();
   try {
     for (const url of [
-      "/admin/suppressed/overview",
-      "/admin/suppressed/breakdown?dimension=country"
+      "/admin/v2/suppressed/overview",
+      "/admin/v2/breakdown?dimension=country"
     ]) {
       const response = await ownerRequest(app, url);
       assert.equal(response.statusCode, 503);
-      assert.equal(response.json().provisional, true);
+      assert.equal(response.json().api_version, 2);
+      assert.equal(Object.hasOwn(response.json(), "provisional"), false);
     }
   } finally {
     await app.close();
@@ -811,7 +824,7 @@ test("15: a lone small country causes the smallest publishable country to join t
   await rebuildRollups();
   const app = await buildApp();
   try {
-    assert.deepEqual((await ownerRequest(app, "/admin/suppressed/breakdown?dimension=country")).json().result, {
+    assert.deepEqual((await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result, {
       status: "published",
       cells: [{ category: "US", count: 12 }, { category: "other", count: 10 }],
       total: 22
@@ -826,7 +839,7 @@ test("16: an unsafe 6 and 3 country breakdown is withheld without cells", async 
   await rebuildRollups();
   const app = await buildApp();
   try {
-    const result = (await ownerRequest(app, "/admin/suppressed/breakdown?dimension=country")).json().result;
+    const result = (await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result;
     assert.equal(result.status, "withheld");
     assert.equal(result.reason, "residual_unsafe");
     assert.equal(Object.hasOwn(result, "cells"), false);
@@ -846,7 +859,7 @@ test("16a: the sector route enforces the residual ceiling and also permits a saf
   await rebuildRollups();
   let app = await buildApp();
   try {
-    const result = (await ownerRequest(app, "/admin/suppressed/breakdown?dimension=sector")).json().result;
+    const result = (await ownerRequest(app, "/admin/v2/breakdown?dimension=sector")).json().result;
     assert.equal(result.status, "withheld");
     assert.equal(result.reason, "residual_unsafe");
     assert.equal(Object.hasOwn(result, "cells"), false);
@@ -859,7 +872,7 @@ test("16a: the sector route enforces the residual ceiling and also permits a saf
   await rebuildRollups();
   app = await buildApp();
   try {
-    assert.deepEqual((await ownerRequest(app, "/admin/suppressed/breakdown?dimension=sector")).json().result, {
+    assert.deepEqual((await ownerRequest(app, "/admin/v2/breakdown?dimension=sector")).json().result, {
       status: "published",
       cells: [
         { category: "trade_retail", count: 12 },
@@ -880,7 +893,7 @@ test("16b: the country route uses the country universe for a 9 and six 4s shape"
   await rebuildRollups();
   const app = await buildApp();
   try {
-    assert.deepEqual((await ownerRequest(app, "/admin/suppressed/breakdown?dimension=country")).json().result, {
+    assert.deepEqual((await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result, {
       status: "published",
       cells: [{ category: "US", count: 9 }, { category: "other", count: 24 }],
       total: 33
@@ -910,7 +923,7 @@ test("18: country coverage failure reveals no count of accounts with or without 
   await rebuildRollups();
   const app = await buildApp();
   try {
-    const result = (await ownerRequest(app, "/admin/suppressed/breakdown?dimension=country")).json().result;
+    const result = (await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result;
     assert.deepEqual(result, {
       status: "withheld",
       reason: "valid_codes_below_half",
@@ -927,7 +940,7 @@ test("18a: a profile country code is counted normally and carries the exact prov
   await rebuildRollups();
   const app = await buildApp();
   try {
-    const response = await ownerRequest(app, "/admin/suppressed/breakdown?dimension=country");
+    const response = await ownerRequest(app, "/admin/v2/breakdown?dimension=country");
     const body = response.json();
     assert.equal(body.dimension_label, "Profile country code");
     assert.deepEqual(body.result.cells, [{ category: "NG", count: 5 }]);
@@ -942,12 +955,12 @@ test("19: excluded groups neither enter dimension snapshots nor alter breakdowns
   const app = await buildApp();
   try {
     const base = (await suppressedResponses(app)).slice(1).map((response) => response.json().result);
-    for (const classification of ["INTERNAL_TEST", "DEMO", null]) {
-      await seedAccount({ classification, country: "GB", sector: "agriculture" });
+    for (const [classification, reasonCode] of [["INTERNAL_TEST", "OPERATOR_TEST_ACCOUNT"], ["DEMO", "OPERATOR_DEMO_ACCOUNT"], ["INTERNAL_TEST", "OPERATOR_ADMIN_ACCOUNT"]]) {
+      await seedAccount({ classification, reasonCode, country: "GB", sector: "agriculture" });
     }
     await rebuildRollups();
     const rows = await query(`SELECT dimension, SUM(count)::int AS count FROM metrics_dimension_snapshot GROUP BY dimension`);
-    assert.deepEqual(Object.fromEntries(rows.rows.map(({ dimension, count }) => [dimension, count])), { country: 6, sector: 6 });
+    assert.deepEqual(Object.fromEntries(rows.rows.map(({ dimension, count }) => [dimension, count])), { country: 6, sector: 6, business_type: 6 });
     const current = (await suppressedResponses(app)).slice(1).map((response) => response.json().result);
     assert.deepEqual(current, base);
   } finally { await app.close(); }
@@ -983,7 +996,7 @@ test("20: reclassification marks rollups stale and rebuilt breakdowns reflect th
     assert.equal(applied.statusCode, 200);
     assert.equal((await query(`SELECT stale FROM metrics_rollup_state WHERE id = TRUE`)).rows[0].stale, true);
     await rebuildRollups();
-    assert.deepEqual((await ownerRequest(app, "/admin/suppressed/breakdown?dimension=country")).json().result, {
+    assert.deepEqual((await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result, {
       status: "published",
       cells: [{ category: "GB", count: 6 }, { category: "US", count: 5 }],
       total: 11
@@ -1048,7 +1061,7 @@ test("23: threshold 10 does not publish a breakdown cell of 7", async () => {
   await rebuildRollups();
   const app = await buildApp();
   try {
-    const response = await ownerRequest(app, "/admin/suppressed/breakdown?dimension=country");
+    const response = await ownerRequest(app, "/admin/v2/breakdown?dimension=country");
     assert.equal(response.body.includes('"category":"US","count":7'), false);
     assert.equal(response.json().result.cells?.some(({ category }) => category === "US") || false, false);
   } finally { await app.close(); }
@@ -1086,16 +1099,70 @@ test("24: contributor internals and accounts_all stay absent from every 3a respo
   const session = await createSession(owner);
   try {
     for (const url of [
-      "/admin/metrics/overview?range=all",
-      "/admin/metrics/timeseries?metric=records_received&bucket=week&periods=1",
-      "/admin/metrics/timeseries?metric=attestations_issued&bucket=month&periods=1"
+      "/admin/v2/overview?range=all",
+      "/admin/v2/timeseries?metric=records_received&bucket=week&periods=1",
+      "/admin/v2/timeseries?metric=attestations_issued&bucket=month&periods=1"
     ]) {
       const response = await app.inject({ method: "GET", url, headers: auth(session) });
       assert.equal(response.statusCode, 200);
       for (const key of [
         "accounts_all", "contributors_records_received",
-        "contributors_attestations_issued", "contributors_devices_active"
+        "contributors_attestations_issued", "contributors_devices_active",
+        "accounts_submitting_records_"
       ]) assert.equal(response.body.includes(key), false);
     }
+  } finally { await app.close(); }
+});
+
+test("25: business type breakdown counts catalog types and unlisted, never the free-text description", async () => {
+  const description = "Distinctive sideline 48213";
+  for (let index = 0; index < 6; index += 1) await seedAccount({ businessType: "ng_market_trader" });
+  for (let index = 0; index < 6; index += 1) await seedAccount({ businessType: "unlisted", businessDescription: description });
+  await seedAccount({ businessType: "not_a_catalog_type" });
+  await seedAccount({ classification: "DEMO", reasonCode: "OPERATOR_DEMO_ACCOUNT", businessType: "ng_market_trader" });
+  await rebuildRollups();
+  const snapshot = await query(`SELECT category, count FROM metrics_dimension_snapshot WHERE dimension = 'business_type' ORDER BY category`);
+  assert.deepEqual(snapshot.rows.map(({ category, count }) => [category, Number(count)]), [
+    ["ng_market_trader", 6], ["no_valid_code", 1], ["unlisted", 6]
+  ]);
+  const app = await buildApp();
+  try {
+    const response = await ownerRequest(app, "/admin/v2/breakdown?dimension=business_type");
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.dimension_label, "Profile business type");
+    assert.deepEqual(body.result, {
+      status: "published",
+      // The lone invalid code cannot stand alone, so the smallest shown type joins it in "other".
+      cells: [{ category: "unlisted", count: 6 }, { category: "other", count: 7 }],
+      total: 13
+    });
+    assert.equal(response.body.includes(description), false);
+    assert.equal(response.body.includes("not_a_catalog_type"), false);
+    assert.ok(body.statements.some((statement) => statement.includes("Free-text business descriptions are not used.")));
+  } finally { await app.close(); }
+});
+
+test("26: business type is withheld when categories are too small, as for country and sector", async () => {
+  for (const type of ["ng_market_trader", "global_device_repair", "global_document_services", "global_digital_online", "ng_market_trader", "global_device_repair"]) {
+    await seedAccount({ businessType: type });
+  }
+  await rebuildRollups();
+  const app = await buildApp();
+  try {
+    const result = (await ownerRequest(app, "/admin/v2/breakdown?dimension=business_type")).json().result;
+    assert.equal(result.status, "withheld");
+    assert.equal(Object.hasOwn(result, "cells"), false);
+  } finally { await app.close(); }
+});
+
+test("27: the sector statement says the server validates the code, not the business (D3)", async () => {
+  for (let index = 0; index < 5; index += 1) await seedAccount();
+  await rebuildRollups();
+  const app = await buildApp();
+  try {
+    const body = (await ownerRequest(app, "/admin/v2/breakdown?dimension=sector")).json();
+    assert.ok(body.statements.includes("Sector is the code stored on the account profile. For current app versions the server sets it from the business type chosen in the app; older profiles may hold a code stored before this check. The server validates the code; it does not verify the account's actual business."));
+    assert.equal(body.statements.some((statement) => statement.includes("It is not checked.")), false);
   } finally { await app.close(); }
 });

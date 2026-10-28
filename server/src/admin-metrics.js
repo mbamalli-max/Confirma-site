@@ -1,5 +1,5 @@
 import { adminReadQuery, rebuildQuery, withRebuildTransaction } from "./admin-db.js";
-import { COUNTRY_CODES, NO_VALID_CODE, SECTOR_IDS } from "./admin-dimensions.js";
+import { BUSINESS_TYPE_IDS, COUNTRY_CODES, NO_VALID_CODE, SECTOR_IDS } from "./admin-dimensions.js";
 
 export const METRICS_REBUILD_LOCK_KEY = 7300311;
 
@@ -34,8 +34,8 @@ const POINT_METRICS = Object.freeze([
   },
   {
     key: "devices_active",
-    name: "Active devices",
-    definition: "Devices currently in ACTIVE status. A point-in-time figure, not a period count."
+    name: "Devices in ACTIVE registration status",
+    definition: "Devices whose registration is currently in ACTIVE status. A point-in-time figure. Not a count of people or of recent use."
   },
   {
     key: "accounts_with_records",
@@ -59,14 +59,23 @@ const POINT_METRICS = Object.freeze([
   }
 ]);
 
-export const METRIC_DEFINITIONS = Object.freeze([...PERIOD_METRICS, ...POINT_METRICS]);
+// Distinct accounts in a period cannot be summed from daily counts, so this one is computed
+// for each overview range when the figures are built (decision D4, M3).
+const SUBMITTER_METRIC = Object.freeze({
+  key: "accounts_submitting_records",
+  name: "Accounts submitting records",
+  definition: "Accounts with one or more records received by the server in the period, each counted once, by the time the server received the records. The period is measured up to the time the figures were built."
+});
+
+export const METRIC_DEFINITIONS = Object.freeze([...PERIOD_METRICS, SUBMITTER_METRIC, ...POINT_METRICS]);
 export const PERIOD_METRIC_KEYS = Object.freeze(PERIOD_METRICS.map(({ key }) => key));
 export const OVERVIEW_RANGES = Object.freeze(["30d", "90d", "12m", "all"]);
 
+// Exclusion model (decision E1): every account is External unless the owner has excluded it.
+export const BUCKETS = Object.freeze(["external", "excluded"]);
 const EMPTY_COUNTS = Object.freeze({
   external: 0,
-  internal_demo: 0,
-  unclassified: 0,
+  excluded: 0,
   total: 0
 });
 
@@ -82,7 +91,7 @@ function countsFromRows(rows) {
   for (const row of rows) {
     if (Object.hasOwn(counts, row.bucket)) counts[row.bucket] = Number(row.count || 0);
   }
-  counts.total = counts.external + counts.internal_demo + counts.unclassified;
+  counts.total = counts.external + counts.excluded;
   return counts;
 }
 
@@ -156,9 +165,8 @@ async function performRebuild({ automatic }) {
             metric.metric_date,
             metric.metric_key,
             CASE
-              WHEN classification.classification = 'EXTERNAL' THEN 'external'
-              WHEN classification.classification IN ('INTERNAL_TEST', 'DEMO') THEN 'internal_demo'
-              ELSE 'unclassified'
+              WHEN classification.classification IN ('INTERNAL_TEST', 'DEMO') THEN 'excluded'
+              ELSE 'external'
             END AS bucket
           FROM metric_rows metric
           LEFT JOIN account_classification classification
@@ -266,13 +274,28 @@ async function performRebuild({ automatic }) {
           FROM device_identities device
           INNER JOIN users account ON account.phone_number = device.phone_number
           WHERE device.status = 'ACTIVE'
+
+          UNION ALL
+
+          -- M3: distinct accounts with records received in each overview range, measured up
+          -- to the build time ($2). Range starts match readOverview's.
+          SELECT DISTINCT 'accounts_submitting_records_' || ranges.range_key AS metric_key, event.user_id
+          FROM eligible_event_rows event
+          CROSS JOIN (VALUES
+            ('30d', ($2::timestamptz AT TIME ZONE 'UTC')::date - 29),
+            ('90d', ($2::timestamptz AT TIME ZONE 'UTC')::date - 89),
+            ('12m', (date_trunc('month', $2::timestamptz AT TIME ZONE 'UTC') - INTERVAL '11 months')::date),
+            ('all', DATE '2000-01-01')
+          ) AS ranges(range_key, start_date)
+          WHERE event.metric_key = 'contributors_records_received'
+            AND ${eligibleEventDateSql("event.event_date", "$1")}
+            AND event.event_date >= ranges.start_date
         ), classified AS (
           SELECT
             snapshot.metric_key,
             CASE
-              WHEN classification.classification = 'EXTERNAL' THEN 'external'
-              WHEN classification.classification IN ('INTERNAL_TEST', 'DEMO') THEN 'internal_demo'
-              ELSE 'unclassified'
+              WHEN classification.classification IN ('INTERNAL_TEST', 'DEMO') THEN 'excluded'
+              ELSE 'external'
             END AS bucket
           FROM snapshot_rows snapshot
           LEFT JOIN account_classification classification
@@ -281,17 +304,19 @@ async function performRebuild({ automatic }) {
         SELECT metric_key, bucket, COUNT(*)::int
         FROM classified
         GROUP BY metric_key, bucket
-      `, [eventDateUpperBound]);
+      `, [eventDateUpperBound, startedAt]);
 
       await client.query(`DELETE FROM metrics_dimension_snapshot`);
       await client.query(`
         INSERT INTO metrics_dimension_snapshot (dimension, category, count)
         WITH external_accounts AS (
+          -- Every account the owner has not excluded (decision E1).
           SELECT account.id AS user_id
           FROM users account
-          INNER JOIN account_classification classification
+          LEFT JOIN account_classification classification
             ON classification.user_id = account.id
-           AND classification.classification = 'EXTERNAL'
+          WHERE classification.classification IS NULL
+             OR classification.classification NOT IN ('INTERNAL_TEST', 'DEMO')
         ), dimension_rows AS (
           SELECT
             'country'::text AS dimension,
@@ -313,11 +338,23 @@ async function performRebuild({ automatic }) {
             END AS category
           FROM external_accounts account
           LEFT JOIN profiles profile ON profile.user_id = account.user_id
+
+          UNION ALL
+
+          -- Catalog business type IDs and "unlisted" only; free-text descriptions are not read.
+          SELECT
+            'business_type'::text AS dimension,
+            CASE
+              WHEN profile.business_type_id = ANY($4::text[]) THEN profile.business_type_id
+              ELSE $3::text
+            END AS category
+          FROM external_accounts account
+          LEFT JOIN profiles profile ON profile.user_id = account.user_id
         )
         SELECT dimension, category, COUNT(*)::int
         FROM dimension_rows
         GROUP BY dimension, category
-      `, [COUNTRY_CODES, SECTOR_IDS, NO_VALID_CODE]);
+      `, [COUNTRY_CODES, SECTOR_IDS, NO_VALID_CODE, BUSINESS_TYPE_IDS]);
 
       const state = await client.query(
         `
@@ -423,17 +460,8 @@ export async function readRollupState() {
   return result.rows[0];
 }
 
-export async function readProvisional() {
-  const result = await adminReadQuery(`
-    SELECT COALESCE(SUM(count), 0)::int > 0 AS provisional
-    FROM metrics_snapshot
-    WHERE metric_key = 'accounts_all' AND bucket = 'unclassified'
-  `);
-  return result.rows[0]?.provisional === true;
-}
-
 export async function readSuppressedOverview() {
-  const [daily, snapshot, provisional] = await Promise.all([
+  const [daily, snapshot] = await Promise.all([
     adminReadQuery(`
       SELECT metric_key, COALESCE(SUM(count), 0)::int AS count
       FROM metrics_daily_rollup
@@ -444,21 +472,20 @@ export async function readSuppressedOverview() {
       SELECT metric_key, count
       FROM metrics_snapshot
       WHERE bucket = 'external'
-    `),
-    readProvisional()
+    `)
   ]);
   return {
     daily: Object.fromEntries(daily.rows.map((row) => [row.metric_key, Number(row.count)])),
-    snapshot: Object.fromEntries(snapshot.rows.map((row) => [row.metric_key, Number(row.count)])),
-    provisional
+    snapshot: Object.fromEntries(snapshot.rows.map((row) => [row.metric_key, Number(row.count)]))
   };
 }
 
 export async function readDimensionSnapshot(dimension) {
-  if (dimension !== "country" && dimension !== "sector") {
+  const allowedByDimension = { country: COUNTRY_CODES, sector: SECTOR_IDS, business_type: BUSINESS_TYPE_IDS };
+  if (!Object.hasOwn(allowedByDimension, dimension)) {
     throw new Error("Invalid dimension.");
   }
-  const allowed = dimension === "country" ? COUNTRY_CODES : SECTOR_IDS;
+  const allowed = allowedByDimension[dimension];
   const result = await adminReadQuery(
     `
       SELECT category, count
@@ -480,28 +507,30 @@ export async function readOverview({ range }) {
     "12m": `(date_trunc('month', clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '11 months')::date`,
     all: `DATE '2000-01-01'`
   };
-  const [daily, snapshot, provisional] = await Promise.all([
+  const [daily, snapshot] = await Promise.all([
     adminReadQuery(`
       SELECT metric_key, bucket, SUM(count)::int AS count
       FROM metrics_daily_rollup
       WHERE metric_date >= ${starts[range]}
       GROUP BY metric_key, bucket
     `),
-    adminReadQuery(`SELECT metric_key, bucket, count FROM metrics_snapshot`),
-    readProvisional()
+    adminReadQuery(`SELECT metric_key, bucket, count FROM metrics_snapshot`)
   ]);
   const dailyByMetric = groupRows(daily.rows, (row) => row.metric_key);
   const snapshotByMetric = groupRows(snapshot.rows, (row) => row.metric_key);
   const metrics = METRIC_DEFINITIONS.map((definition) => {
     const pointInTime = POINT_METRICS.some(({ key }) => key === definition.key);
+    const rows = definition.key === SUBMITTER_METRIC.key
+      ? snapshotByMetric.get(`${SUBMITTER_METRIC.key}_${range}`)
+      : (pointInTime ? snapshotByMetric : dailyByMetric).get(definition.key);
     return {
       ...definition,
       point_in_time: pointInTime,
       range_ignored: pointInTime,
-      ...countsFromRows((pointInTime ? snapshotByMetric : dailyByMetric).get(definition.key) || [])
+      ...countsFromRows(rows || [])
     };
   });
-  return { range, metrics, provisional };
+  return { range, metrics };
 }
 
 export async function readTimeseries({ metric, bucket, periods }) {
@@ -539,7 +568,7 @@ export async function readTimeseries({ metric, bucket, periods }) {
         bucket.bucket,
         COALESCE(totals.count, 0)::int AS count
       FROM period_starts periods
-      CROSS JOIN (VALUES ('external'), ('internal_demo'), ('unclassified')) AS bucket(bucket)
+      CROSS JOIN (VALUES ('external'), ('excluded')) AS bucket(bucket)
       LEFT JOIN totals
         ON totals.period_start = periods.period_start AND totals.bucket = bucket.bucket
       ORDER BY periods.period_start, bucket.bucket
@@ -555,20 +584,18 @@ export async function readTimeseries({ metric, bucket, periods }) {
   return {
     metric,
     bucket,
-    periods: outputPeriods,
-    provisional: await readProvisional()
+    periods: outputPeriods
   };
 }
 
 export async function readStatus() {
-  const [state, rows, provisional] = await Promise.all([
+  const [state, rows] = await Promise.all([
     readRollupState(),
     adminReadQuery(`
       SELECT
         (SELECT COUNT(*)::int FROM metrics_daily_rollup) AS daily_rollup_rows,
         (SELECT COUNT(*)::int FROM metrics_snapshot) AS snapshot_rows
-    `),
-    readProvisional()
+    `)
   ]);
-  return { ...state, ...rows.rows[0], provisional };
+  return { ...state, ...rows.rows[0] };
 }

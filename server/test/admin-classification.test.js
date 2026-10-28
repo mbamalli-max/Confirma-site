@@ -127,7 +127,9 @@ before(async () => {
     migrations: [
       new URL("../migrations/009_admin_backend.sql", import.meta.url),
       new URL("../migrations/010_account_classification.sql", import.meta.url),
-      new URL("../migrations/011_admin_metrics_rollup.sql", import.meta.url)
+      new URL("../migrations/011_admin_metrics_rollup.sql", import.meta.url),
+      new URL("../migrations/012_admin_dimension_snapshot.sql", import.meta.url),
+      new URL("../migrations/016_admin_exclusion_model.sql", import.meta.url)
     ]
   });
   config.adminJwtSecret = crypto.randomBytes(32).toString("hex");
@@ -161,34 +163,41 @@ after(async () => {
   await getPool().end();
 });
 
-test("1: an account with records and no classification is unclassified and provisional", async () => {
+test("1: an account with no classification row is External (exclusion model, E1)", async () => {
   const app = await buildApp();
   const { headers } = await ownerAccess();
   await seedUser({ records: 2 });
+  await seedUser();
   try {
-    const response = await app.inject({ method: "GET", url: "/admin/classification/summary", headers });
+    const response = await app.inject({ method: "GET", url: "/admin/v2/exclusions", headers });
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(response.json().accounts, { external: 0, internal_demo: 0, unclassified: 1, total: 1 });
-    assert.equal(response.json().provisional, true);
+    assert.equal(response.json().api_version, 2);
+    assert.deepEqual(response.json().accounts, { external: 2, excluded: 0, total: 2 });
+    assert.equal(response.json().exclusions_last_changed, null);
+    assert.equal(response.json().accounts_created_since, null);
+    assert.equal(Object.hasOwn(response.json(), "provisional"), false);
   } finally {
     await app.close();
   }
 });
 
-test("2: the summary is not provisional when every account is classified", async () => {
+test("2: internal test, demo and administrator accounts are excluded; an EXTERNAL row counts once", async () => {
   const app = await buildApp();
   const { owner, headers } = await ownerAccess();
-  const user = await seedUser();
-  await classify(user.id, owner.id, "EXTERNAL", "OWNER_CLASSIFIED_EXTERNAL");
+  const users = await Promise.all([seedUser(), seedUser(), seedUser(), seedUser(), seedUser()]);
+  await classify(users[0].id, owner.id, "EXTERNAL", "OWNER_CLASSIFIED_EXTERNAL");
+  await classify(users[1].id, owner.id, "INTERNAL_TEST", "OPERATOR_TEST_ACCOUNT");
+  await classify(users[2].id, owner.id, "DEMO", "OPERATOR_DEMO_ACCOUNT");
+  await classify(users[3].id, owner.id, "INTERNAL_TEST", "OPERATOR_ADMIN_ACCOUNT");
   try {
-    const response = await app.inject({ method: "GET", url: "/admin/classification/summary", headers });
-    assert.equal(response.json().provisional, false);
+    const response = await app.inject({ method: "GET", url: "/admin/v2/exclusions", headers });
+    assert.deepEqual(response.json().accounts, { external: 2, excluded: 3, total: 5 });
   } finally {
     await app.close();
   }
 });
 
-test("3: the primitive returns a reconciled four-way account split", async () => {
+test("3: the primitive returns a reconciled External / excluded split", async () => {
   const owner = await seedAdmin("owner");
   const users = await Promise.all([seedUser(), seedUser(), seedUser(), seedUser()]);
   await classify(users[0].id, owner.id, "EXTERNAL", "OWNER_CLASSIFIED_EXTERNAL");
@@ -200,32 +209,91 @@ test("3: the primitive returns a reconciled four-way account split", async () =>
     whereSql: "TRUE",
     params: []
   });
-  assert.deepEqual(counts, { external: 1, internal_demo: 2, unclassified: 1, total: 4 });
-  assert.equal(counts.total, counts.external + counts.internal_demo + counts.unclassified);
+  assert.deepEqual(counts, { external: 2, excluded: 2, total: 4 });
+  assert.equal(counts.total, counts.external + counts.excluded);
 });
 
-test("4: the primitive returns all four zero-valued keys with no rows", async () => {
+test("4: the primitive returns all three zero-valued keys with no rows", async () => {
   assert.deepEqual(await countByClassification(query, {
     fromSql: "users account",
     userIdColumn: "account.id",
     whereSql: "TRUE",
     params: []
-  }), { external: 0, internal_demo: 0, unclassified: 0, total: 0 });
+  }), { external: 0, excluded: 0, total: 0 });
 });
 
 test("5: the primitive can split child rows through a supplied user id column", async () => {
   const owner = await seedAdmin("owner");
   const external = await seedUser({ records: 2 });
   const internal = await seedUser({ records: 1 });
+  const unreviewed = await seedUser({ records: 1 });
   await classify(external.id, owner.id, "EXTERNAL", "OWNER_CLASSIFIED_EXTERNAL");
   await classify(internal.id, owner.id, "DEMO", "OPERATOR_DEMO_ACCOUNT");
+  assert.ok(unreviewed.id);
   const counts = await countByClassification(query, {
     fromSql: "ledger_entries entry INNER JOIN device_identities device ON device.device_identity = entry.device_identity INNER JOIN users account ON account.phone_number = device.phone_number",
     userIdColumn: "account.id",
     whereSql: "entry.confirmed_at >= $1",
     params: [new Date(0)]
   });
-  assert.deepEqual(counts, { external: 2, internal_demo: 1, unclassified: 0, total: 3 });
+  assert.deepEqual(counts, { external: 3, excluded: 1, total: 4 });
+});
+
+test("5a: exclusions last changed follows the latest successful set or clear, including clearing the last row", async () => {
+  const app = await buildApp();
+  const { headers } = await ownerAccess();
+  const first = await seedUser();
+  try {
+    const token = (await preview(app, headers, first.phone_number, "DEMO", "OPERATOR_DEMO_ACCOUNT")).json().confirmation_token;
+    assert.equal((await applyToken(app, headers, token)).statusCode, 200);
+    const afterSet = (await app.inject({ method: "GET", url: "/admin/v2/exclusions", headers })).json();
+    assert.match(afterSet.exclusions_last_changed, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(afterSet.accounts_created_since, 0);
+    const later = await seedUser();
+    await query(`UPDATE users SET created_at = NOW() + INTERVAL '1 minute' WHERE id = $1`, [later.id]);
+    assert.equal((await app.inject({ method: "GET", url: "/admin/v2/exclusions", headers })).json().accounts_created_since, 1);
+
+    const clearToken = (await preview(app, headers, first.phone_number, null, "CORRECTION")).json().confirmation_token;
+    assert.equal((await applyToken(app, headers, clearToken)).statusCode, 200);
+    assert.equal((await query(`SELECT COUNT(*)::int AS count FROM account_classification`)).rows[0].count, 0);
+    const afterClear = (await app.inject({ method: "GET", url: "/admin/v2/exclusions", headers })).json();
+    assert.ok(new Date(afterClear.exclusions_last_changed) >= new Date(afterSet.exclusions_last_changed));
+    assert.equal(afterClear.accounts.excluded, 0);
+    // A successful preview alone, a miss and a rejected apply do not move the time.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal((await preview(app, headers, first.phone_number, "DEMO", "OPERATOR_DEMO_ACCOUNT")).statusCode, 200);
+    await preview(app, headers, "+19990000000", "DEMO", "OPERATOR_DEMO_ACCOUNT");
+    await applyToken(app, headers, "f".repeat(64));
+    assert.equal((await app.inject({ method: "GET", url: "/admin/v2/exclusions", headers })).json().exclusions_last_changed, afterClear.exclusions_last_changed);
+  } finally {
+    await app.close();
+  }
+});
+
+test("5b: the administrator-account reason is valid only with INTERNAL_TEST", async () => {
+  const app = await buildApp();
+  const { headers } = await ownerAccess();
+  const user = await seedUser();
+  try {
+    assert.equal((await preview(app, headers, user.phone_number, "INTERNAL_TEST", "OPERATOR_ADMIN_ACCOUNT")).statusCode, 200);
+    for (const target of ["DEMO", "EXTERNAL", null]) {
+      assert.equal((await preview(app, headers, user.phone_number, target, "OPERATOR_ADMIN_ACCOUNT")).statusCode, 400, String(target));
+    }
+  } finally {
+    await app.close();
+  }
+});
+
+test("5c: the retired summary route answers 410 client_outdated", async () => {
+  const app = await buildApp();
+  const { headers } = await ownerAccess();
+  try {
+    const response = await app.inject({ method: "GET", url: "/admin/classification/summary", headers });
+    assert.equal(response.statusCode, 410);
+    assert.deepEqual(response.json(), { error: "client_outdated", api_version: 2 });
+  } finally {
+    await app.close();
+  }
 });
 
 test("6: all classification routes enforce unauthenticated, viewer, and owner access", async () => {
@@ -236,7 +304,7 @@ test("6: all classification routes enforce unauthenticated, viewer, and owner ac
   const routes = [
     { method: "POST", url: "/admin/classification/preview", payload: {} },
     { method: "POST", url: "/admin/classification/apply", payload: {} },
-    { method: "GET", url: "/admin/classification/summary" }
+    { method: "GET", url: "/admin/v2/exclusions" }
   ];
   try {
     for (const route of routes) {
@@ -691,7 +759,7 @@ test("22: responses do not echo the phone and only the token hash is stored", as
     const previewResponse = await preview(app, headers, user.phone_number, "DEMO", "OPERATOR_DEMO_ACCOUNT");
     const token = previewResponse.json().confirmation_token;
     const applyResponse = await applyToken(app, headers, token);
-    const summaryResponse = await app.inject({ method: "GET", url: "/admin/classification/summary", headers });
+    const summaryResponse = await app.inject({ method: "GET", url: "/admin/v2/exclusions", headers });
     const combined = [previewResponse.body, applyResponse.body, summaryResponse.body].join("\n");
     for (const forbidden of [FORMATTED_PHONE, "12025550143", "5550143"]) {
       assert.equal(combined.includes(forbidden), false, forbidden);
@@ -744,11 +812,11 @@ test("24: audit failures roll back preview and apply state atomically", async ()
   }
 });
 
-test("25: summary labels its unsuppressed operator-only exception", async () => {
+test("25: the exclusions summary labels its unsuppressed operator-only exception", async () => {
   const app = await buildApp();
   const { headers } = await ownerAccess();
   try {
-    const body = (await app.inject({ method: "GET", url: "/admin/classification/summary", headers })).json();
+    const body = (await app.inject({ method: "GET", url: "/admin/v2/exclusions", headers })).json();
     assert.equal(body.audience, "operator_only");
     assert.equal(body.suppression, "none");
   } finally {
@@ -765,7 +833,7 @@ test("26: every classification response is no-store and exposes no forbidden rec
     const responses = [
       previewResponse,
       await applyToken(app, headers, previewResponse.json().confirmation_token),
-      await app.inject({ method: "GET", url: "/admin/classification/summary", headers })
+      await app.inject({ method: "GET", url: "/admin/v2/exclusions", headers })
     ];
     for (const response of responses) {
       assert.equal(response.headers["cache-control"], "no-store");

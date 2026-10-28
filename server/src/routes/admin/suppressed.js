@@ -1,7 +1,7 @@
 import { requireAdmin } from "../../admin-auth-utils.js";
 import { config } from "../../config.js";
 import { discloseBreakdown, discloseCount, discloseSubset } from "../../admin-disclosure.js";
-import { COUNTRY_CODES, NO_VALID_CODE, SECTOR_IDS } from "../../admin-dimensions.js";
+import { BUSINESS_TYPE_IDS, COUNTRY_CODES, NO_VALID_CODE, SECTOR_IDS } from "../../admin-dimensions.js";
 import {
   METRIC_DEFINITIONS,
   ensureFreshRollups,
@@ -10,6 +10,7 @@ import {
   readSuppressedOverview
 } from "../../admin-metrics.js";
 import { enforceAdminIpAllowlist } from "./auth.js";
+import { API_VERSION, RETIRED_ROUTES, registerRetiredRoutes } from "./metrics.js";
 
 const OWNER_ONLY = [enforceAdminIpAllowlist, requireAdmin(["owner"])];
 export const SUPPRESSED_OVERVIEW_METRIC_KEYS = Object.freeze([
@@ -31,7 +32,12 @@ const DIMENSIONS = Object.freeze({
   sector: {
     label: "Profile sector code",
     categories: SECTOR_IDS,
-    statement: "Sector is the code stored on the account profile from the account holder's selection in the app. It is not checked."
+    statement: "Sector is the code stored on the account profile. For current app versions the server sets it from the business type chosen in the app; older profiles may hold a code stored before this check. The server validates the code; it does not verify the account's actual business."
+  },
+  business_type: {
+    label: "Profile business type",
+    categories: BUSINESS_TYPE_IDS,
+    statement: "Business type is the catalog type stored on the account profile from the account holder's choice in the app, or 'unlisted' when they chose 'my business isn't listed'. The server validates the type against its catalog; it does not verify the account's actual business. Free-text business descriptions are not used."
   }
 });
 
@@ -39,14 +45,11 @@ function iso(value) {
   return value ? new Date(value).toISOString() : null;
 }
 
-function responseStatements({ provisional, k, dimension, residual }) {
+function responseStatements({ k, dimension, residual }) {
   const statements = [
-    "Counts only accounts the operator has classified as external. Internal, demonstration and unclassified accounts are excluded.",
-    "Classification is the operator's own entry. It is not an independent confirmation."
+    "Counts all accounts except those the owner has identified as internal test, demonstration or administrator accounts.",
+    "Identification is the owner's own entry. It is not an independent confirmation."
   ];
-  if (provisional) {
-    statements.push("Provisional: some accounts have not yet been classified, so these figures may change.");
-  }
   statements.push(
     `Figures based on fewer than ${k} accounts are reported as 'fewer than ${k}' or withheld.`,
     "All time, as of the time shown. Records and attestations with a server timestamp before 1 January 2000 or later than the day after the figures were built are not counted.",
@@ -57,25 +60,24 @@ function responseStatements({ provisional, k, dimension, residual }) {
   return statements;
 }
 
-function labels(state, provisional, options = {}) {
-  const effectiveProvisional = !state?.built_at || Boolean(provisional);
+function labels(state, options = {}) {
   const k = config.adminKAnonThreshold;
   return {
+    api_version: API_VERSION,
     audience: "owner_only",
     release_status: "single_reading",
     suppression: "minimum_cell_size",
     minimum_cell_size: k,
     scope: "external_only",
     range: "all_time",
-    provisional: effectiveProvisional,
     as_of: iso(state?.built_at),
     stale: Boolean(state?.stale),
-    statements: responseStatements({ provisional: effectiveProvisional, k, ...options })
+    statements: responseStatements({ k, ...options })
   };
 }
 
 function unavailable(reply, state, options = {}) {
-  return reply.code(503).send({ error: "metrics_unavailable", ...labels(state, true, options) });
+  return reply.code(503).send({ error: "metrics_unavailable", ...labels(state, options) });
 }
 
 function hasOnlyQueryKeys(query, allowed) {
@@ -142,7 +144,9 @@ function discloseOverview(raw, k) {
 }
 
 export async function registerAdminSuppressedRoutes(app) {
-  app.get("/admin/suppressed/overview", { preHandler: OWNER_ONLY }, async (request, reply) => {
+  registerRetiredRoutes(app, RETIRED_ROUTES.filter(([, url]) => url.startsWith("/admin/suppressed/")));
+
+  app.get("/admin/v2/suppressed/overview", { preHandler: OWNER_ONLY }, async (request, reply) => {
     if (!hasOnlyQueryKeys(request.query, []) || Object.keys(request.query || {}).length) {
       return reply.code(400).send({ error: "invalid_query" });
     }
@@ -152,12 +156,12 @@ export async function registerAdminSuppressedRoutes(app) {
 
     const raw = await readSuppressedOverview();
     return reply.send({
-      ...labels(state, raw.provisional),
+      ...labels(state),
       metrics: discloseOverview(raw, config.adminKAnonThreshold)
     });
   });
 
-  app.get("/admin/suppressed/breakdown", { preHandler: OWNER_ONLY }, async (request, reply) => {
+  app.get("/admin/v2/breakdown", { preHandler: OWNER_ONLY }, async (request, reply) => {
     const query = request.query || {};
     if (!hasOnlyQueryKeys(query, ["dimension"])
         || Object.keys(query).length !== 1
@@ -194,7 +198,7 @@ export async function registerAdminSuppressedRoutes(app) {
     const residual = result.status === "published"
       && result.cells.some(({ category }) => category === "other");
     return reply.send({
-      ...labels(state, raw.provisional, { dimension, residual }),
+      ...labels(state, { dimension, residual }),
       dimension,
       dimension_label: DIMENSIONS[dimension].label,
       result

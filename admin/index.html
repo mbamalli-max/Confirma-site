@@ -10,51 +10,273 @@
   <script type="module" src="admin.js"></script>
 </head>
 <body>
-  <main id="signin-screen" class="screen">
-    <h1>Konfirmata admin</h1>
-    <form id="signin-form" novalidate>
-      <label for="signin-email">Email</label>
-      <input id="signin-email" name="email" type="email" autocomplete="username" required>
-      <label for="signin-password">Password</label>
-      <input id="signin-password" name="password" type="password" autocomplete="current-password" required>
-      <label for="signin-totp">Authenticator code</label>
-      <input id="signin-totp" name="totp" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required>
-      <button id="signin-submit" type="submit">Sign in</button>
-      <p id="signin-error" role="alert"></p>
-    </form>
-    <button id="signout-retry" type="button" hidden>Try sign-out again</button>
+  <header id="brand-bar" class="brand-bar">
+    <div class="shell brand-inner">
+      <span class="brand">Konfirmata</span>
+      <span class="brand-sub">Admin</span>
+    </div>
+  </header>
+
+  <main id="signin-screen" class="screen shell">
+    <div class="card narrow">
+      <h1>Sign in</h1>
+      <form id="signin-form" novalidate>
+        <label for="signin-email">Email</label>
+        <input id="signin-email" name="email" type="email" autocomplete="username" required>
+        <label for="signin-password">Password</label>
+        <input id="signin-password" name="password" type="password" autocomplete="current-password" required>
+        <label for="signin-totp">Authenticator code</label>
+        <input id="signin-totp" name="totp" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required>
+        <button id="signin-submit" type="submit">Sign in</button>
+        <p id="signin-error" role="alert"></p>
+      </form>
+      <button id="signout-retry" type="button" class="secondary" hidden>Try sign-out again</button>
+    </div>
   </main>
 
-  <main id="denied-screen" class="screen" hidden>
-    <h1>Access denied</h1>
-    <p id="denied-message" role="alert"></p>
-    <button id="denied-signout" type="button">Sign out</button>
+  <main id="denied-screen" class="screen shell" hidden>
+    <div class="card narrow">
+      <h1>Access denied</h1>
+      <p id="denied-message" role="alert"></p>
+      <button id="denied-signout" type="button">Sign out</button>
+    </div>
   </main>
 
-  <main id="overview-screen" class="screen" hidden>
-    <h1>Overview</h1>
-    <header class="topbar">
+  <div id="app-shell" class="shell" hidden>
+    <div class="topbar">
       <p>Signed in as <span id="admin-email"></span></p>
       <p>Session ends <span id="session-expiry"></span></p>
-      <button id="signout-button" type="button">Sign out</button>
-    </header>
-    <p id="operator-label">Operator view — owner only. Not for sharing or export.</p>
-    <p id="provisional-banner" role="status" hidden></p>
-    <div class="controls">
-      <label for="range-select">Range</label>
-      <select id="range-select">
-        <option value="30d">Last 30 days</option>
-        <option value="90d">Last 90 days</option>
-        <option value="12m">Last 12 months</option>
-        <option value="all">All time</option>
-      </select>
+      <button id="signout-button" type="button" class="secondary">Sign out</button>
     </div>
-    <p>As of <span id="as-of"></span></p>
-    <p id="stale-note" hidden>These figures may be out of date.</p>
-    <p id="metrics-unavailable" role="alert" hidden>Metrics are unavailable right now. No figures are shown.</p>
-    <section id="metric-grid" aria-label="Metrics"></section>
-    <p id="activation-note">The locked activation definition cannot be computed by the server (the export step happens on the device), so no activation figure is shown.</p>
+    <nav id="tabs" class="tabs" aria-label="Sections">
+      <a href="#dashboard" data-tab="dashboard">Dashboard</a>
+      <a href="#reports" data-tab="reports">Reports</a>
+      <a href="#settings" data-tab="settings" class="tab-tool">Settings</a>
+    </nav>
+    <p id="operator-label">Internal analytics — owner only. For sharing, use Reports.</p>
+    <p id="version-mismatch" class="notice-error" role="alert" hidden>This page and the server are out of step. Reload the page. No figures are shown.</p>
+
+    <main id="dashboard-screen" class="screen panel" hidden>
+      <div class="head">
+        <h1>Dashboard</h1>
+        <p class="fresh">Updated <span id="dash-as-of">—</span> · Exclusions last changed <span id="dash-exclusions-changed">—</span> · <a href="#settings/methodology">Methodology</a></p>
+      </div>
+      <p id="dash-stale" class="notice-error" hidden>These figures may be out of date.</p>
+      <p id="dash-unavailable" class="notice-error" role="alert" hidden>Figures are unavailable right now. None are shown.</p>
+
+      <section aria-labelledby="activity-title">
+        <div class="head">
+          <h2 id="activity-title">Activity</h2>
+          <div class="controls">
+            <label for="period-select">Period</label>
+            <select id="period-select">
+              <option value="30d">Last 30 days</option>
+              <option value="90d" selected>Last 90 days</option>
+              <option value="12m">Last 12 months</option>
+              <option value="all">All time</option>
+            </select>
+          </div>
+        </div>
+        <div class="kpis">
+          <div class="card kpi" id="kpi-external">
+            <div class="kpi-label">External accounts
+              <details class="info"><summary aria-label="About External accounts">i</summary><p id="kpi-external-def">All app accounts except those you have excluded as internal test, demo or administrator accounts. Payment or activity is not required.</p></details>
+            </div>
+            <div class="kpi-value" id="kpi-external-value">—</div>
+            <div class="kpi-sub" id="kpi-external-sub"></div>
+          </div>
+          <div class="card kpi" id="kpi-submitting">
+            <div class="kpi-label">Accounts submitting records
+              <details class="info"><summary aria-label="About accounts submitting records">i</summary><p id="kpi-submitting-def"></p></details>
+            </div>
+            <div class="kpi-value" id="kpi-submitting-value">—</div>
+            <div class="kpi-sub">External accounts, in the period</div>
+          </div>
+          <div class="card kpi" id="kpi-records">
+            <div class="kpi-label">Records received
+              <details class="info"><summary aria-label="About records received">i</summary><p id="kpi-records-def"></p></details>
+            </div>
+            <div class="kpi-value" id="kpi-records-value">—</div>
+            <div class="kpi-sub">From External accounts, in the period</div>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="growth-title">
+        <div class="head">
+          <h2 id="growth-title">Growth</h2>
+          <div class="controls">
+            <label for="growth-bucket">Show</label>
+            <select id="growth-bucket">
+              <option value="month" selected>Monthly (last 12)</option>
+              <option value="week">Weekly (last 26)</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="card chart" id="growth-accounts_registered">
+            <h3>New External accounts</h3>
+            <div class="chart-body"></div>
+          </div>
+          <div class="card chart" id="growth-records_received">
+            <h3>Records received from External accounts</h3>
+            <div class="chart-body"></div>
+          </div>
+        </div>
+        <p class="muted">Records are counted when the server receives them. Activity on a phone that has not synced is not seen until it syncs.</p>
+      </section>
+
+      <section aria-labelledby="audience-title">
+        <div class="head">
+          <h2 id="audience-title">Audience — current profiles of External accounts</h2>
+          <p class="fresh">All External accounts as of the update time; not affected by the period.</p>
+        </div>
+        <div class="grid2">
+          <div class="card breakdown" id="aud-country" data-dimension="country">
+            <h3>Profile country
+              <details class="info"><summary aria-label="About profile country">i</summary><p class="dim-statement"></p></details>
+            </h3>
+            <div class="breakdown-body"></div>
+          </div>
+          <div class="card breakdown" id="aud-sector" data-dimension="sector">
+            <h3>Business sector
+              <details class="info"><summary aria-label="About business sector">i</summary><p class="dim-statement"></p></details>
+            </h3>
+            <div class="breakdown-body"></div>
+          </div>
+        </div>
+        <div class="card breakdown" id="aud-business_type" data-dimension="business_type">
+          <h3>Business type
+            <details class="info"><summary aria-label="About business type">i</summary><p class="dim-statement"></p></details>
+          </h3>
+          <div class="breakdown-body"></div>
+        </div>
+      </section>
+    </main>
+
+    <main id="reports-screen" class="screen panel" hidden>
+      <h1>Reports</h1>
+      <p class="card placeholder">Dated, reviewed reports for sharing will be prepared here once the release design is approved. The dashboard is internal and is not for sharing or export.</p>
+    </main>
+
+    <main id="settings-screen" class="screen panel" hidden>
+      <h1>Settings</h1>
+      <nav class="subtabs" aria-label="Settings sections">
+        <a href="#settings/exclusions" data-sub="exclusions">Exclusions</a>
+        <a href="#settings/quality" data-sub="quality">Data quality</a>
+        <a href="#settings/detail" data-sub="detail">Operator detail</a>
+        <a href="#settings/methodology" data-sub="methodology">Methodology</a>
+      </nav>
+
+      <section id="settings-exclusions" class="subpanel" aria-labelledby="exclusions-title">
+        <h2 id="exclusions-title">Exclusions</h2>
+        <p class="tool-note">Owner tool — changes are audited.</p>
+        <p>External means every app account except those you exclude here. Payment, records or activity are not required.</p>
+        <dl id="exclusion-counts" class="progress">
+          <div><dt>All app accounts</dt><dd id="count-total">—</dd></div>
+          <div><dt>Excluded</dt><dd id="count-excluded">—</dd></div>
+          <div><dt>External</dt><dd id="count-external">—</dd></div>
+          <div><dt>Created since the last change</dt><dd id="count-created-since">—</dd></div>
+        </dl>
+        <p id="exclusions-changed-note" class="muted"></p>
+
+        <form id="exclude-form" class="card" novalidate autocomplete="off">
+          <h3>Exclude or restore one account</h3>
+          <label for="exclude-phone">Phone number, exactly as registered, with country code</label>
+          <input id="exclude-phone" name="exclude-phone" type="tel" inputmode="tel" autocomplete="off" spellcheck="false">
+          <label for="exclude-action">Action</label>
+          <select id="exclude-action">
+            <option value="">Choose…</option>
+            <option value="EXCLUDE_TEST">Exclude — internal test account</option>
+            <option value="EXCLUDE_DEMO">Exclude — demo account</option>
+            <option value="EXCLUDE_ADMIN">Exclude — administrator's own app account</option>
+            <option value="RESTORE">Restore — count as External</option>
+          </select>
+          <button id="exclude-preview" type="submit">Preview</button>
+        </form>
+
+        <p id="exclude-unconfirmed" class="notice-warn" role="alert" hidden>Outcome unconfirmed — the change may or may not have been saved. Preview the same account again to see its current status.</p>
+
+        <section id="exclude-confirm" class="card" aria-labelledby="confirm-title" hidden>
+          <h3 id="confirm-title">Check before confirming</h3>
+          <dl class="facts">
+            <div><dt>Account created</dt><dd id="preview-created"></dd></div>
+            <div><dt>Records received</dt><dd id="preview-records"></dd></div>
+            <div><dt>Current status</dt><dd id="preview-current"></dd></div>
+            <div><dt>New status</dt><dd id="preview-target"></dd></div>
+            <div><dt>Reason</dt><dd id="preview-reason"></dd></div>
+          </dl>
+          <p class="muted">Records do not affect whether an account is External.</p>
+          <p id="preview-expiry">Confirm within <span id="preview-countdown"></span>.</p>
+          <div class="button-row">
+            <button id="exclude-confirm-button" type="button">Confirm</button>
+            <button id="exclude-cancel" type="button" class="secondary">Cancel</button>
+          </div>
+        </section>
+        <p id="exclude-message" role="status"></p>
+      </section>
+
+      <section id="settings-quality" class="subpanel" aria-labelledby="quality-title" hidden>
+        <h2 id="quality-title">Data quality</h2>
+        <dl class="facts">
+          <div><dt>Figures as of</dt><dd id="q-built-at">—</dd></div>
+          <div><dt>Marked out of date</dt><dd id="q-stale">—</dd></div>
+          <div><dt>Last rebuild attempt</dt><dd id="q-last-attempt">—</dd></div>
+          <div><dt>Last rebuild failure</dt><dd id="q-last-failure">—</dd></div>
+          <div><dt>Source rows outside the rollup date range</dt><dd id="q-out-of-range">—</dd></div>
+        </dl>
+        <p class="muted">Source rows outside the rollup date range counts dated rows of three kinds — account registrations, records received and valid attestations issued — whose date is before 1 January 2000 or after the day after the figures were built. These rows are left out of the figures. It is a count of rows, not of accounts or records.</p>
+        <div class="button-row">
+          <button id="refresh-button" type="button" class="secondary">Rebuild figures now</button>
+        </div>
+        <div id="refresh-confirm" class="card" hidden>
+          <p>Rebuild all figures now? This is recorded in the audit log and is limited to 6 per hour.</p>
+          <div class="button-row">
+            <button id="refresh-go" type="button">Rebuild</button>
+            <button id="refresh-cancel" type="button" class="secondary">Cancel</button>
+          </div>
+        </div>
+        <p id="refresh-message" role="status"></p>
+      </section>
+
+      <section id="settings-detail" class="subpanel" aria-labelledby="detail-title" hidden>
+        <h2 id="detail-title">Operator detail</h2>
+        <p class="muted">Exact counts for the owner only, including excluded accounts and technical measures. Never for sharing or export. Definitions are in <a href="#settings/methodology">Methodology</a>.</p>
+        <div class="controls">
+          <label for="detail-range">Period</label>
+          <select id="detail-range">
+            <option value="30d">Last 30 days</option>
+            <option value="90d" selected>Last 90 days</option>
+            <option value="12m">Last 12 months</option>
+            <option value="all">All time</option>
+          </select>
+        </div>
+        <p id="detail-unavailable" class="notice-error" role="alert" hidden>Figures are unavailable right now. None are shown.</p>
+        <div class="table-wrap">
+          <table id="detail-table" class="op">
+            <thead><tr><th scope="col">Measure</th><th scope="col">External</th><th scope="col">Excluded</th><th scope="col">All</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="settings-methodology" class="subpanel" aria-labelledby="method-title" hidden>
+        <h2 id="method-title">Methodology</h2>
+        <h3>External accounts</h3>
+        <p>External accounts are all app accounts except those the owner has excluded as internal test, demo or administrator accounts. Payment, records or activity are not required. Exclusion is the owner's own entry; it is not an independent confirmation, and the time of the last change is not a review of every account.</p>
+        <h3>Timing</h3>
+        <p>Records are counted by the time the server received them, not the time recorded on the phone. Activity on a phone that has not synced is not seen until it syncs. The current week or month in a chart is in progress and not complete.</p>
+        <h3>Audience figures</h3>
+        <p>Country, sector and business type describe the current profiles of External accounts. Categories too small to show safely are withheld or combined as "Other"; withheld figures are never shown as zero.</p>
+        <ul id="method-statements"></ul>
+        <h3>Activation</h3>
+        <p id="activation-note">The locked activation definition cannot be computed by the server (the export step happens on the device), so no activation figure is shown.</p>
+        <h3>Definitions</h3>
+        <dl id="method-definitions" class="definitions"></dl>
+      </section>
+    </main>
+
     <footer><p id="footer-note">Operator-generated internal metrics. Aggregate counts only. Not a user-record attestation.</p></footer>
-  </main>
+  </div>
 </body>
 </html>

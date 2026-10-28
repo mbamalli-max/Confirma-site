@@ -24,20 +24,34 @@ export async function withDb(run) {
   try { return await run(client); } finally { await client.end(); }
 }
 
-export async function seedOwner() {
+export async function seedOwner(email = ADMIN_EMAIL) {
   const { hashAdminPassword, encryptTotpSecret, generateTotpSecret } = await utils();
   const totpSecret = generateTotpSecret();
   const passwordHash = await hashAdminPassword(ADMIN_PASSWORD);
   const totpSecretEnc = encryptTotpSecret(totpSecret);
   const row = await withDb(async (db) => {
-    await db.query("DELETE FROM admin_users WHERE email = $1", [ADMIN_EMAIL]);
+    await db.query("DELETE FROM admin_users WHERE email = $1", [email]);
     const result = await db.query(
       "INSERT INTO admin_users (email, password_hash, totp_secret_enc, role) VALUES ($1, $2, $3, 'owner') RETURNING id, email, role",
-      [ADMIN_EMAIL, passwordHash, totpSecretEnc]
+      [email, passwordHash, totpSecretEnc]
     );
     return result.rows[0];
   });
   return { ...row, password: ADMIN_PASSWORD, totpSecret };
+}
+
+// A genuine admin session (signed token + session row), made without the login
+// route, so tests that need many sign-ins stay inside its 5-per-15-minutes limit.
+export async function mintSession(admin) {
+  const { issueAdminToken } = await utils();
+  const jti = crypto.randomUUID();
+  const token = issueAdminToken({ id: admin.id, role: admin.role }, jti);
+  const expiresAt = new Date(Date.now() + 3_600_000);
+  await withDb((db) => db.query(
+    "INSERT INTO admin_sessions (jti, admin_user_id, expires_at) VALUES ($1, $2, $3)",
+    [jti, admin.id, expiresAt]
+  ));
+  return { token, expires_at: expiresAt.toISOString() };
 }
 
 // Copied from server/test/helpers/admin.js.
