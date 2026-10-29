@@ -26,7 +26,7 @@ export const SUPPRESSED_OVERVIEW_METRIC_KEYS = Object.freeze([
 const DIMENSIONS = Object.freeze({
   // residuals: the non-category cells this dimension can report; they count in the universe size.
   country: {
-    smallCells: "combined",
+    smallCells: "shown",
     label: "Profile country code",
     categories: COUNTRY_CODES,
     residuals: [NO_VALID_CODE],
@@ -58,7 +58,7 @@ function responseStatements({ k, dimension, residual }) {
     "Identification is the owner's own entry. It is not an independent confirmation."
   ];
   if (dimension && DIMENSIONS[dimension].smallCells === "shown") {
-    statements.push("Every sector is shown with its exact count, including small counts.");
+    statements.push(`Every ${dimension} is shown with its exact count, including small counts.`);
   } else {
     statements.push(
       `Figures based on fewer than ${k} accounts are reported as 'fewer than ${k}' or withheld.`,

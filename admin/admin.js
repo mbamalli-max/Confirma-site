@@ -127,6 +127,7 @@ const regionNames = (() => {
 function categoryLabel(dimension, category) {
   if (category === "other") return "Other (combined)";
   if (category === "no_business_profile") return "No business profile";
+  if (dimension === "country" && category === "no_valid_code") return "No country";
   if (category === "no_valid_code") return dimension === "business_type" ? "No business type" : "No valid code";
   if (dimension === "country") {
     let name = null;
@@ -410,7 +411,7 @@ function renderBreakdown(panel, dimension, data) {
     body.replaceChildren(p);
     return;
   }
-  const cells = dimension === "sector"
+  const cells = ["country", "sector"].includes(dimension)
     ? [...result.cells].sort((left, right) => right.count - left.count
       || categoryLabel(dimension, left.category).localeCompare(categoryLabel(dimension, right.category), "en"))
     : result.cells;

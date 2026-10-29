@@ -228,7 +228,7 @@ test("suppressed routes admit only owners and reject unsupported queries", async
   try {
     for (const url of [
       "/admin/v2/suppressed/overview",
-      "/admin/v2/breakdown?dimension=country"
+      "/admin/v2/breakdown?dimension=business_type"
     ]) {
       assert.equal((await app.inject({ method: "GET", url })).statusCode, 401);
       assert.equal((await app.inject({ method: "GET", url, headers: auth(viewerSession) })).statusCode, 403);
@@ -237,6 +237,16 @@ test("suppressed routes admit only owners and reject unsupported queries", async
       assert.equal(response.json().audience, "owner_only");
       assert.equal(response.json().release_status, "single_reading");
       assert.match(response.body, /Not cleared for repeated release/);
+    }
+    {
+      const url = "/admin/v2/breakdown?dimension=country";
+      assert.equal((await app.inject({ method: "GET", url })).statusCode, 401);
+      assert.equal((await app.inject({ method: "GET", url, headers: auth(viewerSession) })).statusCode, 403);
+      const response = await app.inject({ method: "GET", url, headers: auth(ownerSession) });
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.json().audience, "owner_only");
+      assert.equal(response.json().suppression, "none");
+      assert.match(response.body, /Every country is shown with its exact count, including small counts\./);
     }
     for (const url of [
       "/admin/v2/suppressed/overview?range=all",
@@ -325,7 +335,7 @@ test("dimension rebuild normalizes unknown values and country coverage is a gate
   }
 });
 
-test("country breakdown combines small cells without naming them", async () => {
+test("country breakdown publishes every non-zero country individually", async () => {
   for (const [country, count] of [["US", 12], ["GB", 7], ["NG", 3], ["GH", 2]]) {
     for (let index = 0; index < count; index += 1) await seedAccount({ country });
   }
@@ -340,12 +350,12 @@ test("country breakdown combines small cells without naming them", async () => {
       cells: [
         { category: "US", count: 12 },
         { category: "GB", count: 7 },
-        { category: "other", count: 5 }
+        { category: "NG", count: 3 },
+        { category: "GH", count: 2 }
       ],
       total: 24
     });
-    assert.equal(response.body.includes('"NG"'), false);
-    assert.equal(response.body.includes('"GH"'), false);
+    assert.equal(response.body.includes('"other"'), false);
   } finally {
     await app.close();
   }
@@ -359,9 +369,9 @@ test("2: suppression labels match each dimension's disclosure policy and make no
     for (const [index, response] of (await suppressedResponses(app)).entries()) {
       assert.equal(response.statusCode, 200);
       assert.equal(response.json().audience, "owner_only");
-      if (index === 2) {
+      if ([1, 2].includes(index)) {
         assert.equal(response.json().suppression, "none");
-        assert.match(response.body, /Every sector is shown with its exact count, including small counts\./);
+        assert.match(response.body, new RegExp(`Every ${response.json().dimension} is shown with its exact count, including small counts\\.`));
         assert.doesNotMatch(response.body, /Figures based on fewer than/);
         assert.doesNotMatch(response.body, /Single reading\. Not cleared for repeated release/);
       } else {
@@ -826,7 +836,7 @@ test("11a: suppressed overview exports the literal pre-slice metric list", () =>
   ]);
 });
 
-test("15: a lone small country causes the smallest publishable country to join the residual", async () => {
+test("15: a lone small country is published with its exact count", async () => {
   for (const [country, count] of [["US", 12], ["GB", 7], ["NG", 3]]) {
     for (let index = 0; index < count; index += 1) await seedAccount({ country });
   }
@@ -835,23 +845,24 @@ test("15: a lone small country causes the smallest publishable country to join t
   try {
     assert.deepEqual((await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result, {
       status: "published",
-      cells: [{ category: "US", count: 12 }, { category: "other", count: 10 }],
+      cells: [{ category: "US", count: 12 }, { category: "GB", count: 7 }, { category: "NG", count: 3 }],
       total: 22
     });
   } finally { await app.close(); }
 });
 
-test("16: an unsafe 6 and 3 country breakdown is withheld without cells", async () => {
+test("16: small country cells are published without a residual", async () => {
   for (const [country, count] of [["US", 6], ["GB", 3]]) {
     for (let index = 0; index < count; index += 1) await seedAccount({ country });
   }
   await rebuildRollups();
   const app = await buildApp();
   try {
-    const result = (await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result;
-    assert.equal(result.status, "withheld");
-    assert.equal(result.reason, "residual_unsafe");
-    assert.equal(Object.hasOwn(result, "cells"), false);
+    assert.deepEqual((await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result, {
+      status: "published",
+      cells: [{ category: "US", count: 6 }, { category: "GB", count: 3 }],
+      total: 9
+    });
   } finally { await app.close(); }
 });
 
@@ -889,8 +900,8 @@ test("16a: the sector route publishes every non-zero sector, including small cel
   } finally { await app.close(); }
 });
 
-test("16aa: small sector cells publish individually while country and business type still suppress them", async () => {
-  for (const [sector, country, count] of [["trade_retail", "US", 3], ["agriculture", "GB", 2], ["transport_logistics", "NG", 1], [null, "GH", 1]]) {
+test("16aa: small country and sector cells publish individually while business type still suppresses them", async () => {
+  for (const [sector, country, count] of [["trade_retail", "US", 3], ["agriculture", "GB", 2], ["transport_logistics", "NG", 1], [null, "ZZ", 1]]) {
     for (let index = 0; index < count; index += 1) await seedAccount({ sector, country });
   }
   await rebuildRollups();
@@ -908,15 +919,25 @@ test("16aa: small sector cells publish individually while country and business t
       total: 7
     });
     assert.equal(sector.cells.some(({ category }) => category === "other"), false);
-    for (const dimension of ["country", "business_type"]) {
-      const result = (await ownerRequest(app, `/admin/v2/breakdown?dimension=${dimension}`)).json().result;
-      assert.equal(result.status, "withheld", dimension);
-      assert.ok(["residual_unsafe", "valid_codes_below_half"].includes(result.reason), dimension);
-    }
+    const country = (await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result;
+    assert.deepEqual(country, {
+      status: "published",
+      cells: [
+        { category: "US", count: 3 },
+        { category: "GB", count: 2 },
+        { category: "NG", count: 1 },
+        { category: "no_valid_code", count: 1 }
+      ],
+      total: 7
+    });
+    assert.equal(country.cells.some(({ category }) => category === "other"), false);
+    const businessType = (await ownerRequest(app, "/admin/v2/breakdown?dimension=business_type")).json().result;
+    assert.equal(businessType.status, "withheld");
+    assert.equal(businessType.reason, "valid_codes_below_half");
   } finally { await app.close(); }
 });
 
-test("16b: the country route uses the country universe for a 9 and six 4s shape", async () => {
+test("16b: country publishes every code in a 9 and six 4s shape", async () => {
   const countries = ["US", "GB", "NG", "GH", "CA", "DE", "FR"];
   for (let countryIndex = 0; countryIndex < countries.length; countryIndex += 1) {
     const count = countryIndex === 0 ? 9 : 4;
@@ -927,7 +948,15 @@ test("16b: the country route uses the country universe for a 9 and six 4s shape"
   try {
     assert.deepEqual((await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result, {
       status: "published",
-      cells: [{ category: "US", count: 9 }, { category: "other", count: 24 }],
+      cells: [
+        { category: "US", count: 9 },
+        { category: "CA", count: 4 },
+        { category: "DE", count: 4 },
+        { category: "FR", count: 4 },
+        { category: "GB", count: 4 },
+        { category: "GH", count: 4 },
+        { category: "NG", count: 4 }
+      ],
       total: 33
     });
   } finally { await app.close(); }
@@ -976,6 +1005,10 @@ test("18a: a profile country code is counted normally and carries the exact prov
     const body = response.json();
     assert.equal(body.dimension_label, "Profile country code");
     assert.deepEqual(body.result.cells, [{ category: "NG", count: 5 }]);
+    assert.equal(body.suppression, "none");
+    assert.ok(body.statements.includes("Every country is shown with its exact count, including small counts."));
+    assert.equal(body.statements.some((statement) => statement.includes("Figures based on fewer than")), false);
+    assert.equal(body.statements.some((statement) => statement.startsWith("Single reading.")), false);
     assert.ok(body.statements.includes("Country is the two-letter code stored on the account profile. It may have been chosen by the account holder or filled in from the country of the account's phone number. It is not checked."));
     for (const wording of ["location", "based in", "operates in", "stated"]) assert.equal(response.body.toLowerCase().includes(wording), false);
   } finally { await app.close(); }
@@ -1086,7 +1119,7 @@ test("22: suppressed route statements return only explicitly allowed aggregate f
   }
 });
 
-test("23: threshold 10 does not publish a breakdown cell of 7", async () => {
+test("23: threshold 10 still publishes every country cell after the total gate", async () => {
   config.adminKAnonThreshold = 10;
   for (let index = 0; index < 7; index += 1) await seedAccount({ country: "US" });
   for (let index = 0; index < 13; index += 1) await seedAccount({ country: "GB" });
@@ -1094,12 +1127,15 @@ test("23: threshold 10 does not publish a breakdown cell of 7", async () => {
   const app = await buildApp();
   try {
     const response = await ownerRequest(app, "/admin/v2/breakdown?dimension=country");
-    assert.equal(response.body.includes('"category":"US","count":7'), false);
-    assert.equal(response.json().result.cells?.some(({ category }) => category === "US") || false, false);
+    assert.deepEqual(response.json().result, {
+      status: "published",
+      cells: [{ category: "GB", count: 13 }, { category: "US", count: 7 }],
+      total: 20
+    });
   } finally { await app.close(); }
 });
 
-test("23a: threshold wording follows 10 and the default except for all-cell sectors", async () => {
+test("23a: threshold wording follows 10 and the default except for all-cell countries and sectors", async () => {
   for (let index = 0; index < 10; index += 1) await seedAccount();
   await rebuildRollups();
   config.adminKAnonThreshold = 10;
@@ -1107,9 +1143,9 @@ test("23a: threshold wording follows 10 and the default except for all-cell sect
   try {
     for (const [index, response] of (await suppressedResponses(app)).entries()) {
       const body = response.json();
-      if (index === 2) {
+      if ([1, 2].includes(index)) {
         assert.equal(body.suppression, "none");
-        assert.ok(body.statements.includes("Every sector is shown with its exact count, including small counts."));
+        assert.ok(body.statements.includes(`Every ${body.dimension} is shown with its exact count, including small counts.`));
       } else {
         assert.equal(body.minimum_cell_size, 10);
         assert.ok(body.statements.some((statement) => statement.includes("fewer than 10")));
@@ -1121,7 +1157,7 @@ test("23a: threshold wording follows 10 and the default except for all-cell sect
   app = await buildApp();
   try {
     for (const [index, response] of (await suppressedResponses(app)).entries()) {
-      if (index === 2) assert.ok(response.json().statements.includes("Every sector is shown with its exact count, including small counts."));
+      if ([1, 2].includes(index)) assert.ok(response.json().statements.includes(`Every ${response.json().dimension} is shown with its exact count, including small counts.`));
       else assert.ok(response.json().statements.some((statement) => statement.includes("fewer than 5")));
     }
   } finally { await app.close(); }

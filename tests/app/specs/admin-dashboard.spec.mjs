@@ -316,11 +316,13 @@ function sampleSeries(metric, bucket, periods) {
 }
 function sampleBreakdown(dimension, result = { status: "published", cells: dimension === "sector"
   ? [{ category: "trade_retail", count: 7 }]
-  : [{ category: dimension === "country" ? "NG" : "ng_market_trader", count: 7 }, { category: "other", count: 5 }], total: dimension === "sector" ? 7 : 12 }, k = 5) {
+  : dimension === "country"
+    ? [{ category: "NG", count: 7 }]
+    : [{ category: "ng_market_trader", count: 7 }, { category: "other", count: 5 }], total: ["country", "sector"].includes(dimension) ? 7 : 12 }, k = 5) {
   return {
-    api_version: 2, audience: "owner_only", release_status: "single_reading", suppression: dimension === "sector" ? "none" : "minimum_cell_size", minimum_cell_size: k,
+    api_version: 2, audience: "owner_only", release_status: "single_reading", suppression: ["country", "sector"].includes(dimension) ? "none" : "minimum_cell_size", minimum_cell_size: k,
     scope: "external_only", range: "all_time", as_of: SERVED_AS_OF, stale: false, dimension, dimension_label: dimension,
-    statements: ["Counts all accounts except those the owner has identified as internal test, demonstration or administrator accounts.", `${dimension === "country" ? "Country" : dimension === "sector" ? "Sector" : "Business type"} is the stored code. Provenance statement.`, ...(dimension === "sector" ? ["Every sector is shown with its exact count, including small counts."] : [])],
+    statements: ["Counts all accounts except those the owner has identified as internal test, demonstration or administrator accounts.", `${dimension === "country" ? "Country" : dimension === "sector" ? "Sector" : "Business type"} is the stored code. Provenance statement.`, ...(["country", "sector"].includes(dimension) ? [`Every ${dimension} is shown with its exact count, including small counts.`] : [])],
     result
   };
 }
@@ -867,20 +869,43 @@ test("D3. audience bars show labelled categories; withheld reasons are distinct 
   try {
     await servedSignIn(published.target);
     const t = published.target;
-    await expect(t.locator("#aud-country .bar-row .bar-label")).toHaveText(["Nigeria (NG)", "Other (combined)"]);
+    await expect(t.locator("#aud-country .bar-row .bar-label")).toHaveText(["Nigeria (NG)"]);
     await expect(t.locator("#aud-sector .bar-row .bar-label")).toHaveText(["Trade & Retail"]);
     await expect(t.locator("#aud-business_type .bar-row .bar-label")).toHaveText(["Market Trader (NG)", "Other (combined)"]);
-    await expect(t.locator("#aud-country .bar-row .bar-count")).toHaveText(["7", "5"]);
-    await expect(t.locator("#aud-country")).toContainText("Other combines two or more categories");
-    await expect(t.locator("#aud-country")).toContainText("Total External accounts: 12");
+    await expect(t.locator("#aud-country .bar-row .bar-count")).toHaveText(["7"]);
+    await expect(t.locator("#aud-country")).not.toContainText("Other combines two or more categories");
+    await expect(t.locator("#aud-country")).toContainText("Total External accounts: 7");
     await expect(t.locator("#audience-title")).toHaveText("Audience — current profiles of External accounts");
     await expect(t.locator("#dashboard-screen")).toContainText("not affected by the period");
     const widths = await t.locator("#aud-country .fill").evaluateAll((els) => els.map((e) => e.style.width));
-    expect(widths).toEqual(["100%", "71%"]);
+    expect(widths).toEqual(["100%"]);
     await t.locator("#aud-country details.info > summary").click();
     await expect(t.locator("#aud-country .dim-statement")).toHaveText("Country is the stored code. Provenance statement.");
   } finally {
     await published.ctx.close();
+  }
+});
+
+test("D3a. country bars show every country in count order and label missing or invalid codes", async ({ browser }) => {
+  const results = {
+    country: sampleBreakdown("country", { status: "published", cells: [
+      { category: "NG", count: 2 }, { category: "GB", count: 2 },
+      { category: "US", count: 3 }, { category: "no_valid_code", count: 1 }
+    ], total: 8 }),
+    sector: sampleBreakdown("sector"),
+    business_type: sampleBreakdown("business_type")
+  };
+  const { ctx, target } = await servedPage(browser, async ({ url, send }) => (
+    url.pathname === "/admin/v2/breakdown" ? send(200, results[url.searchParams.get("dimension")]) : undefined
+  ));
+  try {
+    await servedSignIn(target);
+    await expect(target.locator("#aud-country .bar-row .bar-label")).toHaveText([
+      "United States (US)", "Nigeria (NG)", "United Kingdom (GB)", "No country"
+    ]);
+    await expect(target.locator("#aud-country")).not.toContainText("Other combines");
+  } finally {
+    await ctx.close();
   }
 });
 
@@ -1072,7 +1097,7 @@ test("D11. sector categories: every business in a sector, no business profile ap
     const mentions = await target.evaluate(() => document.body.textContent.split("not an official industry classification").length - 1);
     expect(mentions).toBe(1);
     await expect(target.locator("#settings-methodology")).toContainText("not an official industry classification");
-    await expect(target.locator("#settings-methodology")).toContainText("Country and business type categories too small to show safely are withheld or combined as \"Other\". Sectors are shown with their exact counts, however small. Withheld figures are never shown as zero.");
+    await expect(target.locator("#settings-methodology")).toContainText("Business type categories too small to show safely are withheld or combined as \"Other\". Countries and sectors are shown with their exact counts, however small. Withheld figures are never shown as zero.");
   } finally {
     await ctx.close();
   }
