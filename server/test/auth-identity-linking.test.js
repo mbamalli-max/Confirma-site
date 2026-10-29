@@ -369,7 +369,8 @@ test("9: step-two failures roll back account and device, including a forced comm
   const commitEmail = `${unique("commit-failure")}@example.test`;
   const commitPhone = "+12025550113";
   const commitCode = await requestCode(commitEmail, commitPhone);
-  poolRecorder.failNextCommit();
+  // OTP consumption commits first; fail the following account/device transaction.
+  poolRecorder.failCommitNumber(2);
   const failedCommit = await verifyEmail(commitEmail, commitCode, {
     phone_number: commitPhone,
     device_identity: "commit-device",

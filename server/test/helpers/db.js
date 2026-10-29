@@ -29,7 +29,7 @@ export function createTestPool(databaseUrl, databaseSsl = false) {
 }
 
 export async function resetTestDatabase(pool) {
-  await pool.query("TRUNCATE TABLE users, otp_challenges RESTART IDENTITY CASCADE");
+  await pool.query("TRUNCATE TABLE users, otp_challenges, otp_verify_failures RESTART IDENTITY CASCADE");
 }
 
 export async function getBackendPid(client) {
@@ -221,7 +221,7 @@ export function instrumentApplicationPool(pool) {
     checkoutPids: [],
     transactionPids: [],
     queryTexts: [],
-    failCommit: false,
+    commitsUntilFailure: null,
     failQueryPattern: null
   };
 
@@ -244,14 +244,17 @@ export function instrumentApplicationPool(pool) {
         state.transactionPids.push(pid);
       }
       state.queryTexts.push(String(text || ""));
-      if (state.failCommit && /^\s*COMMIT\b/i.test(String(text || ""))) {
-        state.failCommit = false;
-        const error = new Error("Forced test commit failure.");
-        if (callback) {
-          process.nextTick(callback, error);
-          return undefined;
+      if (state.commitsUntilFailure !== null && /^\s*COMMIT\b/i.test(String(text || ""))) {
+        state.commitsUntilFailure -= 1;
+        if (state.commitsUntilFailure === 0) {
+          state.commitsUntilFailure = null;
+          const error = new Error("Forced test commit failure.");
+          if (callback) {
+            process.nextTick(callback, error);
+            return undefined;
+          }
+          return Promise.reject(error);
         }
-        return Promise.reject(error);
       }
       if (state.failQueryPattern?.test(String(text || ""))) {
         state.failQueryPattern = null;
@@ -307,11 +310,17 @@ export function instrumentApplicationPool(pool) {
       state.checkoutPids.length = 0;
       state.transactionPids.length = 0;
       state.queryTexts.length = 0;
-      state.failCommit = false;
+      state.commitsUntilFailure = null;
       state.failQueryPattern = null;
     },
     failNextCommit() {
-      state.failCommit = true;
+      state.commitsUntilFailure = 1;
+    },
+    failCommitNumber(number) {
+      if (!Number.isInteger(number) || number < 1) {
+        throw new TypeError("Commit number must be a positive integer.");
+      }
+      state.commitsUntilFailure = number;
     },
     failNextQueryMatching(pattern) {
       state.failQueryPattern = pattern;

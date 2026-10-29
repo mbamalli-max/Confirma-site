@@ -277,7 +277,7 @@ async function revokeSessionForToken(auth) {
   return result.rowCount > 0;
 }
 
-export async function registerAuthRoutes(app) {
+export async function registerAuthRoutes(app, { afterOtpFailureLimitCheck } = {}) {
   app.post("/auth/otp/request", {
     config: { rateLimit: { max: 5, timeWindow: "1 minute" } }
   }, async (request, reply) => {
@@ -406,20 +406,91 @@ export async function registerAuthRoutes(app) {
       return reply.code(400).send({ error: "device_identity and public_key are required." });
     }
 
-    const otpResult = await query(
-      `
-        SELECT id, otp_hash, expires_at, verified_at
-        FROM otp_challenges
-        WHERE identifier = $1
-          AND channel = $2
-        ORDER BY created_at DESC
-        LIMIT 1
-      `,
-      [identifier, channel]
-    );
+    const verification = await withTransaction(async (database) => {
+      await database.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [`${channel}:${identifier}`]
+      );
 
-    const challenge = otpResult.rows[0];
-    if (!challenge) {
+      const nowResult = await database.query("SELECT clock_timestamp() AS now_at");
+      const nowAt = nowResult.rows[0].now_at;
+      const failedAttemptsResult = await database.query(
+        `
+          SELECT COUNT(*)::int AS failed_count
+          FROM otp_verify_failures
+          WHERE identifier = $1
+            AND channel = $2
+            AND failed_at > $3::timestamptz - INTERVAL '15 minutes'
+        `,
+        [identifier, channel, nowAt]
+      );
+
+      if ((failedAttemptsResult.rows[0]?.failed_count || 0) >= 5) {
+        return { outcome: "locked" };
+      }
+
+      if (afterOtpFailureLimitCheck) {
+        await afterOtpFailureLimitCheck();
+      }
+
+      const otpResult = await database.query(
+        `
+          SELECT id, otp_hash, expires_at, verified_at
+          FROM otp_challenges
+          WHERE identifier = $1
+            AND channel = $2
+          ORDER BY created_at DESC
+          LIMIT 1
+        `,
+        [identifier, channel]
+      );
+
+      const challenge = otpResult.rows[0];
+      if (!challenge) return { outcome: "not_found" };
+
+      const computedHash = hashOtp(identifier, code, channel);
+      const computedBuf = Buffer.from(computedHash, "hex");
+      const storedBuf = Buffer.from(challenge.otp_hash, "hex");
+      const matches = computedBuf.length === storedBuf.length && crypto.timingSafeEqual(computedBuf, storedBuf);
+      if (!matches) {
+        await database.query(
+          `
+            INSERT INTO otp_verify_failures (identifier, channel, failed_at)
+            VALUES ($1, $2, $3::timestamptz)
+          `,
+          [identifier, channel, nowAt]
+        );
+        await database.query(
+          `
+            UPDATE otp_challenges
+            SET failed_at = $2::timestamptz
+            WHERE id = $1
+          `,
+          [challenge.id, nowAt]
+        );
+        return { outcome: "failed" };
+      }
+
+      const consumedResult = await database.query(
+        `
+          UPDATE otp_challenges
+          SET verified_at = $2::timestamptz
+          WHERE id = $1
+            AND verified_at IS NULL
+            AND expires_at > $2::timestamptz
+          RETURNING id
+        `,
+        [challenge.id, nowAt]
+      );
+
+      return { outcome: consumedResult.rows[0] ? "consumed" : "failed" };
+    });
+
+    if (verification.outcome === "locked") {
+      return reply.code(429).send({ error: "Too many failed attempts. Try again in 15 minutes." });
+    }
+
+    if (verification.outcome === "not_found") {
       return reply.code(404).send({
         error: channel === "email"
           ? "No OTP challenge found for this email address."
@@ -427,52 +498,7 @@ export async function registerAuthRoutes(app) {
       });
     }
 
-    const failedAttemptsResult = await query(
-      `
-        SELECT COUNT(*)::int AS failed_count
-        FROM otp_challenges
-        WHERE identifier = $1
-          AND channel = $2
-          AND created_at > NOW() - INTERVAL '15 minutes'
-          AND verified_at IS NULL
-          AND failed_at IS NOT NULL
-      `,
-      [identifier, channel]
-    );
-
-    if ((failedAttemptsResult.rows[0]?.failed_count || 0) >= 5) {
-      return reply.code(429).send({ error: "Too many failed attempts. Try again in 15 minutes." });
-    }
-
-    const computedHash = hashOtp(identifier, code, channel);
-    const computedBuf = Buffer.from(computedHash, "hex");
-    const storedBuf = Buffer.from(challenge.otp_hash, "hex");
-    const matches = computedBuf.length === storedBuf.length && crypto.timingSafeEqual(computedBuf, storedBuf);
-    if (!matches) {
-      await query(
-        `
-          UPDATE otp_challenges
-          SET failed_at = NOW()
-          WHERE id = $1
-        `,
-        [challenge.id]
-      );
-      return reply.code(401).send({ error: "OTP verification failed." });
-    }
-
-    const consumedResult = await query(
-      `
-        UPDATE otp_challenges
-        SET verified_at = NOW()
-        WHERE id = $1
-          AND verified_at IS NULL
-          AND expires_at > NOW()
-        RETURNING id
-      `,
-      [challenge.id]
-    );
-
-    if (!consumedResult.rows[0]) {
+    if (verification.outcome === "failed") {
       return reply.code(401).send({ error: "OTP verification failed." });
     }
 

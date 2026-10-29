@@ -232,11 +232,15 @@ test("8b. Operator detail shows every metric in three columns matching the API",
 test("9. sign out calls logout, removes the figures, and a reload shows only sign-in", async () => {
   await expect(page.locator("#kpi-external-value")).not.toHaveText("—");
   const logout = page.waitForRequest((r) => r.url().includes("/admin/auth/logout") && r.method() === "POST");
+  const logoutResponse = page.waitForResponse((r) => r.url().includes("/admin/auth/logout") && r.request().method() === "POST");
   await page.click("#signout-button");
   expect((await logout).headers().authorization).toMatch(/^Bearer /);
   await expect(page.locator("#signin-screen")).toBeVisible();
   await expect(page.locator("#kpi-external-value")).toHaveText("—");
   await expect(page.locator("#admin-email")).toHaveText("");
+  const response = await logoutResponse;
+  expect(response.status(), "logout response status").toBeGreaterThanOrEqual(200);
+  expect(response.status(), "logout response status").toBeLessThan(300);
 
   const revoked = await withDb((db) => db.query(
     "SELECT COUNT(*)::int AS open FROM admin_sessions WHERE admin_user_id = $1 AND revoked_at IS NULL",

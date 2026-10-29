@@ -334,11 +334,12 @@ test("E5: concurrent sign-ins on one device serialize and leave one active sessi
       deviceIdentity: initial.deviceIdentity,
       code: emailCode
     });
-    const firstVerifierPid = await waitForValue(
-      () => poolRecorder.state.transactionPids.at(-1),
-      (value) => Number.isInteger(value),
-      5000
-    );
+    const [firstVerifierPid] = await waitForBackendsBlockedBy(database, blockerPid, [
+      {
+        description: "email verifier device activity update",
+        pattern: DEVICE_ACTIVITY_UPDATE
+      }
+    ], 5000);
     smsVerification = app.inject({
       method: "POST",
       url: "/auth/otp/verify",
@@ -350,11 +351,6 @@ test("E5: concurrent sign-ins on one device serialize and leave one active sessi
         public_key: `public-key-${initial.deviceIdentity}`
       }
     });
-    const secondRequestPid = await waitForValue(
-      () => poolRecorder.state.transactionPids.find((pid) => pid !== firstVerifierPid),
-      (value) => Number.isInteger(value),
-      5000
-    );
     const [emailWaiterPid, smsWaiterPid] = await waitForBackendsBlockedBy(database, blockerPid, [
       {
         description: "email verifier device activity update",
@@ -363,10 +359,12 @@ test("E5: concurrent sign-ins on one device serialize and leave one active sessi
       },
       {
         description: "SMS verifier phone verification or device activity update",
-        pattern: SMS_PHONE_VERIFICATION_OR_DEVICE_ACTIVITY_UPDATE,
-        pid: secondRequestPid
+        pattern: SMS_PHONE_VERIFICATION_OR_DEVICE_ACTIVITY_UPDATE
       }
     ], 5000);
+    const secondRequestPid = poolRecorder.state.transactionPids.find((pid) => (
+      pid !== firstVerifierPid && pid === smsWaiterPid
+    ));
     assert.notEqual(emailWaiterPid, smsWaiterPid);
     for (const pid of [emailWaiterPid, smsWaiterPid]) {
       assert.ok(
