@@ -8,7 +8,7 @@ import {
   buildAttestationEnvelope,
   exportPublishedVerificationKey,
   getVerificationKeyMetadata,
-  verifyAttestationPayload
+  verifyAttestationSignature
 } from "../attestation-signing.js";
 
 export async function registerAttestRoutes(app) {
@@ -99,8 +99,8 @@ export async function registerAttestRoutes(app) {
 
     await query(
       `
-        INSERT INTO attestations (vt_id, device_identity, phone_number, ledger_root_hash, window_start, window_end, entry_count, server_signature, status, issued_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'VALID', $9)
+        INSERT INTO attestations (vt_id, device_identity, phone_number, ledger_root_hash, window_start, window_end, entry_count, server_signature, status, issued_at, signing_kid)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'VALID', $9, $10)
       `,
       [
         attestation.vt_id,
@@ -111,7 +111,8 @@ export async function registerAttestRoutes(app) {
         attestation.window_end,
         attestation.entry_count,
         attestation.server_signature,
-        attestation.issued_at
+        attestation.issued_at,
+        attestation.signing_kid
       ]
     );
 
@@ -169,6 +170,8 @@ export async function registerAttestRoutes(app) {
         attestation_payload: demoAttestation.attestation_payload,
         signature_algorithm: verificationKeyMetadata.signature_algorithm,
         verification_key_url: verificationKeyMetadata.verification_key_url,
+        verification_key_kid: demoAttestation.signing_kid,
+        verification_key_status: "active",
         is_demo: true
       };
     }
@@ -201,12 +204,17 @@ export async function registerAttestRoutes(app) {
     const signatureAlgorithm = verificationKeyMetadata.signature_algorithm;
     const verificationKeyUrl = verificationKeyMetadata.verification_key_url;
 
-    if (!verifyAttestationPayload(attestationPayload, attestation.server_signature)) {
-      return { status: "INVALID" };
-    }
-
-    if (!attestation.server_signature) {
-      return { status: "INVALID" };
+    const verification = verifyAttestationSignature(
+      attestationPayload,
+      attestation.server_signature,
+      { kid: attestation.signing_kid, issuedAt: attestation.issued_at }
+    );
+    if (!verification.ok) {
+      return {
+        status: "INVALID",
+        verification_key_kid: verification.kid,
+        verification_key_status: verification.key_status
+      };
     }
 
     // Look up key rotation events
@@ -239,7 +247,9 @@ export async function registerAttestRoutes(app) {
       server_signature: attestation.server_signature,
       attestation_payload: attestationPayload,
       signature_algorithm: signatureAlgorithm,
-      verification_key_url: verificationKeyUrl
+      verification_key_url: verificationKeyUrl,
+      verification_key_kid: verification.kid,
+      verification_key_status: verification.key_status
     };
   });
 }

@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS attestations (
   window_end       TIMESTAMPTZ NOT NULL,
   entry_count      INTEGER NOT NULL,
   server_signature TEXT NOT NULL,
+  signing_kid      TEXT,
   status           TEXT NOT NULL DEFAULT 'VALID',
   issued_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

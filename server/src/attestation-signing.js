@@ -8,7 +8,10 @@ export const ACCOUNT_DEVICES_ATTESTATION_SCOPE_DESCRIPTION = "This report reflec
 export const ATTESTATION_SIGNATURE_ALGORITHM = "ECDSA_P256_SHA256_P1363";
 
 let cachedKeyMaterial = null;
+let cachedKeyRingFingerprint = null;
 let warnedAboutEphemeralKey = false;
+
+export const OFFLINE_VERIFICATION_LIMITATION = "Anyone holding a report can check its signature against the keys listed here. For a report signed by a retired key, that check shows only that the retired key signed it. A report's own date is written by whoever signs it, and a retired key may have been exposed, so it cannot prove when the report was issued. To confirm a report signed by a retired key, look it up at konfirmata.com/verify/<report id>, which checks Konfirmata's own issuance record. Reports signed by the active key are not affected.";
 
 function canonicalizeVerificationJwk(jwk) {
   return JSON.stringify({
@@ -27,8 +30,11 @@ function getVerificationKeyUrl() {
   return config.verificationKeyUrl || `${config.verifyBaseUrl}/.well-known/verification-key.json`;
 }
 
-function buildKeyMaterial(privateKey) {
-  const publicKey = crypto.createPublicKey(privateKey);
+function buildPublicKeyMaterial(publicKey) {
+  if (publicKey.asymmetricKeyType !== "ec"
+      || publicKey.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
+    throw new Error("Attestation keys must use EC P-256.");
+  }
   const jwk = publicKey.export({ format: "jwk" });
   const publicJwk = {
     kty: jwk.kty,
@@ -46,7 +52,6 @@ function buildKeyMaterial(privateKey) {
     .digest("hex")
     .slice(0, 16);
   return {
-    privateKey,
     publicKey,
     publicJwk,
     publicKeySpkiPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
@@ -54,31 +59,99 @@ function buildKeyMaterial(privateKey) {
   };
 }
 
-function getKeyMaterial() {
-  if (cachedKeyMaterial) return cachedKeyMaterial;
+function buildActiveKeyMaterial(privateKey) {
+  return {
+    ...buildPublicKeyMaterial(crypto.createPublicKey(privateKey)),
+    privateKey,
+    status: "active",
+    retiredAt: null
+  };
+}
 
+function buildRetiredKeyMaterial(entry) {
+  return {
+    ...buildPublicKeyMaterial(crypto.createPublicKey({
+      key: entry.public_key_spki_pem,
+      format: "pem",
+      type: "spki"
+    })),
+    privateKey: null,
+    status: "retired",
+    retiredAt: entry.retired_at
+  };
+}
+
+function keyRingFingerprint() {
+  return JSON.stringify({
+    active: config.serverAttestationPrivateKeyPem || "",
+    retired: config.serverAttestationRetiredKeys || []
+  });
+}
+
+function getKeyRing() {
+  const fingerprint = keyRingFingerprint();
+  if (cachedKeyMaterial && cachedKeyRingFingerprint === fingerprint) return cachedKeyMaterial;
+
+  let active;
   if (config.serverAttestationPrivateKeyPem) {
-    cachedKeyMaterial = buildKeyMaterial(
+    active = buildActiveKeyMaterial(
       crypto.createPrivateKey({
         key: config.serverAttestationPrivateKeyPem,
         format: "pem"
       })
     );
-    return cachedKeyMaterial;
+  } else {
+    if (config.nodeEnv === "production") {
+      throw new Error("SERVER_ATTESTATION_PRIVATE_KEY_PEM is required in production.");
+    }
+
+    if (!warnedAboutEphemeralKey) {
+      console.warn("SERVER_ATTESTATION_PRIVATE_KEY_PEM is not set; using an ephemeral development attestation key.");
+      warnedAboutEphemeralKey = true;
+    }
+
+    const { privateKey } = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    active = buildActiveKeyMaterial(privateKey);
   }
 
-  if (config.nodeEnv === "production") {
-    throw new Error("SERVER_ATTESTATION_PRIVATE_KEY_PEM is required in production.");
-  }
-
-  if (!warnedAboutEphemeralKey) {
-    console.warn("SERVER_ATTESTATION_PRIVATE_KEY_PEM is not set; using an ephemeral development attestation key.");
-    warnedAboutEphemeralKey = true;
-  }
-
-  const { privateKey } = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
-  cachedKeyMaterial = buildKeyMaterial(privateKey);
+  const retired = (config.serverAttestationRetiredKeys || []).map(buildRetiredKeyMaterial);
+  cachedKeyMaterial = { active, retired, all: [active, ...retired] };
+  cachedKeyRingFingerprint = fingerprint;
   return cachedKeyMaterial;
+}
+
+function decodeSignature(signatureBase64) {
+  const value = String(signatureBase64 || "");
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0) return null;
+  const signature = Buffer.from(value, "base64");
+  if (signature.length !== 64 || signature.toString("base64") !== value) return null;
+  return signature;
+}
+
+function signatureMatches(payload, signature, key) {
+  try {
+    return crypto.verify("sha256", Buffer.from(String(payload), "utf8"), {
+      key: key.publicKey,
+      dsaEncoding: "ieee-p1363"
+    }, signature);
+  } catch {
+    return false;
+  }
+}
+
+export function signatureMatchesPublicKey(payload, signatureBase64, publicKeyPem) {
+  try {
+    const signature = decodeSignature(signatureBase64);
+    if (!signature) return false;
+    const publicKey = buildPublicKeyMaterial(crypto.createPublicKey({
+      key: publicKeyPem,
+      format: "pem",
+      type: "spki"
+    }));
+    return signatureMatches(payload, signature, publicKey);
+  } catch {
+    return false;
+  }
 }
 
 export function buildAttestationPayload(fields) {
@@ -97,23 +170,60 @@ export function buildAttestationPayload(fields) {
 }
 
 export function signAttestationPayload(payload) {
+  const active = getKeyRing().active;
   const signature = crypto.sign("sha256", Buffer.from(payload, "utf8"), {
-    key: getKeyMaterial().privateKey,
+    key: active.privateKey,
     dsaEncoding: "ieee-p1363"
   });
-  return signature.toString("base64");
+  return { signature: signature.toString("base64"), kid: active.kid };
 }
 
 export function verifyAttestationPayload(payload, signatureBase64) {
-  try {
-    const signature = Buffer.from(String(signatureBase64 || ""), "base64");
-    return crypto.verify("sha256", Buffer.from(payload, "utf8"), {
-      key: getKeyMaterial().publicKey,
-      dsaEncoding: "ieee-p1363"
-    }, signature);
-  } catch (error) {
-    return false;
+  const signature = decodeSignature(signatureBase64);
+  return Boolean(signature && signatureMatches(payload, signature, getKeyRing().active));
+}
+
+export function verifyAttestationSignature(payload, signatureBase64, { kid = null, issuedAt } = {}) {
+  const failure = { ok: false, kid: null, key_status: null };
+  const signature = decodeSignature(signatureBase64);
+  if (issuedAt === null || issuedAt === undefined || typeof issuedAt === "boolean") return failure;
+  const issuedAtMs = new Date(issuedAt).getTime();
+  if (!signature || !Number.isFinite(issuedAtMs)) return failure;
+
+  const ring = getKeyRing();
+  const requestedKid = String(kid || "").trim();
+  const candidates = requestedKid
+    ? ring.all.filter((key) => key.kid === requestedKid)
+    : ring.all;
+  if (!candidates.length) return failure;
+
+  for (const key of candidates) {
+    if (!signatureMatches(payload, signature, key)) {
+      if (requestedKid) {
+        return { ok: false, kid: key.kid, key_status: key.status };
+      }
+      continue;
+    }
+    const beforeRetirement = key.status === "active"
+      || issuedAtMs < new Date(key.retiredAt).getTime();
+    return { ok: beforeRetirement, kid: key.kid, key_status: key.status };
   }
+  return failure;
+}
+
+export function findSigningKey(payload, signatureBase64) {
+  const signature = decodeSignature(signatureBase64);
+  if (!signature) return null;
+  const match = getKeyRing().all.find((key) => signatureMatches(payload, signature, key));
+  return match?.kid || null;
+}
+
+export function getVerificationKeyKid(publicKeyPem) {
+  return buildPublicKeyMaterial(crypto.createPublicKey({
+    key: publicKeyPem,
+    format: "pem",
+    type: "spki"
+  })).kid;
 }
 
 export function buildAttestationEnvelope(fields) {
@@ -138,6 +248,7 @@ export function buildAttestationEnvelope(fields) {
     attestation_scope: attestationScope,
     scope_description: scopeDescription
   });
+  const signed = signAttestationPayload(attestationPayload);
   return {
     vt_id: vtId,
     device_identity: deviceIdentity,
@@ -154,29 +265,32 @@ export function buildAttestationEnvelope(fields) {
     verification_key_url: getVerificationKeyUrl(),
     signature_algorithm: ATTESTATION_SIGNATURE_ALGORITHM,
     attestation_payload: attestationPayload,
-    server_signature: signAttestationPayload(attestationPayload)
+    server_signature: signed.signature,
+    signing_kid: signed.kid
   };
 }
 
 export function exportPublishedVerificationKey() {
-  const material = getKeyMaterial();
+  const ring = getKeyRing();
+  const material = ring.active;
   return {
     version: 1,
     verification_key_url: getVerificationKeyUrl(),
     signature_algorithm: ATTESTATION_SIGNATURE_ALGORITHM,
     signature_encoding: "base64-raw-p1363",
     public_key_spki_pem: material.publicKeySpkiPem,
-    keys: [
-      {
-        ...material.publicJwk,
-        kid: material.kid
-      }
-    ]
+    keys: ring.all.map((key) => ({
+      ...key.publicJwk,
+      kid: key.kid,
+      status: key.status,
+      ...(key.status === "retired" ? { not_after: key.retiredAt } : {})
+    })),
+    notes: OFFLINE_VERIFICATION_LIMITATION
   };
 }
 
 export function getVerificationKeyMetadata() {
-  const material = getKeyMaterial();
+  const material = getKeyRing().active;
   return {
     verification_key_url: getVerificationKeyUrl(),
     signature_algorithm: ATTESTATION_SIGNATURE_ALGORITHM,

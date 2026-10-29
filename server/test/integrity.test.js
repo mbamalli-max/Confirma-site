@@ -147,13 +147,13 @@ test("C2: buildAttestationPayload coerces Date fields to ISO 8601 strings", () =
 
 test("D1: attestation sign/verify round-trip returns true", () => {
   const payload = buildAttestationPayload(PAYLOAD_FIELDS);
-  const sig = signAttestationPayload(payload);
-  assert.equal(verifyAttestationPayload(payload, sig), true);
+  const { signature } = signAttestationPayload(payload);
+  assert.equal(verifyAttestationPayload(payload, signature), true);
 });
 
 test("D2: attestation verify returns false for a tampered payload", () => {
   const payload = buildAttestationPayload(PAYLOAD_FIELDS);
-  const sig = signAttestationPayload(payload);
+  const { signature } = signAttestationPayload(payload);
   const tampered = payload.replace('"VALID"', '"TAMPERED"');
-  assert.equal(verifyAttestationPayload(tampered, sig), false);
+  assert.equal(verifyAttestationPayload(tampered, signature), false);
 });

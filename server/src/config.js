@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import crypto from "node:crypto";
 import net from "node:net";
 
 dotenv.config();
@@ -18,6 +19,156 @@ function normalizeOtpChannel(rawValue) {
 
 function normalizeMultilineSecret(rawValue) {
   return String(rawValue || "").replace(/\\n/g, "\n").trim();
+}
+
+function canonicalizeVerificationJwk(jwk) {
+  return JSON.stringify({
+    kty: jwk.kty,
+    crv: jwk.crv,
+    x: jwk.x,
+    y: jwk.y,
+    use: "sig",
+    alg: "ES256",
+    key_ops: ["verify"],
+    ext: true
+  });
+}
+
+function verificationKeyIdentity(publicKey) {
+  const jwk = publicKey.export({ format: "jwk" });
+  const publicJwk = {
+    kty: jwk.kty,
+    crv: jwk.crv,
+    x: jwk.x,
+    y: jwk.y,
+    use: "sig",
+    alg: "ES256",
+    key_ops: ["verify"],
+    ext: true
+  };
+  return {
+    kid: crypto.createHash("sha256")
+      .update(canonicalizeVerificationJwk(publicJwk))
+      .digest("hex")
+      .slice(0, 16),
+    spkiDer: publicKey.export({ type: "spki", format: "der" })
+  };
+}
+
+function parseUtcTimestamp(value) {
+  const match = String(value || "").match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/
+  );
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second, fraction = ""] = match;
+  const milliseconds = Number(fraction.padEnd(3, "0"));
+  const timestamp = Date.UTC(
+    Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second), milliseconds
+  );
+  const parsed = new Date(timestamp);
+  if (parsed.getUTCFullYear() !== Number(year)
+      || parsed.getUTCMonth() !== Number(month) - 1
+      || parsed.getUTCDate() !== Number(day)
+      || parsed.getUTCHours() !== Number(hour)
+      || parsed.getUTCMinutes() !== Number(minute)
+      || parsed.getUTCSeconds() !== Number(second)
+      || parsed.getUTCMilliseconds() !== milliseconds) {
+    return null;
+  }
+  return parsed;
+}
+
+export function parseServerAttestationRetiredKeys(rawValue, {
+  activePrivateKeyPem = "",
+  now = new Date()
+} = {}) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return [];
+
+  let entries;
+  try {
+    entries = JSON.parse(raw);
+  } catch {
+    throw new Error("SERVER_ATTESTATION_RETIRED_KEYS must be a JSON array.");
+  }
+  if (!Array.isArray(entries)) {
+    throw new Error("SERVER_ATTESTATION_RETIRED_KEYS must be a JSON array.");
+  }
+
+  let activeIdentity = null;
+  if (activePrivateKeyPem) {
+    try {
+      const activePrivateKey = crypto.createPrivateKey({ key: activePrivateKeyPem, format: "pem" });
+      activeIdentity = verificationKeyIdentity(crypto.createPublicKey(activePrivateKey));
+    } catch {
+      throw new Error("SERVER_ATTESTATION_PRIVATE_KEY_PEM must contain a valid private key.");
+    }
+  }
+
+  const nowMs = new Date(now).getTime();
+  if (!Number.isFinite(nowMs)) {
+    throw new Error("Attestation key validation requires a valid current time.");
+  }
+  const earliestRetirement = Date.parse("2026-01-01T00:00:00.000Z");
+  const latestRetirement = nowMs + 7 * 24 * 60 * 60 * 1000;
+  const seenKids = new Set();
+
+  return entries.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("Each retired attestation key must be an object.");
+    }
+    const publicKeyPem = normalizeMultilineSecret(entry.public_key_spki_pem);
+    if (/PRIVATE KEY/i.test(publicKeyPem)) {
+      throw new Error("Retired attestation keys must contain public keys only.");
+    }
+    if (!/^-----BEGIN PUBLIC KEY-----[\s\S]+-----END PUBLIC KEY-----$/.test(publicKeyPem)) {
+      throw new Error("Each retired attestation key must contain a valid SPKI public key.");
+    }
+
+    let publicKey;
+    let identity;
+    try {
+      publicKey = crypto.createPublicKey({ key: publicKeyPem, format: "pem", type: "spki" });
+      if (publicKey.asymmetricKeyType !== "ec"
+          || publicKey.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
+        throw new Error("wrong key type");
+      }
+      identity = verificationKeyIdentity(publicKey);
+    } catch {
+      throw new Error("Each retired attestation key must be an EC P-256 public key.");
+    }
+
+    if (seenKids.has(identity.kid)) {
+      throw new Error("Retired attestation key kids must be unique.");
+    }
+    seenKids.add(identity.kid);
+    if (activeIdentity
+        && identity.spkiDer.length === activeIdentity.spkiDer.length
+        && crypto.timingSafeEqual(identity.spkiDer, activeIdentity.spkiDer)) {
+      throw new Error("A retired attestation key must not equal the active key.");
+    }
+    if (activeIdentity && identity.kid === activeIdentity.kid) {
+      throw new Error("Active and retired attestation key kids must be unique.");
+    }
+
+    const retiredAt = parseUtcTimestamp(entry.retired_at);
+    if (!retiredAt) {
+      throw new Error("Each retired attestation key must have a valid ISO 8601 UTC retired_at timestamp.");
+    }
+    const retiredAtMs = retiredAt.getTime();
+    if (retiredAtMs < earliestRetirement) {
+      throw new Error("Retired attestation key timestamps must not be before 2026-01-01.");
+    }
+    if (retiredAtMs > latestRetirement) {
+      throw new Error("Retired attestation key timestamps must not be more than 7 days in the future.");
+    }
+
+    return {
+      public_key_spki_pem: publicKey.export({ type: "spki", format: "pem" }).toString(),
+      retired_at: retiredAt.toISOString(),
+      kid: identity.kid
+    };
+  });
 }
 
 function normalizeBaseUrl(rawValue, fallback) {
@@ -107,6 +258,8 @@ export const config = {
   serverAttestationPrivateKeyPem: normalizeMultilineSecret(
     process.env.SERVER_ATTESTATION_PRIVATE_KEY_PEM || process.env.SERVER_ATTESTATION_PRIVATE_KEY || ""
   ),
+  serverAttestationRetiredKeysRaw: String(process.env.SERVER_ATTESTATION_RETIRED_KEYS || "").trim(),
+  serverAttestationRetiredKeys: [],
   jwtExpiry: process.env.JWT_EXPIRY || "30d",
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES || 10),
   otpRateLimitPerHour: Number(process.env.OTP_RATE_LIMIT_PER_HOUR || 50),
@@ -153,6 +306,17 @@ export function validateRuntimeConfig() {
   const adminJwtExpiry = getAdminJwtExpiry();
   const adminKAnonThresholdValid = Number.isInteger(config.adminKAnonThreshold)
     && config.adminKAnonThreshold >= 5;
+
+  try {
+    config.serverAttestationRetiredKeys = parseServerAttestationRetiredKeys(
+      config.serverAttestationRetiredKeysRaw,
+      { activePrivateKeyPem: config.serverAttestationPrivateKeyPem }
+    );
+  } catch (error) {
+    config.serverAttestationRetiredKeys = [];
+    if (strictMode) errors.push(error.message);
+    else warnings.push(error.message);
+  }
 
   const adminTotpKeyRaw = String(config.adminTotpEncKey || "");
   const adminTotpKeyValid = /^[0-9a-fA-F]{64}$/.test(adminTotpKeyRaw)

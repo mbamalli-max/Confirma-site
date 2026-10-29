@@ -221,9 +221,10 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = n
         status,
         issued_at,
         attestation_scope,
-        scope_description
+        scope_description,
+        signing_kid
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'VALID', $9, $10, $11)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'VALID', $9, $10, $11, $12)
     `,
     [
       attestation.vt_id,
@@ -236,7 +237,8 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = n
       attestation.server_signature,
       attestation.issued_at,
       attestation.attestation_scope,
-      attestation.scope_description
+      attestation.scope_description,
+      attestation.signing_kid
     ]
   );
 

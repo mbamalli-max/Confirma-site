@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE attestations
+  ADD COLUMN IF NOT EXISTS signing_kid TEXT;
+
+COMMIT;
