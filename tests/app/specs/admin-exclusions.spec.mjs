@@ -445,12 +445,16 @@ test("C10. tabs and settings sections switch without reloading; sign-out hides e
   const { ctx, page } = await ownerPage(browser);
   try {
     await page.evaluate(() => { window.__sameDocument = true; });
-    for (const tab of ["reports", "settings", "dashboard"]) {
+    for (const tab of ["dashboard", "settings"]) {
       await page.click(`#tabs a[data-tab="${tab}"]`);
       await expect(page.locator(`#${tab}-screen`)).toBeVisible();
       await expect(page.locator(`#tabs a[data-tab="${tab}"]`)).toHaveAttribute("aria-current", "page");
-      for (const other of ["dashboard", "reports", "settings"].filter((t) => t !== tab)) await expect(page.locator(`#${other}-screen`)).toBeHidden();
+      for (const other of ["dashboard", "settings"].filter((t) => t !== tab)) await expect(page.locator(`#${other}-screen`)).toBeHidden();
     }
+    await page.evaluate(() => { location.hash = "#reports"; });
+    await expect(page.locator("#dashboard-screen")).toBeVisible();
+    await expect(page.locator("#settings-screen")).toBeHidden();
+    await expect(page.locator("#reports-screen")).toHaveCount(0);
     await page.click('#tabs a[data-tab="settings"]');
     for (const sub of ["quality", "detail", "methodology", "exclusions"]) {
       await page.click(`.subtabs a[data-sub="${sub}"]`);
@@ -506,7 +510,6 @@ test("C11. the website look: colours, type and contrast", async ({ browser }) =>
     const white = [255, 255, 255];
     const pairs = [
       ["#brand-bar .brand", [26, 60, 52]],
-      ["#operator-label", paper],
       [".fresh", paper],
       [".kpi-sub", white],
       [".kpi-label", white],

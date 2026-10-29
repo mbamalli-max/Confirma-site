@@ -131,7 +131,8 @@ test("3. the headline figures show the External column of the API, with labels a
   expect(period.range).toBe("90d");
   await kpisMatch(page, all, period, "90d");
   await expect(page.locator("#kpi-submitting-def")).toHaveText(all.metrics.find((m) => m.key === "accounts_submitting_records").definition);
-  await expect(page.locator("#operator-label")).toHaveText("Internal analytics — owner only. For sharing, use Reports.");
+  await expect(page.locator("#operator-label")).toHaveCount(0);
+  await expect(page.locator('#tabs a[data-tab="reports"]')).toHaveCount(0);
   await expect(page.locator("#footer-note")).toHaveText("Operator-generated internal metrics. Aggregate counts only. Not a user-record attestation.");
   await expect(page.locator("#activation-note")).toContainText("cannot be computed by the server");
 });
@@ -213,6 +214,7 @@ test("8b. Operator detail shows every metric in three columns matching the API",
   await page.evaluate(() => { location.hash = "#settings/detail"; });
   const body = await (await detail).json();
   await expect(page.locator("#settings-detail")).toBeVisible();
+  await expect(page.locator("#settings-detail")).not.toContainText("Never for sharing");
   await expect(page.locator("#detail-table thead th")).toHaveText(["Measure", "External", "Excluded", "All"]);
   await expect(page.locator("#detail-table tbody tr")).toHaveCount(body.metrics.length);
   for (const metric of body.metrics) {
@@ -312,11 +314,13 @@ function sampleSeries(metric, bucket, periods) {
   }
   return { api_version: 2, audience: "operator_only", suppression: "none", metric, bucket, periods: out, as_of: SERVED_AS_OF, stale: false };
 }
-function sampleBreakdown(dimension, result = { status: "published", cells: [{ category: dimension === "country" ? "NG" : dimension === "sector" ? "trade_retail" : "ng_market_trader", count: 7 }, { category: "other", count: 5 }], total: 12 }, k = 5) {
+function sampleBreakdown(dimension, result = { status: "published", cells: dimension === "sector"
+  ? [{ category: "trade_retail", count: 7 }]
+  : [{ category: dimension === "country" ? "NG" : "ng_market_trader", count: 7 }, { category: "other", count: 5 }], total: dimension === "sector" ? 7 : 12 }, k = 5) {
   return {
-    api_version: 2, audience: "owner_only", release_status: "single_reading", suppression: "minimum_cell_size", minimum_cell_size: k,
+    api_version: 2, audience: "owner_only", release_status: "single_reading", suppression: dimension === "sector" ? "none" : "minimum_cell_size", minimum_cell_size: k,
     scope: "external_only", range: "all_time", as_of: SERVED_AS_OF, stale: false, dimension, dimension_label: dimension,
-    statements: ["Counts all accounts except those the owner has identified as internal test, demonstration or administrator accounts.", `${dimension === "country" ? "Country" : dimension === "sector" ? "Sector" : "Business type"} is the stored code. Provenance statement.`],
+    statements: ["Counts all accounts except those the owner has identified as internal test, demonstration or administrator accounts.", `${dimension === "country" ? "Country" : dimension === "sector" ? "Sector" : "Business type"} is the stored code. Provenance statement.`, ...(dimension === "sector" ? ["Every sector is shown with its exact count, including small counts."] : [])],
     result
   };
 }
@@ -711,7 +715,7 @@ test("12. phone width: no sideways scroll and 44px touch targets on every screen
       }
     };
     await tall(["#signout-button", "#period-select", "#growth-bucket", "#tabs a", "details.info > summary", ".series-details > summary"]);
-    for (const hash of ["#reports", "#settings/exclusions", "#settings/quality", "#settings/detail", "#settings/methodology"]) {
+    for (const hash of ["#settings/exclusions", "#settings/quality", "#settings/detail", "#settings/methodology"]) {
       await target.evaluate((h) => { location.hash = h; }, hash);
       await target.waitForTimeout(150);
       expect(await noSideways(), hash).toBe(true);
@@ -864,7 +868,7 @@ test("D3. audience bars show labelled categories; withheld reasons are distinct 
     await servedSignIn(published.target);
     const t = published.target;
     await expect(t.locator("#aud-country .bar-row .bar-label")).toHaveText(["Nigeria (NG)", "Other (combined)"]);
-    await expect(t.locator("#aud-sector .bar-row .bar-label")).toHaveText(["Trade & Retail", "Other (combined)"]);
+    await expect(t.locator("#aud-sector .bar-row .bar-label")).toHaveText(["Trade & Retail"]);
     await expect(t.locator("#aud-business_type .bar-row .bar-label")).toHaveText(["Market Trader (NG)", "Other (combined)"]);
     await expect(t.locator("#aud-country .bar-row .bar-count")).toHaveText(["7", "5"]);
     await expect(t.locator("#aud-country")).toContainText("Other combines two or more categories");
@@ -1041,9 +1045,9 @@ test("D10. an older exclusions or status answer never replaces a newer one in th
 test("D11. sector categories: every business in a sector, no business profile apart, defaults counted only in Data quality", async ({ browser }) => {
   const results = {
     sector: sampleBreakdown("sector", { status: "published", cells: [
-      { category: "agriculture", count: 6 }, { category: "other_activity", count: 6 },
-      { category: "no_business_profile", count: 5 }, { category: "other", count: 5 }
-    ], total: 22 }),
+      { category: "transport_logistics", count: 2 }, { category: "agriculture", count: 2 },
+      { category: "trade_retail", count: 3 }, { category: "no_business_profile", count: 1 }
+    ], total: 8 }),
     business_type: sampleBreakdown("business_type", { status: "published", cells: [
       { category: "no_business_profile", count: 6 }, { category: "no_valid_code", count: 5 }, { category: "unlisted", count: 5 }
     ], total: 16 }),
@@ -1052,7 +1056,8 @@ test("D11. sector categories: every business in a sector, no business profile ap
   const { ctx, target } = await servedPage(browser, async ({ url, send }) => (url.pathname === "/admin/v2/breakdown" ? send(200, results[url.searchParams.get("dimension")]) : undefined));
   try {
     await servedSignIn(target);
-    await expect(target.locator("#aud-sector .bar-row .bar-label")).toHaveText(["Agriculture, Livestock & Fishing", "Other business", "No business profile", "Other (combined)"]);
+    await expect(target.locator("#aud-sector .bar-row .bar-label")).toHaveText(["Trade & Retail", "Agriculture, Livestock & Fishing", "Transport & Logistics", "No business profile"]);
+    await expect(target.locator("#aud-sector")).not.toContainText("Other combines");
     await expect(target.locator("#aud-business_type .bar-row .bar-label")).toHaveText(["No business profile", "No business type", "Not listed in the catalog"]);
     await expect(target.locator("#aud-country .withheld")).toHaveText("Withheld — fewer than half of External accounts have a business profile.");
     await expect(target.locator("#dashboard-screen")).not.toContainText(/not yet categori[sz]ed|by default/i);
@@ -1067,6 +1072,7 @@ test("D11. sector categories: every business in a sector, no business profile ap
     const mentions = await target.evaluate(() => document.body.textContent.split("not an official industry classification").length - 1);
     expect(mentions).toBe(1);
     await expect(target.locator("#settings-methodology")).toContainText("not an official industry classification");
+    await expect(target.locator("#settings-methodology")).toContainText("Country and business type categories too small to show safely are withheld or combined as \"Other\". Sectors are shown with their exact counts, however small. Withheld figures are never shown as zero.");
   } finally {
     await ctx.close();
   }

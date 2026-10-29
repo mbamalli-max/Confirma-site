@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
+  discloseAllCells,
   discloseBreakdown,
   discloseCount,
   discloseSubset
@@ -173,6 +174,31 @@ test("breakdown handles boundaries, the reviewed ceiling case, and order indepen
   assert.deepEqual(discloseBreakdown(cells, 5, 10), discloseBreakdown(shuffled, 5, 10));
   assert.throws(() => discloseBreakdown([{ category: "other", count: 5 }], 5, 1));
   assert.throws(() => discloseBreakdown([{ category: "a", count: 1 }, { category: "a", count: 2 }], 5, 2));
+});
+
+test("all-cell disclosure validates like breakdowns, drops zeroes, and orders every count", () => {
+  assert.deepEqual(discloseAllCells([
+    { category: "z", count: 2 },
+    { category: "a", count: 2 },
+    { category: "zero", count: 0 },
+    { category: "b", count: 3 }
+  ], 5), {
+    status: "published",
+    cells: [{ category: "b", count: 3 }, { category: "a", count: 2 }, { category: "z", count: 2 }],
+    total: 7
+  });
+  assert.deepEqual(discloseAllCells([{ category: "a", count: 3 }, { category: "b", count: 1 }], 5), {
+    status: "withheld",
+    reason: "total_below_minimum",
+    total: { status: "fewer_than_k" }
+  });
+  for (const cells of [
+    [{ category: "other", count: 5 }],
+    [{ category: "a", count: 1 }, { category: "a", count: 2 }],
+    [{ category: "a", count: -1 }],
+    [null]
+  ]) assert.throws(() => discloseAllCells(cells, 5));
+  assert.throws(() => discloseAllCells([], 4));
 });
 
 test("P1 and P2: exhaustive k=5 breakdown properties and no pinned hidden category", () => {

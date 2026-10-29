@@ -50,10 +50,8 @@
     </div>
     <nav id="tabs" class="tabs" aria-label="Sections">
       <a href="#dashboard" data-tab="dashboard">Dashboard</a>
-      <a href="#reports" data-tab="reports">Reports</a>
       <a href="#settings" data-tab="settings" class="tab-tool">Settings</a>
     </nav>
-    <p id="operator-label">Internal analytics — owner only. For sharing, use Reports.</p>
     <p id="version-mismatch" class="notice-error" role="alert" hidden>This page and the server are out of step. Reload the page. No figures are shown.</p>
 
     <main id="dashboard-screen" class="screen panel" hidden>
@@ -154,11 +152,6 @@
       </section>
     </main>
 
-    <main id="reports-screen" class="screen panel" hidden>
-      <h1>Reports</h1>
-      <p class="card placeholder">Dated, reviewed reports for sharing will be prepared here once the release design is approved. The dashboard is internal and is not for sharing or export.</p>
-    </main>
-
     <main id="settings-screen" class="screen panel" hidden>
       <h1>Settings</h1>
       <nav class="subtabs" aria-label="Settings sections">
@@ -246,7 +239,7 @@
 
       <section id="settings-detail" class="subpanel" aria-labelledby="detail-title" hidden>
         <h2 id="detail-title">Operator detail</h2>
-        <p class="muted">Exact counts for the owner only, including excluded accounts and technical measures. Never for sharing or export. Definitions are in <a href="#settings/methodology">Methodology</a>.</p>
+        <p class="muted">Exact counts for the owner only, including excluded accounts and technical measures. Definitions are in <a href="#settings/methodology">Methodology</a>.</p>
         <div class="controls">
           <label for="detail-range">Period</label>
           <select id="detail-range">
@@ -272,7 +265,7 @@
         <h3>Timing</h3>
         <p>Records are counted by the time the server received them, not the time recorded on the phone. Activity on a phone that has not synced is not seen until it syncs. The current week or month in a chart is in progress and not complete.</p>
         <h3>Audience figures</h3>
-        <p>Country, sector and business type describe the current profiles of External accounts. Categories too small to show safely are withheld or combined as "Other"; withheld figures are never shown as zero.</p>
+        <p>Country, sector and business type describe the current profiles of External accounts. Country and business type categories too small to show safely are withheld or combined as "Other". Sectors are shown with their exact counts, however small. Withheld figures are never shown as zero.</p>
         <h3>Business sectors</h3>
         <p>Sectors are Konfirmata's own categories for organising businesses; they are not an official industry classification or a certification. Every business profile is in exactly one sector, chosen by its main activity. For a business type in the catalog the sector comes from the catalog. For a business that is not listed it is the sector the account holder chose, or "Other business" when no sector could be determined; those default assignments are not confirmed information, and their number is shown in Data quality. Accounts without a business profile are counted separately. A category is corrected when the account holder picks a more suitable business type, describes the business and picks its sector, or asks for a catalog correction.</p>
         <ul id="method-statements"></ul>

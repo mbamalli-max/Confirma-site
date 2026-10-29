@@ -12,7 +12,7 @@ const PREVIEW_LIFETIME_MS = Number(config.CLASSIFY_PREVIEW_MS) > 0 ? Number(conf
 const UNAVAILABLE_RETRY_MS = Number(config.UNAVAILABLE_RETRY_MS) >= 0 && config.UNAVAILABLE_RETRY_MS !== undefined ? Number(config.UNAVAILABLE_RETRY_MS) : 1500;
 // The figure routes this page understands (server slice B1).
 const API_VERSION = 2;
-const TABS = ["dashboard", "reports", "settings"];
+const TABS = ["dashboard", "settings"];
 const SUBTABS = ["exclusions", "quality", "detail", "methodology"];
 const DIMENSIONS = ["country", "sector", "business_type"];
 
@@ -410,9 +410,13 @@ function renderBreakdown(panel, dimension, data) {
     body.replaceChildren(p);
     return;
   }
-  const max = Math.max(1, ...result.cells.map((c) => c.count));
+  const cells = dimension === "sector"
+    ? [...result.cells].sort((left, right) => right.count - left.count
+      || categoryLabel(dimension, left.category).localeCompare(categoryLabel(dimension, right.category), "en"))
+    : result.cells;
+  const max = Math.max(1, ...cells.map((c) => c.count));
   const list = el("div", "bars");
-  for (const cell of result.cells) {
+  for (const cell of cells) {
     const row = el("div", "bar-row");
     row.dataset.category = cell.category;
     const track = el("div", "track");
