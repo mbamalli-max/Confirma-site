@@ -4582,10 +4582,16 @@ async function confirmAppend() {
       ...state.candidateRecord,
       confirmation_state: "confirmed"
     };
+    // The record and its sync-queue entry are saved together (both or neither).
     const appendedRecord = await appendLedgerRecord(record, writeGuard);
+    await noteRecordQueued();
+    // Everything below is secondary: the record is already saved and queued.
     void checkForAnomalies(appendedRecord);
-    await bumpLabelUsage(record.normalized_label);
-    await queueSyncRecord(appendedRecord, writeGuard);
+    try {
+      await bumpLabelUsage(record.normalized_label);
+    } catch (error) {
+      console.warn("Label usage could not be updated.", error);
+    }
     await updateSyncBadge();
     resetCaptureForm();
     await renderRecentRecords();
@@ -8325,13 +8331,21 @@ function saveSettings(entries = {}, deletes = []) {
   });
 }
 
+// Older queue items may lack a top-level entry_id; their payload still holds the record id.
+function queueLedgerId(item) {
+  const id = Number(item?.entry_id ?? item?.entry_payload?.id);
+  return Number.isFinite(id) ? id : Number.MAX_SAFE_INTEGER;
+}
+
 function getSyncQueueEntries(limit = 25) {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("syncQueue", "readonly");
     const request = tx.objectStore("syncQueue").getAll();
+    // Send in ledger order (record ids only increase), so a record queued late
+    // by the repair still reaches the server before its descendants.
     request.onsuccess = () => resolve(
       request.result
-        .sort((a, b) => a.queue_id - b.queue_id)
+        .sort((a, b) => (queueLedgerId(a) - queueLedgerId(b)) || (a.queue_id - b.queue_id))
         .slice(0, limit)
     );
     request.onerror = () => reject(request.error);
@@ -8550,19 +8564,6 @@ function saveServerResponseProfile(profile, guard, entries = {}) {
   });
 }
 
-function addSyncQueueEntry(item, guard) {
-  return new Promise((resolve, reject) => {
-    const tx = state.db.transaction(["settings", "syncQueue"], "readwrite");
-    let writeBlocked = false;
-    queueWriteAfterInstallGuard(tx.objectStore("settings"), guard, tx, () => {
-      tx.objectStore("syncQueue").add(item);
-    }, () => { writeBlocked = true; });
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error || new Error("Unable to queue this record."));
-    tx.onabort = () => reject(writeBlocked ? recordWriteBlockedError() : (tx.error || new Error("Record queue write was interrupted.")));
-  });
-}
-
 function removeSyncQueueEntries(queueIds) {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("syncQueue", "readwrite");
@@ -8615,14 +8616,36 @@ function getRecords() {
   });
 }
 
+const LEDGER_APPEND_LOCK = "konfirmata-ledger-append";
+const LEDGER_APPEND_MAX_ATTEMPTS = 3;
+
 async function appendLedgerRecord(record, guard) {
-  const last = await getLastRecord();
+  // Tabs take turns where the browser supports it; the head check inside the
+  // write transaction keeps the chain correct either way.
+  const append = () => appendLedgerRecordAndQueue(record, guard);
+  if (typeof navigator !== "undefined" && navigator.locks?.request) {
+    return navigator.locks.request(LEDGER_APPEND_LOCK, append);
+  }
+  return append();
+}
+
+async function appendLedgerRecordAndQueue(record, guard) {
+  for (let attempt = 1; attempt <= LEDGER_APPEND_MAX_ATTEMPTS; attempt += 1) {
+    const last = await getLastRecord();
+    const payload = await buildLedgerPayload(record, last);
+    const written = await writeLedgerRecordAndQueue(payload, last, guard);
+    if (written) return payload;
+  }
+  throw new Error("Unable to save this record.");
+}
+
+async function buildLedgerPayload(record, last) {
   const id = last ? last.id + 1 : 1;
   const confirmedAt = Math.floor(Date.now() / 1000);
   const prevHash = last ? last.entry_hash : "0".repeat(64);
   const entryHash = await sha256(buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash));
   const signature = await signEntryHash(entryHash);
-  const payload = {
+  return {
     ...record,
     id,
     confirmed_at: confirmedAt,
@@ -8633,16 +8656,56 @@ async function appendLedgerRecord(record, guard) {
     device_identity: state.deviceIdentity || "",
     public_key_fingerprint: state.publicKeyFingerprint || null
   };
+}
 
+function buildSyncQueueItem(record) {
+  return {
+    entry_id: record.id,
+    entry_hash: record.entry_hash,
+    device_identity: state.deviceIdentity || "",
+    status: "queued",
+    attempt_count: 0,
+    queued_at: Date.now(),
+    entry_payload: record
+  };
+}
+
+// Resolves true when the record and its queue entry were both written, false
+// when the chain head moved after the hash was computed (the caller recomputes).
+function writeLedgerRecordAndQueue(payload, expectedHead, guard) {
   return new Promise((resolve, reject) => {
-    const tx = state.db.transaction(["settings", "records"], "readwrite");
+    const tx = state.db.transaction(["settings", "records", "syncQueue"], "readwrite");
+    const recordsStore = tx.objectStore("records");
     let writeBlocked = false;
+    let headMoved = false;
     queueWriteAfterInstallGuard(tx.objectStore("settings"), guard, tx, () => {
-      tx.objectStore("records").add(payload);
+      const cursorRequest = recordsStore.openCursor(null, "prev");
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (cursor && cursor.value?.importedFromServer) {
+          cursor.continue();
+          return;
+        }
+        const head = cursor ? cursor.value : null;
+        const sameHead = (head?.id ?? null) === (expectedHead?.id ?? null)
+          && (head?.entry_hash ?? null) === (expectedHead?.entry_hash ?? null);
+        if (!sameHead) {
+          headMoved = true;
+          tx.abort();
+          return;
+        }
+        recordsStore.add(payload);
+        tx.objectStore("syncQueue").add(buildSyncQueueItem(payload));
+      };
     }, () => { writeBlocked = true; });
-    tx.oncomplete = () => resolve(payload);
-    tx.onerror = () => reject(tx.error || new Error("Unable to save this record."));
-    tx.onabort = () => reject(writeBlocked ? recordWriteBlockedError() : (tx.error || new Error("Record write was interrupted.")));
+    tx.oncomplete = () => resolve(true);
+    tx.onabort = () => {
+      if (headMoved) {
+        resolve(false);
+        return;
+      }
+      reject(writeBlocked ? recordWriteBlockedError() : (tx.error || new Error("Record write was interrupted.")));
+    };
   });
 }
 
@@ -8972,20 +9035,60 @@ async function signEntryHash(entryHash) {
   return btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
 }
 
-async function queueSyncRecord(record, guard) {
-  await addSyncQueueEntry({
-    entry_id: record.id,
-    entry_hash: record.entry_hash,
-    device_identity: state.deviceIdentity || "",
-    status: "queued",
-    attempt_count: 0,
-    queued_at: Date.now(),
-    entry_payload: record
-  }, guard);
+async function noteRecordQueued() {
   await refreshSyncQueueCount();
   state.syncStatus = isAuthSessionValid()
     ? "Entry queued for server sync."
     : "Entry signed locally and queued. Complete server OTP to sync.";
+}
+
+// Records saved by an older version (or before an interruption) without a
+// sync-queue entry are queued once. The decision is made inside one guarded
+// transaction so a sync commit or another tab's repair cannot double-queue.
+async function repairUnqueuedRecords(guard) {
+  if (state.unqueuedRepairDone || !state.db || !state.deviceIdentity) return;
+  const deviceIdentity = state.deviceIdentity;
+  const isCandidate = (record) => Boolean(record
+    && !record.importedFromServer
+    && record.evidence_level !== "server_attested"
+    && !record.server_entry_id
+    && record.entry_hash
+    && record.signature
+    && record.device_identity === deviceIdentity);
+  const candidateIds = (await getRecords()).filter(isCandidate).map((record) => record.id);
+  const added = await new Promise((resolve, reject) => {
+    // With nothing to repair only the guard runs, so only settings is opened.
+    const storeNames = candidateIds.length ? ["settings", "records", "syncQueue"] : ["settings"];
+    const tx = state.db.transaction(storeNames, "readwrite");
+    let writeBlocked = false;
+    let count = 0;
+    queueWriteAfterInstallGuard(tx.objectStore("settings"), guard, tx, () => {
+      // Even with nothing to repair, the guard runs, so the once-per-load flag
+      // is only set while this account may still write.
+      if (!candidateIds.length) return;
+      const recordsStore = tx.objectStore("records");
+      const queueStore = tx.objectStore("syncQueue");
+      const queuedRequest = queueStore.getAll();
+      queuedRequest.onsuccess = () => {
+        const queuedHashes = new Set((queuedRequest.result || []).map((item) => item.entry_hash));
+        candidateIds.forEach((recordId) => {
+          const recordRequest = recordsStore.get(recordId);
+          recordRequest.onsuccess = () => {
+            const record = recordRequest.result;
+            if (!isCandidate(record) || queuedHashes.has(record.entry_hash)) return;
+            queuedHashes.add(record.entry_hash);
+            queueStore.add(buildSyncQueueItem(record));
+            count += 1;
+          };
+        });
+      };
+    }, () => { writeBlocked = true; });
+    tx.oncomplete = () => resolve(count);
+    tx.onabort = () => writeBlocked ? resolve(null) : reject(tx.error || new Error("Queue repair was interrupted."));
+  });
+  if (added === null) return;
+  state.unqueuedRepairDone = true;
+  if (added) await refreshSyncQueueCount();
 }
 
 async function flushSyncQueue() {
@@ -9004,6 +9107,11 @@ async function flushSyncQueue() {
     await refreshSyncQueueCount();
     await updateSyncBadge();
     return;
+  }
+  try {
+    await repairUnqueuedRecords({ ...captureRecordWriteGuard(), authToken: state.authSessionKey });
+  } catch (error) {
+    console.warn("Queue repair skipped.", error);
   }
   const queuedEntries = await getSyncQueueEntries(25);
   if (!queuedEntries.length) {
@@ -9101,6 +9209,7 @@ function bumpLabelUsage(normalizedLabel) {
     };
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error("Label usage update was interrupted."));
   });
 }
 
