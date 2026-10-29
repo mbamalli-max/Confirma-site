@@ -129,7 +129,8 @@ before(async () => {
       new URL("../migrations/010_account_classification.sql", import.meta.url),
       new URL("../migrations/011_admin_metrics_rollup.sql", import.meta.url),
       new URL("../migrations/012_admin_dimension_snapshot.sql", import.meta.url),
-      new URL("../migrations/016_admin_exclusion_model.sql", import.meta.url)
+      new URL("../migrations/016_admin_exclusion_model.sql", import.meta.url),
+      new URL("../migrations/017_sector_assignment.sql", import.meta.url)
     ]
   });
   config.adminJwtSecret = crypto.randomBytes(32).toString("hex");

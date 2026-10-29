@@ -345,11 +345,20 @@ export function ledgerEntriesForDevice(deviceIdentity) {
   return JSON.parse(json || "[]");
 }
 
+// Test fixture write (throwaway test database only): give a test account's unlisted profile a sector
+// as a newer app version would store it, so an older app's behaviour can be checked against it.
+export function setProfileSectorForEmail(email, sectorId, source) {
+  const normalized = String(email || "").toLowerCase();
+  if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+$/i.test(normalized)) throw new Error("expected a test email address");
+  if (!/^[a-z_]+$/.test(sectorId) || !/^[a-z_]+$/.test(source)) throw new Error("expected plain sector and source ids");
+  databaseCommand(`UPDATE profiles p SET sector_id = '${sectorId}', sector_source = '${source}' FROM users u WHERE u.id = p.user_id AND lower(u.email) = '${normalized}';`);
+}
+
 // Read-only: the server profile row for a test account, found by its email.
 export function profileRowForEmail(email) {
   const normalized = String(email || "").toLowerCase();
   if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+$/i.test(normalized)) throw new Error("expected a test email address");
-  const json = databaseCommand(`SELECT row_to_json(profile) FROM (SELECT p.business_type_id, p.sector_id, p.preferred_labels, p.business_description, p.classification_review FROM profiles p INNER JOIN users u ON u.id = p.user_id WHERE lower(u.email) = '${normalized}') profile;`);
+  const json = databaseCommand(`SELECT row_to_json(profile) FROM (SELECT p.business_type_id, p.sector_id, p.sector_source, p.preferred_labels, p.business_description, p.classification_review FROM profiles p INNER JOIN users u ON u.id = p.user_id WHERE lower(u.email) = '${normalized}') profile;`);
   return json ? JSON.parse(json) : null;
 }
 

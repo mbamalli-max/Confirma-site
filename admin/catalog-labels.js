@@ -31,8 +31,10 @@ export const BUSINESS_TYPE_LABELS = Object.freeze({
 export const SECTOR_LABELS = Object.freeze({
   "trade_retail": "Trade & Retail",
   "food_hospitality": "Food & Hospitality",
+  "agriculture": "Agriculture, Livestock & Fishing",
   "transport_logistics": "Transport & Logistics",
-  "skilled_construction": "Skilled Work & Construction",
+  "skilled_construction": "Skilled Trades, Crafts & Construction",
   "personal_professional": "Personal & Professional Services",
-  "digital_online": "Digital & Online Business"
+  "digital_online": "Digital & Online Business",
+  "other_activity": "Other business"
 });

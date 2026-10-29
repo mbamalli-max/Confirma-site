@@ -159,6 +159,14 @@ export async function registerAdminMetricsRoutes(app) {
         metrics_daily_rollup: Number(status.daily_rollup_rows),
         metrics_snapshot: Number(status.snapshot_rows)
       },
+      // Owner-only exact counts (Settings › Data quality); never shown on the dashboard.
+      sector_assignment: {
+        catalog: Number(status.sector_assignment.catalog),
+        user_selected: Number(status.sector_assignment.user_selected),
+        reviewed_rule: Number(status.sector_assignment.reviewed_rule),
+        fallback: Number(status.sector_assignment.fallback),
+        catalog_mismatches: Number(status.sector_assignment.catalog_mismatches)
+      },
       ...labels(status)
     });
   });

@@ -814,7 +814,9 @@ function renderCountryGrid(dimension = "phone_country") {
 
 function renderSectorGrid() {
   els["sector-grid"].innerHTML = "";
-  SECTORS.forEach((sector) => {
+  // Browse lists only sectors that have business types; a sector with none (e.g. Agriculture until
+  // its types are reviewed) is reached through "My business isn't listed".
+  SECTORS.filter((sector) => BUSINESS_TYPES.some((type) => type.sector_id === sector.id)).forEach((sector) => {
     els["sector-grid"].appendChild(buildVisualCard(sector.icon, sector.name, "Sector", () => {
       state.profile = {
         ...(state.profile || {}),
@@ -3898,9 +3900,10 @@ function getCatalogForProfileAction(actionContext) {
 
   if (exactBusinessMatches.length) return exactBusinessMatches;
 
-  const sectorBusinessIds = BUSINESS_TYPES
-    .filter((item) => (item.country === operatingRegion || item.country === "GLOBAL") && item.sector_id === state.profile.sector_id)
-    .map((item) => item.id);
+  const suggestionGroup = getProfileSuggestionGroup();
+  const sectorBusinessIds = suggestionGroup ? BUSINESS_TYPES
+    .filter((item) => (item.country === operatingRegion || item.country === "GLOBAL") && item.suggestion_group === suggestionGroup)
+    .map((item) => item.id) : [];
 
   const sectorMatches = LABEL_CATALOG.filter((item) => {
     return item.transaction_contexts.includes(actionContext)
@@ -4720,10 +4723,22 @@ function rankLabels(query, options = {}) {
   });
 }
 
+// Ledger suggestions use each business type's fixed suggestion group, never its sector, so a sector
+// move (rules K1/K2) never changes what a person is offered. Unlisted businesses get none, as before;
+// a legacy sector-only profile keeps its sector's group.
+function getProfileSuggestionGroup() {
+  const businessTypeId = state.profile?.business_type_id;
+  if (businessTypeId === UNLISTED_BUSINESS_TYPE_ID) return null;
+  const business = BUSINESS_TYPES.find((entry) => entry.id === businessTypeId);
+  if (business) return business.suggestion_group;
+  const sectorId = state.profile?.sector_id;
+  return BUSINESS_TYPES.some((entry) => entry.suggestion_group === sectorId) ? sectorId : null;
+}
+
 function businessSectorMatch(item) {
-  const business = BUSINESS_TYPES.find((entry) => entry.id === state.profile.business_type_id);
-  const profileSector = business ? business.sector_id : state.profile.sector_id;
-  return item.business_types.some((businessId) => BUSINESS_TYPES.find((entry) => entry.id === businessId)?.sector_id === profileSector);
+  const group = getProfileSuggestionGroup();
+  if (!group) return false;
+  return item.business_types.some((businessId) => BUSINESS_TYPES.find((entry) => entry.id === businessId)?.suggestion_group === group);
 }
 
 function findPreferredCatalogItem(displayName) {

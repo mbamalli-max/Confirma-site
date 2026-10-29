@@ -321,7 +321,7 @@ function sampleBreakdown(dimension, result = { status: "published", cells: [{ ca
   };
 }
 const SAMPLE_EXCLUSIONS = { api_version: 2, accounts: { external: 12, excluded: 3, total: 15 }, exclusions_last_changed: SERVED_CHANGED, accounts_created_since: 2, audience: "operator_only", suppression: "none", definitions: {}, as_of: SERVED_AS_OF };
-const SAMPLE_STATUS = { api_version: 2, audience: "operator_only", suppression: "none", as_of: SERVED_AS_OF, stale: false, built_at: SERVED_AS_OF, build_ms: 30, out_of_range: 2, invalidations: 1, last_attempt_at: SERVED_AS_OF, last_failure_at: null, row_counts: { metrics_daily_rollup: 1, metrics_snapshot: 1 } };
+const SAMPLE_STATUS = { api_version: 2, audience: "operator_only", suppression: "none", as_of: SERVED_AS_OF, stale: false, built_at: SERVED_AS_OF, build_ms: 30, out_of_range: 2, invalidations: 1, last_attempt_at: SERVED_AS_OF, last_failure_at: null, row_counts: { metrics_daily_rollup: 1, metrics_snapshot: 1 }, sector_assignment: { catalog: 9, user_selected: 3, reviewed_rule: 0, fallback: 4, catalog_mismatches: 0 } };
 
 async function servedPage(browser, handle) {
   const ctx = await browser.newContext({ baseURL: APP_URL });
@@ -1033,6 +1033,55 @@ test("D10. an older exclusions or status answer never replaces a newer one in th
     await oldStatus;
     await target.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
     await expect(target.locator("#q-built-at")).toHaveText("2026-10-28 02:10 UTC");
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("D11. sector categories: every business in a sector, no business profile apart, defaults counted only in Data quality", async ({ browser }) => {
+  const results = {
+    sector: sampleBreakdown("sector", { status: "published", cells: [
+      { category: "agriculture", count: 6 }, { category: "other_activity", count: 6 },
+      { category: "no_business_profile", count: 5 }, { category: "other", count: 5 }
+    ], total: 22 }),
+    business_type: sampleBreakdown("business_type", { status: "published", cells: [
+      { category: "no_business_profile", count: 6 }, { category: "no_valid_code", count: 5 }, { category: "unlisted", count: 5 }
+    ], total: 16 }),
+    country: sampleBreakdown("country", { status: "withheld", reason: "business_profiles_below_half", total: { status: "published", value: 12 } })
+  };
+  const { ctx, target } = await servedPage(browser, async ({ url, send }) => (url.pathname === "/admin/v2/breakdown" ? send(200, results[url.searchParams.get("dimension")]) : undefined));
+  try {
+    await servedSignIn(target);
+    await expect(target.locator("#aud-sector .bar-row .bar-label")).toHaveText(["Agriculture, Livestock & Fishing", "Other business", "No business profile", "Other (combined)"]);
+    await expect(target.locator("#aud-business_type .bar-row .bar-label")).toHaveText(["No business profile", "No business type", "Not listed in the catalog"]);
+    await expect(target.locator("#aud-country .withheld")).toHaveText("Withheld — fewer than half of External accounts have a business profile.");
+    await expect(target.locator("#dashboard-screen")).not.toContainText(/not yet categori[sz]ed|by default/i);
+
+    await target.evaluate(() => { location.hash = "#settings/quality"; });
+    for (const [id, value] of [["q-sector-catalog", "9"], ["q-sector-user", "3"], ["q-sector-rule", "0"], ["q-sector-fallback", "4"], ["q-sector-mismatch", "0"]]) {
+      await expect(target.locator(`#${id}`)).toHaveText(value);
+    }
+    await expect(target.locator("div:has(> #q-sector-fallback) > dt")).toHaveText("External business profiles: Other business by default (not confirmed)");
+
+    // The "not an official classification" explanation appears once, in Methodology.
+    const mentions = await target.evaluate(() => document.body.textContent.split("not an official industry classification").length - 1);
+    expect(mentions).toBe(1);
+    await expect(target.locator("#settings-methodology")).toContainText("not an official industry classification");
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("D12. an older server without sector counts shows dashes, never zeros", async ({ browser }) => {
+  const { sector_assignment: _omit, ...older } = SAMPLE_STATUS;
+  const { ctx, target } = await servedPage(browser, async ({ url, send }) => (url.pathname === "/admin/v2/status" ? send(200, older) : undefined));
+  try {
+    await servedSignIn(target);
+    await target.evaluate(() => { location.hash = "#settings/quality"; });
+    await expect(target.locator("#q-out-of-range")).toHaveText("2");
+    for (const id of ["q-sector-catalog", "q-sector-user", "q-sector-rule", "q-sector-fallback", "q-sector-mismatch"]) {
+      await expect(target.locator(`#${id}`)).toHaveText("—");
+    }
   } finally {
     await ctx.close();
   }

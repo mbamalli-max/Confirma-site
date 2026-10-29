@@ -12,13 +12,17 @@ function buildLabel(id, displayName, icon, synonyms, contexts, countries, busine
   };
 }
 
+// Konfirmata's own operational categories (not an official industry classification).
+// Every business profile is in exactly one sector; "other_activity" also holds the server's fallback.
 export const SECTORS = [
   { id: "trade_retail", name: "Trade & Retail", icon: "🛍️" },
   { id: "food_hospitality", name: "Food & Hospitality", icon: "🍲" },
+  { id: "agriculture", name: "Agriculture, Livestock & Fishing", icon: "🌾" },
   { id: "transport_logistics", name: "Transport & Logistics", icon: "🚌" },
-  { id: "skilled_construction", name: "Skilled Work & Construction", icon: "🔧" },
+  { id: "skilled_construction", name: "Skilled Trades, Crafts & Construction", icon: "🔧" },
   { id: "personal_professional", name: "Personal & Professional Services", icon: "💼" },
-  { id: "digital_online", name: "Digital & Online Business", icon: "💻" }
+  { id: "digital_online", name: "Digital & Online Business", icon: "💻" },
+  { id: "other_activity", name: "Other business", icon: "🧩" }
 ];
 
 export const SUPPORTED_LANGUAGES = [
@@ -364,33 +368,36 @@ export const CAPTURE_EXAMPLES = {
   ]
 };
 
+// sector_id: the business's Konfirmata sector (rules K1/K2, 2026-10-28: kiosk -> trade_retail,
+// tailor -> skilled_construction). suggestion_group: the grouping used for ledger label suggestions,
+// fixed at each type's pre-2026-10-28 sector so sector moves never change a user's suggestions.
 export const BUSINESS_TYPES = [
-  { id: "ng_market_trader", country: "NG", sector_id: "trade_retail", name: "Market Trader", icon: "🧺" },
-  { id: "ng_provision_shop", country: "NG", sector_id: "trade_retail", name: "Provision Shop", icon: "🏪" },
-  { id: "ng_food_vendor", country: "NG", sector_id: "food_hospitality", name: "Food Vendor", icon: "🍛" },
-  { id: "ng_transport_worker", country: "NG", sector_id: "transport_logistics", name: "Transport Worker", icon: "🛺" },
-  { id: "ng_artisan", country: "NG", sector_id: "skilled_construction", name: "Artisan", icon: "🛠️" },
-  { id: "ng_service_provider", country: "NG", sector_id: "personal_professional", name: "Service Provider", icon: "🧾" },
-  { id: "ng_online_seller", country: "NG", sector_id: "digital_online", name: "Online Seller", icon: "📱" },
-  { id: "ng_kiosk_phone_business", country: "NG", sector_id: "digital_online", name: "Kiosk / Phone Business", icon: "📞" },
-  { id: "ng_fashion_tailor", country: "NG", sector_id: "personal_professional", name: "Fashion / Tailor", icon: "🧵" },
-  { id: "ng_okada_keke_rider", country: "NG", sector_id: "transport_logistics", name: "Okada / Keke Rider", icon: "🛵" },
-  { id: "us_retail", country: "US", sector_id: "trade_retail", name: "Retail", icon: "🛍️" },
-  { id: "us_food_service", country: "US", sector_id: "food_hospitality", name: "Food Service", icon: "🍔" },
-  { id: "us_logistics", country: "US", sector_id: "transport_logistics", name: "Logistics", icon: "🚚" },
-  { id: "us_contractor", country: "US", sector_id: "skilled_construction", name: "Contractor", icon: "🔨" },
-  { id: "us_beauty_services", country: "US", sector_id: "personal_professional", name: "Beauty Services", icon: "💇" },
-  { id: "us_digital_business", country: "US", sector_id: "digital_online", name: "Digital Business", icon: "🧑‍💻" },
-  { id: "us_personal_services_side_hustle", country: "US", sector_id: "personal_professional", name: "Personal Services / Side Hustle", icon: "🧹" },
-  { id: "global_trade_retail", country: "GLOBAL", sector_id: "trade_retail", name: "Retail / Trading", icon: "🛍️" },
-  { id: "global_food_hospitality", country: "GLOBAL", sector_id: "food_hospitality", name: "Food & Hospitality", icon: "🍽️" },
-  { id: "global_transport_logistics", country: "GLOBAL", sector_id: "transport_logistics", name: "Transport & Logistics", icon: "🚚" },
-  { id: "global_skilled_construction", country: "GLOBAL", sector_id: "skilled_construction", name: "Skilled Work / Construction", icon: "🛠️" },
-  { id: "global_personal_professional", country: "GLOBAL", sector_id: "personal_professional", name: "Personal / Professional Services", icon: "💼" },
-  { id: "global_digital_online", country: "GLOBAL", sector_id: "digital_online", name: "Digital / Online Business", icon: "💻" },
-  { id: "global_document_services", country: "GLOBAL", sector_id: "personal_professional", name: "Document & Print Services", icon: "🖨️" },
-  { id: "global_tutoring", country: "GLOBAL", sector_id: "personal_professional", name: "Tutoring / Lessons", icon: "📚" },
-  { id: "global_device_repair", country: "GLOBAL", sector_id: "skilled_construction", name: "Device Repair", icon: "🔌" }
+  { id: "ng_market_trader", country: "NG", sector_id: "trade_retail", suggestion_group: "trade_retail", name: "Market Trader", icon: "🧺" },
+  { id: "ng_provision_shop", country: "NG", sector_id: "trade_retail", suggestion_group: "trade_retail", name: "Provision Shop", icon: "🏪" },
+  { id: "ng_food_vendor", country: "NG", sector_id: "food_hospitality", suggestion_group: "food_hospitality", name: "Food Vendor", icon: "🍛" },
+  { id: "ng_transport_worker", country: "NG", sector_id: "transport_logistics", suggestion_group: "transport_logistics", name: "Transport Worker", icon: "🛺" },
+  { id: "ng_artisan", country: "NG", sector_id: "skilled_construction", suggestion_group: "skilled_construction", name: "Artisan", icon: "🛠️" },
+  { id: "ng_service_provider", country: "NG", sector_id: "personal_professional", suggestion_group: "personal_professional", name: "Service Provider", icon: "🧾" },
+  { id: "ng_online_seller", country: "NG", sector_id: "digital_online", suggestion_group: "digital_online", name: "Online Seller", icon: "📱" },
+  { id: "ng_kiosk_phone_business", country: "NG", sector_id: "trade_retail", suggestion_group: "digital_online", name: "Kiosk / Phone Business", icon: "📞" },
+  { id: "ng_fashion_tailor", country: "NG", sector_id: "skilled_construction", suggestion_group: "personal_professional", name: "Fashion / Tailor", icon: "🧵" },
+  { id: "ng_okada_keke_rider", country: "NG", sector_id: "transport_logistics", suggestion_group: "transport_logistics", name: "Okada / Keke Rider", icon: "🛵" },
+  { id: "us_retail", country: "US", sector_id: "trade_retail", suggestion_group: "trade_retail", name: "Retail", icon: "🛍️" },
+  { id: "us_food_service", country: "US", sector_id: "food_hospitality", suggestion_group: "food_hospitality", name: "Food Service", icon: "🍔" },
+  { id: "us_logistics", country: "US", sector_id: "transport_logistics", suggestion_group: "transport_logistics", name: "Logistics", icon: "🚚" },
+  { id: "us_contractor", country: "US", sector_id: "skilled_construction", suggestion_group: "skilled_construction", name: "Contractor", icon: "🔨" },
+  { id: "us_beauty_services", country: "US", sector_id: "personal_professional", suggestion_group: "personal_professional", name: "Beauty Services", icon: "💇" },
+  { id: "us_digital_business", country: "US", sector_id: "digital_online", suggestion_group: "digital_online", name: "Digital Business", icon: "🧑‍💻" },
+  { id: "us_personal_services_side_hustle", country: "US", sector_id: "personal_professional", suggestion_group: "personal_professional", name: "Personal Services / Side Hustle", icon: "🧹" },
+  { id: "global_trade_retail", country: "GLOBAL", sector_id: "trade_retail", suggestion_group: "trade_retail", name: "Retail / Trading", icon: "🛍️" },
+  { id: "global_food_hospitality", country: "GLOBAL", sector_id: "food_hospitality", suggestion_group: "food_hospitality", name: "Food & Hospitality", icon: "🍽️" },
+  { id: "global_transport_logistics", country: "GLOBAL", sector_id: "transport_logistics", suggestion_group: "transport_logistics", name: "Transport & Logistics", icon: "🚚" },
+  { id: "global_skilled_construction", country: "GLOBAL", sector_id: "skilled_construction", suggestion_group: "skilled_construction", name: "Skilled Work / Construction", icon: "🛠️" },
+  { id: "global_personal_professional", country: "GLOBAL", sector_id: "personal_professional", suggestion_group: "personal_professional", name: "Personal / Professional Services", icon: "💼" },
+  { id: "global_digital_online", country: "GLOBAL", sector_id: "digital_online", suggestion_group: "digital_online", name: "Digital / Online Business", icon: "💻" },
+  { id: "global_document_services", country: "GLOBAL", sector_id: "personal_professional", suggestion_group: "personal_professional", name: "Document & Print Services", icon: "🖨️" },
+  { id: "global_tutoring", country: "GLOBAL", sector_id: "personal_professional", suggestion_group: "personal_professional", name: "Tutoring / Lessons", icon: "📚" },
+  { id: "global_device_repair", country: "GLOBAL", sector_id: "skilled_construction", suggestion_group: "skilled_construction", name: "Device Repair", icon: "🔌" }
 ];
 
 export const QUICK_PICKS = {

@@ -1,5 +1,21 @@
 import { adminReadQuery, rebuildQuery, withRebuildTransaction } from "./admin-db.js";
-import { BUSINESS_TYPE_IDS, COUNTRY_CODES, NO_VALID_CODE, SECTOR_IDS } from "./admin-dimensions.js";
+import {
+  BUSINESS_TYPE_IDS,
+  CATALOG_TYPE_IDS,
+  CATALOG_TYPE_SECTORS,
+  COUNTRY_CODES,
+  NO_BUSINESS_PROFILE,
+  NO_VALID_CODE,
+  SECTOR_IDS
+} from "./admin-dimensions.js";
+import { OTHER_SECTOR_ID } from "./business-catalog.js";
+
+// Same test as hasBusinessProfile() in sector-assignment.js: a business type, sector or description.
+const BUSINESS_PROFILE_SQL = `(
+  NULLIF(BTRIM(COALESCE(profile.business_type_id, '')), '') IS NOT NULL
+  OR NULLIF(BTRIM(COALESCE(profile.sector_id, '')), '') IS NOT NULL
+  OR NULLIF(BTRIM(COALESCE(profile.business_description, '')), '') IS NOT NULL
+)`;
 
 export const METRICS_REBUILD_LOCK_KEY = 7300311;
 
@@ -330,14 +346,23 @@ async function performRebuild({ automatic }) {
 
           UNION ALL
 
+          -- Same rule as effectiveSector() in sector-assignment.js: a listed type counts under its
+          -- catalog sector; otherwise a sector chosen by the person or a reviewed rule (or a legacy
+          -- sector with no provenance); anything else counts as Other business (fallback); no
+          -- business profile is its own category.
           SELECT
             'sector'::text AS dimension,
             CASE
-              WHEN profile.sector_id = ANY($2::text[]) THEN profile.sector_id
-              ELSE $3::text
+              WHEN profile.user_id IS NULL OR NOT ${BUSINESS_PROFILE_SQL} THEN $7::text
+              WHEN catalog.sector_id IS NOT NULL THEN catalog.sector_id
+              WHEN profile.sector_id = ANY($2::text[])
+                AND (profile.sector_source IS NULL OR profile.sector_source IN ('user', 'rule')) THEN profile.sector_id
+              ELSE $8::text
             END AS category
           FROM external_accounts account
           LEFT JOIN profiles profile ON profile.user_id = account.user_id
+          LEFT JOIN unnest($5::text[], $6::text[]) AS catalog(business_type_id, sector_id)
+            ON catalog.business_type_id = BTRIM(profile.business_type_id)
 
           UNION ALL
 
@@ -345,6 +370,7 @@ async function performRebuild({ automatic }) {
           SELECT
             'business_type'::text AS dimension,
             CASE
+              WHEN profile.user_id IS NULL OR NOT ${BUSINESS_PROFILE_SQL} THEN $7::text
               WHEN profile.business_type_id = ANY($4::text[]) THEN profile.business_type_id
               ELSE $3::text
             END AS category
@@ -354,7 +380,16 @@ async function performRebuild({ automatic }) {
         SELECT dimension, category, COUNT(*)::int
         FROM dimension_rows
         GROUP BY dimension, category
-      `, [COUNTRY_CODES, SECTOR_IDS, NO_VALID_CODE, BUSINESS_TYPE_IDS]);
+      `, [
+        COUNTRY_CODES,
+        SECTOR_IDS,
+        NO_VALID_CODE,
+        BUSINESS_TYPE_IDS,
+        CATALOG_TYPE_IDS,
+        CATALOG_TYPE_SECTORS,
+        NO_BUSINESS_PROFILE,
+        OTHER_SECTOR_ID
+      ]);
 
       const state = await client.query(
         `
@@ -491,10 +526,10 @@ export async function readDimensionSnapshot(dimension) {
       SELECT category, count
       FROM metrics_dimension_snapshot
       WHERE dimension = $1
-        AND (category = ANY($2::text[]) OR category = $3)
+        AND (category = ANY($2::text[]) OR category = $3 OR category = $4)
       ORDER BY category
     `,
-    [dimension, allowed, NO_VALID_CODE]
+    [dimension, allowed, NO_VALID_CODE, NO_BUSINESS_PROFILE]
   );
   return result.rows.map(({ category, count }) => ({ category, count: Number(count) }));
 }
@@ -588,14 +623,54 @@ export async function readTimeseries({ metric, bucket, periods }) {
   };
 }
 
+// Owner-only Data quality: how External business profiles got their sector (counts only), and how
+// many listed profiles store a sector that disagrees with the catalog (expected 0). Read live.
+export async function readSectorAssignment() {
+  const result = await adminReadQuery(`
+    WITH external_profiles AS (
+      SELECT profile.*
+      FROM users account
+      LEFT JOIN account_classification classification ON classification.user_id = account.id
+      INNER JOIN profiles profile ON profile.user_id = account.id
+      WHERE (classification.classification IS NULL
+             OR classification.classification NOT IN ('INTERNAL_TEST', 'DEMO'))
+        AND ${BUSINESS_PROFILE_SQL}
+    )
+    SELECT
+      COUNT(*) FILTER (WHERE catalog.sector_id IS NOT NULL)::int AS catalog,
+      COUNT(*) FILTER (WHERE catalog.sector_id IS NULL AND profile.sector_id = ANY($3::text[])
+        AND (profile.sector_source = 'user' OR profile.sector_source IS NULL))::int AS user_selected,
+      COUNT(*) FILTER (WHERE catalog.sector_id IS NULL AND profile.sector_id = ANY($3::text[])
+        AND profile.sector_source = 'rule')::int AS reviewed_rule,
+      COUNT(*) FILTER (WHERE catalog.sector_id IS NULL AND NOT COALESCE(
+        profile.sector_id = ANY($3::text[])
+        AND (profile.sector_source IS NULL OR profile.sector_source IN ('user', 'rule')),
+        FALSE
+      ))::int AS fallback,
+      (
+        SELECT COUNT(*)::int
+        FROM profiles listed
+        INNER JOIN unnest($1::text[], $2::text[]) AS map(business_type_id, sector_id)
+          ON map.business_type_id = BTRIM(listed.business_type_id)
+        WHERE listed.sector_id IS DISTINCT FROM map.sector_id
+           OR listed.sector_source IS DISTINCT FROM 'catalog'
+      ) AS catalog_mismatches
+    FROM external_profiles profile
+    LEFT JOIN unnest($1::text[], $2::text[]) AS catalog(business_type_id, sector_id)
+      ON catalog.business_type_id = BTRIM(profile.business_type_id)
+  `, [CATALOG_TYPE_IDS, CATALOG_TYPE_SECTORS, SECTOR_IDS]);
+  return result.rows[0];
+}
+
 export async function readStatus() {
-  const [state, rows] = await Promise.all([
+  const [state, rows, sectors] = await Promise.all([
     readRollupState(),
     adminReadQuery(`
       SELECT
         (SELECT COUNT(*)::int FROM metrics_daily_rollup) AS daily_rollup_rows,
         (SELECT COUNT(*)::int FROM metrics_snapshot) AS snapshot_rows
-    `)
+    `),
+    readSectorAssignment()
   ]);
-  return { ...state, ...rows.rows[0] };
+  return { ...state, ...rows.rows[0], sector_assignment: sectors };
 }

@@ -80,6 +80,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   country CHAR(2),
   business_type_id TEXT,
   sector_id TEXT,
+  -- How the sector was set: catalog, user, rule or fallback (migration 017 adds the guards).
+  sector_source TEXT,
   preferred_labels JSONB DEFAULT '[]'::jsonb,
   -- Retained for backward compatibility only. Passcode hints are local-only and are no longer synced.
   passcode_hint TEXT,

@@ -18,6 +18,7 @@ import {
   readLocalState,
   readStoredProfile,
   restoreThroughUi,
+  setProfileSectorForEmail,
   signInThroughUi
 } from "./helpers.mjs";
 
@@ -237,7 +238,9 @@ test("8 + 9: listed -> unlisted -> listed, persisted on the server and across de
   const local = (await readStoredProfile(page));
   expect(local).toMatchObject({ business_type_id: "unlisted", business_description: "Document courier and errands", sector_id: null, preferred_labels: [] });
   await expect.poll(() => profileRowForEmail(account.email), SERVER_TIMEOUT).toMatchObject({
-    business_type_id: "unlisted", business_description: "Document courier and errands", sector_id: null, preferred_labels: []
+    // This app version sends no sector for an unlisted business: the server files it under
+    // "Other business" as a fallback (U2), never as the person's choice.
+    business_type_id: "unlisted", business_description: "Document courier and errands", sector_id: "other_activity", sector_source: "fallback", preferred_labels: []
   });
   await expect(page.locator("#profile-summary")).toContainText("Document courier and errands");
 
@@ -260,7 +263,7 @@ test("8 + 9: listed -> unlisted -> listed, persisted on the server and across de
   await finishProfile(page);
   expect((await readStoredProfile(page))).toMatchObject({ business_type_id: "ng_market_trader", sector_id: "trade_retail", business_description: "" });
   await expect.poll(() => profileRowForEmail(account.email), SERVER_TIMEOUT).toMatchObject({
-    business_type_id: "ng_market_trader", sector_id: "trade_retail", business_description: null
+    business_type_id: "ng_market_trader", sector_id: "trade_retail", sector_source: "catalog", business_description: null
   });
 });
 
@@ -366,13 +369,15 @@ test("12: an unlisted or unknown type keeps no old shortcut preferences", async 
 
 const OLD_APP_URL = process.env.APP_TEST_OLD_APP_URL || "http://127.0.0.1:5501";
 
-async function serveOldApp() {
-  const dir = mkdtempSync(path.join(tmpdir(), "konfirmata-v36-"));
+// Serves app-v3 exactly as it was at a commit: 5f8307d is v36; 96a7b22 is v37, live before the
+// sector-assignment release.
+async function serveOldApp(commit = "5f8307d", appUrl = OLD_APP_URL) {
+  const dir = mkdtempSync(path.join(tmpdir(), `konfirmata-${commit}-`));
   const repo = fileURLToPath(new URL("../../../", import.meta.url));
-  const archive = execFileSync("git", ["-C", repo, "archive", "5f8307d", "app-v3"]);
+  const archive = execFileSync("git", ["-C", repo, "archive", commit, "app-v3"]);
   execFileSync("tar", ["-x", "-C", dir], { input: archive });
   const root = path.join(dir, "app-v3");
-  const url = new URL(OLD_APP_URL);
+  const url = new URL(appUrl);
   const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json" };
   const server = createServer(async (request, response) => {
     const pathname = new URL(request.url, url).pathname.replace(/^\/app(?:\/|$)/, "").replace(/^\/+/, "") || "index.html";
@@ -444,6 +449,65 @@ test("13: existing profiles still work, including the v36 app holding an unliste
   } finally {
     await oldContext.close();
     await new Promise((resolve) => oldServer.close(resolve));
+  }
+  expect(errors, "the current app threw no page errors").toEqual([]);
+});
+
+// The test API allows only the current-app and old-app origins; the old-app tests run one at a time
+// and each closes its server, so v37 is served on the old-app origin too.
+const LIVE_V37_APP_URL = OLD_APP_URL;
+
+test("13b (T-C1, T-C3): the live v37 app restores new sector ids and its saves never erase a chosen sector", async ({ browser }) => {
+  test.slow();
+  const errors = [];
+  const currentContext = await browser.newContext({ baseURL: test.info().project.use.baseURL, serviceWorkers: "block" });
+  const current = await currentContext.newPage();
+  current.on("pageerror", (error) => errors.push(error.message));
+  const account = await signInThroughUi(current, nextAccount("picker-v37"));
+  await changeProfileToSearchStep(current);
+  await saveUnlisted(current, "Poultry and eggs");
+  await finishProfile(current);
+  await currentContext.close();
+  await expect.poll(() => profileRowForEmail(account.email), SERVER_TIMEOUT).toMatchObject({
+    business_type_id: "unlisted", sector_id: "other_activity", sector_source: "fallback"
+  });
+  // As a newer app would store the person's own choice of a sector the v37 catalog does not know.
+  setProfileSectorForEmail(account.email, "agriculture", "user");
+
+  const v37Server = await serveOldApp("96a7b22", LIVE_V37_APP_URL);
+  const v37Context = await browser.newContext({ baseURL: LIVE_V37_APP_URL, serviceWorkers: "block" });
+  try {
+    const v37 = await v37Context.newPage();
+    const v37Errors = [];
+    v37.on("pageerror", (error) => v37Errors.push(error.message));
+    await v37.goto("/");
+    await restoreThroughUi(v37, account);
+    await expect(v37.locator("#screen-capture.active, #screen-settings.active, #screen-dashboard.active")).toBeVisible(SERVER_TIMEOUT);
+    expect((await readStoredProfile(v37))).toMatchObject({ business_type_id: "unlisted", business_description: "Poultry and eggs" });
+    await expect(v37.locator("#profile-summary")).toContainText("Poultry and eggs");
+
+    // A v37 save (it sends sector_id: null for an unlisted business) keeps the stored choice.
+    await v37.locator("#nav-settings-v2").click();
+    const language = v37.locator("#settings-language-select");
+    await expect(language.locator("option").first()).toBeAttached();
+    const values = await language.locator("option").evaluateAll((options) => options.map((option) => option.value));
+    const pushed = v37.waitForResponse((response) => response.url().endsWith("/profile") && response.request().method() === "POST");
+    const chosen = await language.inputValue();
+    await language.selectOption(values.find((value) => value !== chosen) || values[0]);
+    const response = await pushed;
+    expect(response.status()).toBe(200);
+    expect(JSON.parse(response.request().postData() || "{}").sector_id ?? null, "v37 sends no sector for unlisted").toBeNull();
+    expect(profileRowForEmail(account.email)).toMatchObject({
+      business_type_id: "unlisted", business_description: "Poultry and eggs", sector_id: "agriculture", sector_source: "user"
+    });
+
+    // A reload restores again without errors.
+    await v37.reload();
+    await expect(v37.locator("#profile-summary")).toContainText("Poultry and eggs", SERVER_TIMEOUT);
+    expect(v37Errors, "the live v37 app threw no page errors").toEqual([]);
+  } finally {
+    await v37Context.close();
+    await new Promise((resolve) => v37Server.close(resolve));
   }
   expect(errors, "the current app threw no page errors").toEqual([]);
 });

@@ -1,3 +1,4 @@
+import { effectiveSector } from "../../src/sector-assignment.js";
 import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import Fastify from "fastify";
@@ -160,4 +161,11 @@ export async function rejectAuditInserts(run) {
       DROP CONSTRAINT admin_audit_test_reject_insert
     `);
   }
+}
+
+// The sector columns a profile holds once migration 017 has run: the same rule the server applies
+// (catalog, the person's sector, or "Other business" as a fallback; none without a business profile).
+export function storedSectorColumns({ businessType = null, sector = null, businessDescription = null }) {
+  const assigned = effectiveSector({ business_type_id: businessType, sector_id: sector, business_description: businessDescription });
+  return assigned ? [assigned.sectorId, assigned.source] : [null, null];
 }

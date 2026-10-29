@@ -69,10 +69,17 @@ test("catalog: new types' shortcuts are classified for the statements", () => {
   }
 });
 
+// Approved sector moves (U1, rules K1/K2, 2026-10-28). Nothing else about a type may change, and its
+// suggestion group stays its production sector so ledger suggestions are unchanged.
+const APPROVED_SECTOR_MOVES = { ng_kiosk_phone_business: "trade_retail", ng_fashion_tailor: "skilled_construction" };
+
 test("catalog: existing business types are unchanged from production", () => {
   for (const before of baseline.BUSINESS_TYPES) {
     const now = BUSINESS_TYPES.find((item) => item.id === before.id);
-    expect(now, `${before.id} disappeared`).toEqual(before);
+    expect(now, `${before.id} disappeared`).toBeTruthy();
+    const { suggestion_group: group, ...rest } = now;
+    expect(group, `${before.id} suggestion group`).toBe(before.sector_id);
+    expect(rest, `${before.id} changed`).toEqual({ ...before, sector_id: APPROVED_SECTOR_MOVES[before.id] || before.sector_id });
     expect(QUICK_PICKS[before.id], `${before.id} quick picks changed`).toEqual(baseline.QUICK_PICKS[before.id]);
   }
   for (const [country, types] of Object.entries(baseline.LAYER_B)) {

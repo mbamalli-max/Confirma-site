@@ -26,7 +26,8 @@ import {
   buildApp,
   createSession,
   prepareAdminTestDatabase,
-  seedAdmin
+  seedAdmin,
+  storedSectorColumns
 } from "./helpers/admin.js";
 
 function headers(session) {
@@ -64,8 +65,8 @@ async function seedUser({
   const user = inserted.rows[0];
   if (name || businessName || businessType) {
     await query(
-      `INSERT INTO profiles (user_id, name, business_name, business_type_id) VALUES ($1, $2, $3, $4)`,
-      [user.id, name, businessName, businessType]
+      `INSERT INTO profiles (user_id, name, business_name, business_type_id, sector_id, sector_source) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [user.id, name, businessName, businessType, ...storedSectorColumns({ businessType })]
     );
   }
   const deviceIdentity = `device-${crypto.randomUUID()}`;
@@ -254,7 +255,8 @@ before(async () => {
       new URL("../migrations/010_account_classification.sql", import.meta.url),
       new URL("../migrations/011_admin_metrics_rollup.sql", import.meta.url),
       new URL("../migrations/012_admin_dimension_snapshot.sql", import.meta.url),
-      new URL("../migrations/016_admin_exclusion_model.sql", import.meta.url)
+      new URL("../migrations/016_admin_exclusion_model.sql", import.meta.url),
+      new URL("../migrations/017_sector_assignment.sql", import.meta.url)
     ]
   });
   config.adminJwtSecret = crypto.randomBytes(32).toString("hex");
@@ -794,7 +796,9 @@ test("23b: metrics queries project only aggregate and state fields", async () =>
       "acquired", "started_at", "built_at", "build_ms", "out_of_range", "claimed",
       "due", "metric_key", "bucket", "count", "provisional", "period_start", "partial",
       "stale", "invalidations", "last_attempt_at", "last_failure_at", "checked_at",
-      "cache_valid_until", "daily_rollup_rows", "snapshot_rows", "event_date_upper_bound"
+      "cache_valid_until", "daily_rollup_rows", "snapshot_rows", "event_date_upper_bound",
+      // Data quality: counts of External business profiles by how their sector was set.
+      "catalog", "user_selected", "reviewed_rule", "fallback", "catalog_mismatches"
     ]);
     const forbidden = new Set([
       "email", "phone_number", "name", "business_name", "payload", "signature", "public_key",

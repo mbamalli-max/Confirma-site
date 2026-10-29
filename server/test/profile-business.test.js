@@ -1,5 +1,6 @@
 import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import Fastify from "fastify";
 import { config } from "../src/config.js";
 import { getPool } from "../src/db.js";
@@ -69,7 +70,7 @@ async function storedProfile(account) {
 async function storedRow(account) {
   const profile = await storedProfile(account);
   const result = await database.query(
-    `SELECT p.business_type_id, p.sector_id, p.preferred_labels, p.business_description, p.classification_review
+    `SELECT p.business_type_id, p.sector_id, p.sector_source, p.preferred_labels, p.business_description, p.classification_review
        FROM profiles p INNER JOIN users u ON u.id = p.user_id WHERE u.phone_number = $1`,
     [profile.phone]
   );
@@ -77,6 +78,7 @@ async function storedRow(account) {
 }
 
 before(async () => {
+  await database.query(await readFile(new URL("../migrations/017_sector_assignment.sql", import.meta.url), "utf8"));
   await registerAuthRoutes(app);
   await registerAccountRoutes(app);
   await app.ready();
@@ -133,7 +135,7 @@ test("S2: a listed type sent with a description stores no description", async ()
   assert.equal((await storedProfile(account)).business_description, "");
 });
 
-test("S3: the server sets the sector from the catalog and clears labels for unlisted", async () => {
+test("S3: the server sets the sector from the catalog, keeps an unlisted business's chosen sector and clears its labels", async () => {
   const account = await signIn();
   let response = await saveProfile(account, {
     business_type_id: "ng_market_trader",
@@ -143,36 +145,45 @@ test("S3: the server sets the sector from the catalog and clears labels for unli
   assert.equal(response.statusCode, 200, response.body);
   let row = await storedRow(account);
   assert.equal(row.sector_id, "trade_retail", "the phone's mismatched sector is replaced");
+  assert.equal(row.sector_source, "catalog");
   assert.deepEqual(row.preferred_labels, ["Rice", "Beans"]);
 
   response = await saveProfile(account, {
     business_type_id: "unlisted",
     business_description: "Document courier and errands",
-    sector_id: "trade_retail",
+    sector_id: "transport_logistics",
+    sector_confirmed: true,
     preferred_labels: ["Rice"]
   });
   assert.equal(response.statusCode, 200, response.body);
   row = await storedRow(account);
   assert.equal(row.business_type_id, "unlisted");
-  assert.equal(row.sector_id, null);
+  assert.equal(row.sector_id, "transport_logistics", "an unlisted business keeps the sector the person chose");
+  assert.equal(row.sector_source, "user");
   assert.deepEqual(row.preferred_labels, []);
 
   for (const fields of [
     { business_type_id: "ng_pos_agent" },
     { business_type_id: "__proto__" },
     { business_type_id: "constructor" },
-    { business_type_id: "", sector_id: "not_a_sector" }
+    { business_type_id: "", sector_id: "not_a_sector" },
+    { business_type_id: "unlisted", business_description: "Courier", sector_id: "uncategorised" },
+    { business_type_id: "unlisted", business_description: "Courier", sector_id: "__proto__" },
+    { business_type_id: "unlisted", business_description: "Courier", sector_id: 7 }
   ]) {
     response = await saveProfile(account, fields);
     assert.equal(response.statusCode, 400, `${JSON.stringify(fields)}: ${response.body}`);
   }
-  assert.equal((await storedRow(account)).business_type_id, "unlisted", "rejected saves change nothing");
+  row = await storedRow(account);
+  assert.equal(row.business_type_id, "unlisted", "rejected saves change nothing");
+  assert.equal(row.sector_id, "transport_logistics");
 
   response = await saveProfile(account, { business_type_id: "", sector_id: "food_hospitality" });
   assert.equal(response.statusCode, 200, "a legacy sector-only profile still saves");
   row = await storedRow(account);
   assert.equal(row.business_type_id, null);
   assert.equal(row.sector_id, "food_hospitality");
+  assert.equal(row.sector_source, "user");
   assert.equal(row.business_description, null);
 });
 
@@ -221,22 +232,152 @@ test("S5: an older app's save without the description keeps it; a listed type cl
   assert.equal(row.business_description, null);
 });
 
-test("S6: GET /profile returns the description", async () => {
+test("S6: GET /profile returns the description, the assigned sector, its source and completeness", async () => {
+  const account = await signIn();
+  // An older app's first unlisted save sends no sector: "Other business" as a fallback.
+  assert.equal((await saveProfile(account, {
+    business_type_id: "unlisted",
+    business_description: "Document courier and errands",
+    sector_id: null
+  })).statusCode, 200);
+  let profile = await storedProfile(account);
+  assert.equal(profile.business_type_id, "unlisted");
+  assert.equal(profile.business_description, "Document courier and errands");
+  assert.equal(profile.sector_id, "other_activity");
+  assert.equal(profile.sector_source, "fallback");
+  assert.equal(profile.profile_complete, false);
+  assert.deepEqual(profile.preferred_labels, []);
+
+  assert.equal((await saveProfile(account, { business_type_id: "ng_kiosk_phone_business" })).statusCode, 200);
+  profile = await storedProfile(account);
+  assert.equal(profile.sector_id, "trade_retail", "rule K1");
+  assert.equal(profile.sector_source, "catalog");
+  assert.equal(profile.profile_complete, true);
+});
+
+test("S7 (T-S1): the server catalog matches the app catalog and every type has exactly one valid named sector", () => {
+  const appMap = Object.fromEntries(BUSINESS_TYPES.map((item) => [
+    item.id,
+    { sector_id: item.sector_id, country: item.country, suggestion_group: item.suggestion_group }
+  ]));
+  assert.deepEqual({ ...BUSINESS_TYPE_CATALOG }, appMap);
+  assert.deepEqual([...SECTOR_IDS], SECTORS.map((item) => item.id));
+  assert.equal(new Set(SECTOR_IDS).size, SECTOR_IDS.length);
+  assert.equal(Object.hasOwn(BUSINESS_TYPE_CATALOG, "unlisted"), false, "unlisted is not a catalog type");
+  assert.equal(SECTOR_IDS.includes("uncategorised"), false, "U2: there is no 'not categorised' sector");
+  assert.equal(BUSINESS_TYPES.length, 26);
+  for (const item of BUSINESS_TYPES) {
+    assert.equal(typeof item.sector_id, "string", item.id);
+    assert.ok(SECTOR_IDS.includes(item.sector_id) && item.sector_id !== "other_activity", `${item.id} is in one named sector`);
+  }
+  // Rules K1/K2 (U1), and suggestions keep each type's pre-2026-10-28 grouping.
+  assert.equal(BUSINESS_TYPE_CATALOG.ng_kiosk_phone_business.sector_id, "trade_retail");
+  assert.equal(BUSINESS_TYPE_CATALOG.ng_fashion_tailor.sector_id, "skilled_construction");
+  const movedFrom = { ng_kiosk_phone_business: "digital_online", ng_fashion_tailor: "personal_professional" };
+  for (const item of BUSINESS_TYPES) {
+    assert.equal(item.suggestion_group, movedFrom[item.id] || item.sector_id, `${item.id} suggestion group unchanged`);
+  }
+});
+
+test("S8 (T-S6): an older app never erases a stored sector, description or business", async () => {
   const account = await signIn();
   assert.equal((await saveProfile(account, {
     business_type_id: "unlisted",
-    business_description: "Document courier and errands"
+    business_description: "Poultry and eggs",
+    sector_id: "agriculture",
+    sector_confirmed: true
   })).statusCode, 200);
-  const profile = await storedProfile(account);
-  assert.equal(profile.business_type_id, "unlisted");
-  assert.equal(profile.business_description, "Document courier and errands");
-  assert.equal(profile.sector_id, "");
-  assert.deepEqual(profile.preferred_labels, []);
+
+  for (const [label, fields] of [
+    ["v37 body: unlisted with sector null", { business_type_id: "unlisted", business_description: "Poultry and eggs", sector_id: null }],
+    ["v36 body: no description key, no sector key", { business_type_id: "unlisted" }],
+    ["blank sector", { business_type_id: "unlisted", sector_id: "  " }],
+    ["no business details at all", { business_type_id: "", sector_id: null, name: "Renamed" }],
+    ["business keys absent", { name: "Renamed again" }]
+  ]) {
+    const response = await saveProfile(account, fields);
+    assert.equal(response.statusCode, 200, `${label}: ${response.body}`);
+    const row = await storedRow(account);
+    assert.equal(row.business_type_id, "unlisted", label);
+    assert.equal(row.business_description, "Poultry and eggs", label);
+    assert.equal(row.sector_id, "agriculture", label);
+    assert.equal(row.sector_source, "user", label);
+  }
+  assert.equal((await storedProfile(account)).name, "Renamed again");
 });
 
-test("S7: the server catalog map matches the app catalog exactly", () => {
-  const appMap = Object.fromEntries(BUSINESS_TYPES.map((item) => [item.id, { sector_id: item.sector_id, country: item.country }]));
-  assert.deepEqual({ ...BUSINESS_TYPE_CATALOG }, appMap);
-  assert.deepEqual([...SECTOR_IDS], SECTORS.map((item) => item.id));
-  assert.equal(Object.hasOwn(BUSINESS_TYPE_CATALOG, "unlisted"), false, "unlisted is not a catalog type");
+test("S9: a fallback is never upgraded by an echo; a deliberate choice is the person's; a listed->unlisted switch is not carried over", async () => {
+  const account = await signIn();
+  assert.equal((await saveProfile(account, { business_type_id: "global_tutoring" })).statusCode, 200);
+  // An older app switching to unlisted sends no sector: the tutoring sector is not carried over.
+  assert.equal((await saveProfile(account, {
+    business_type_id: "unlisted", business_description: "Fish farming", sector_id: null
+  })).statusCode, 200);
+  let row = await storedRow(account);
+  assert.deepEqual([row.sector_id, row.sector_source], ["other_activity", "fallback"]);
+
+  // The app echoing the stored sector back does not make it the person's choice.
+  assert.equal((await saveProfile(account, {
+    business_type_id: "unlisted", business_description: "Fish farming", sector_id: "other_activity"
+  })).statusCode, 200);
+  row = await storedRow(account);
+  assert.deepEqual([row.sector_id, row.sector_source], ["other_activity", "fallback"]);
+  assert.equal((await storedProfile(account)).profile_complete, false);
+
+  // A deliberate "None of these fit" is the person's own Other.
+  assert.equal((await saveProfile(account, {
+    business_type_id: "unlisted", business_description: "Fish farming", sector_id: "other_activity", sector_confirmed: true
+  })).statusCode, 200);
+  row = await storedRow(account);
+  assert.deepEqual([row.sector_id, row.sector_source], ["other_activity", "user"]);
+  assert.equal((await storedProfile(account)).profile_complete, true);
+
+  // A different sector is a deliberate change even without the flag.
+  assert.equal((await saveProfile(account, {
+    business_type_id: "unlisted", business_description: "Fish farming", sector_id: "agriculture"
+  })).statusCode, 200);
+  row = await storedRow(account);
+  assert.deepEqual([row.sector_id, row.sector_source], ["agriculture", "user"]);
+});
+
+test("S10 (T-S8): corrections persist through save and reload, and completeness follows", async () => {
+  const account = await signIn();
+  const steps = [
+    [{ business_type_id: "unlisted", business_description: "Tailoring and repairs", sector_id: "personal_professional", sector_confirmed: true }, "personal_professional", "user", true],
+    [{ business_type_id: "ng_fashion_tailor" }, "skilled_construction", "catalog", true],
+    [{ business_type_id: "unlisted", business_description: "Cattle trading", sector_id: "agriculture", sector_confirmed: true }, "agriculture", "user", true],
+    [{ business_type_id: "", sector_id: "agriculture" }, "agriculture", "user", false]
+  ];
+  for (const [fields, sector, source, complete] of steps) {
+    const response = await saveProfile(account, fields);
+    assert.equal(response.statusCode, 200, response.body);
+    const profile = await storedProfile(account);
+    assert.deepEqual([profile.sector_id, profile.sector_source, profile.profile_complete], [sector, source, complete], JSON.stringify(fields));
+    const again = await storedProfile(account);
+    assert.deepEqual(again, profile, "a second read (restore) returns the same profile");
+  }
+});
+
+test("S11 (T-S5, T-S7): a row without a business has no sector; the database refuses a business without one", async () => {
+  const account = await signIn();
+  const phone = (await storedProfile(account))?.phone;
+  const user = (await database.query(`SELECT id, phone_number FROM users ORDER BY created_at DESC LIMIT 1`)).rows[0];
+  // The free-report route creates phone-only rows like this one.
+  await database.query(`INSERT INTO profiles (user_id, phone_number, updated_at) VALUES ($1, $2, NOW())`, [user.id, phone || user.phone_number]);
+  let profile = await storedProfile(account);
+  assert.deepEqual([profile.sector_id, profile.sector_source, profile.profile_complete], ["", null, false]);
+
+  for (const [sql, constraint] of [
+    [`UPDATE profiles SET business_type_id = 'global_tutoring' WHERE user_id = $1`, "profiles_business_has_sector"],
+    [`UPDATE profiles SET sector_id = 'not_a_sector', sector_source = 'user' WHERE user_id = $1`, "profiles_sector_id_valid"],
+    [`UPDATE profiles SET sector_id = 'agriculture' WHERE user_id = $1`, "profiles_sector_source_pairing"],
+    [`UPDATE profiles SET sector_id = 'agriculture', sector_source = 'guess' WHERE user_id = $1`, "profiles_sector_source_valid"]
+  ]) {
+    await assert.rejects(database.query(sql, [user.id]), (error) => error.constraint === constraint, constraint);
+  }
+
+  // Saving a business turns it into a business profile with a sector.
+  assert.equal((await saveProfile(account, { business_type_id: "global_tutoring" })).statusCode, 200);
+  profile = await storedProfile(account);
+  assert.deepEqual([profile.sector_id, profile.sector_source], ["personal_professional", "catalog"]);
 });

@@ -126,7 +126,8 @@ const regionNames = (() => {
 
 function categoryLabel(dimension, category) {
   if (category === "other") return "Other (combined)";
-  if (category === "no_valid_code") return "No valid code";
+  if (category === "no_business_profile") return "No business profile";
+  if (category === "no_valid_code") return dimension === "business_type" ? "No business type" : "No valid code";
   if (dimension === "country") {
     let name = null;
     try { name = regionNames ? regionNames.of(category) : null; } catch { name = null; }
@@ -392,6 +393,7 @@ async function loadGrowth() {
 function withheldText(result, k, dimension) {
   const noun = { country: "profile country", sector: "profile sector", business_type: "profile business type" }[dimension];
   if (result.reason === "total_below_minimum") return `Withheld — fewer than ${k} External accounts in total.`;
+  if (result.reason === "business_profiles_below_half") return "Withheld — fewer than half of External accounts have a business profile.";
   if (result.reason === "valid_codes_below_half") return `Withheld — fewer than half of External accounts have a valid ${noun} code.`;
   if (result.reason === "residual_unsafe") return "Withheld — the categories are too small to show or group safely.";
   return "Withheld.";
@@ -508,6 +510,16 @@ async function loadStatus() {
   $("q-last-attempt").textContent = ok ? formatUtc(r.data.last_attempt_at) : "—";
   $("q-last-failure").textContent = ok ? (r.data.last_failure_at ? formatUtc(r.data.last_failure_at) : "None") : "—";
   $("q-out-of-range").textContent = ok && Number.isInteger(r.data.out_of_range) ? String(r.data.out_of_range) : "—";
+  const sectors = ok && r.data.sector_assignment && typeof r.data.sector_assignment === "object" ? r.data.sector_assignment : {};
+  for (const [id, key] of [
+    ["q-sector-catalog", "catalog"],
+    ["q-sector-user", "user_selected"],
+    ["q-sector-rule", "reviewed_rule"],
+    ["q-sector-fallback", "fallback"],
+    ["q-sector-mismatch", "catalog_mismatches"]
+  ]) {
+    $(id).textContent = Number.isInteger(sectors[key]) ? String(sectors[key]) : "—";
+  }
 }
 
 let refreshBusy = false;

@@ -1,7 +1,7 @@
 import { requireAdmin } from "../../admin-auth-utils.js";
 import { config } from "../../config.js";
 import { discloseBreakdown, discloseCount, discloseSubset } from "../../admin-disclosure.js";
-import { BUSINESS_TYPE_IDS, COUNTRY_CODES, NO_VALID_CODE, SECTOR_IDS } from "../../admin-dimensions.js";
+import { BUSINESS_TYPE_IDS, COUNTRY_CODES, NO_BUSINESS_PROFILE, NO_VALID_CODE, SECTOR_IDS } from "../../admin-dimensions.js";
 import {
   METRIC_DEFINITIONS,
   ensureFreshRollups,
@@ -24,19 +24,23 @@ export const SUPPRESSED_OVERVIEW_METRIC_KEYS = Object.freeze([
   "accounts_with_3plus_records"
 ]);
 const DIMENSIONS = Object.freeze({
+  // residuals: the non-category cells this dimension can report; they count in the universe size.
   country: {
     label: "Profile country code",
     categories: COUNTRY_CODES,
+    residuals: [NO_VALID_CODE],
     statement: "Country is the two-letter code stored on the account profile. It may have been chosen by the account holder or filled in from the country of the account's phone number. It is not checked."
   },
   sector: {
-    label: "Profile sector code",
+    label: "Business sector",
     categories: SECTOR_IDS,
-    statement: "Sector is the code stored on the account profile. For current app versions the server sets it from the business type chosen in the app; older profiles may hold a code stored before this check. The server validates the code; it does not verify the account's actual business."
+    residuals: [NO_BUSINESS_PROFILE],
+    statement: "Sector is Konfirmata's category for the business. For a business type in the catalog it comes from the catalog; otherwise it is the sector the account holder chose, or 'Other business' when no sector could be determined. Accounts without a business profile are shown separately. The server does not verify the account's actual business."
   },
   business_type: {
     label: "Profile business type",
     categories: BUSINESS_TYPE_IDS,
+    residuals: [NO_VALID_CODE, NO_BUSINESS_PROFILE],
     statement: "Business type is the catalog type stored on the account profile from the account holder's choice in the app, or 'unlisted' when they chose 'my business isn't listed'. The server validates the type against its catalog; it does not verify the account's actual business. Free-text business descriptions are not used."
   }
 });
@@ -179,10 +183,18 @@ export async function registerAdminSuppressedRoutes(app) {
       readSuppressedOverview()
     ]);
     const total = raw.snapshot.accounts_all || 0;
-    const noValidCode = cells.find(({ category }) => category === NO_VALID_CODE)?.count || 0;
-    const validCodes = total - noValidCode;
+    const countOf = (category) => cells.find((cell) => cell.category === category)?.count || 0;
+    const noBusinessProfile = countOf(NO_BUSINESS_PROFILE);
+    const withCode = total - noBusinessProfile - countOf(NO_VALID_CODE);
     let result;
-    if (validCodes * 2 < total) {
+    if (DIMENSIONS[dimension].residuals.includes(NO_BUSINESS_PROFILE)
+        && (total - noBusinessProfile) * 2 < total) {
+      result = {
+        status: "withheld",
+        reason: "business_profiles_below_half",
+        total: discloseCount(total, total, config.adminKAnonThreshold)
+      };
+    } else if (withCode * 2 < total) {
       result = {
         status: "withheld",
         reason: "valid_codes_below_half",
@@ -192,7 +204,7 @@ export async function registerAdminSuppressedRoutes(app) {
       result = discloseBreakdown(
         cells,
         config.adminKAnonThreshold,
-        DIMENSIONS[dimension].categories.length + 1
+        DIMENSIONS[dimension].categories.length + DIMENSIONS[dimension].residuals.length
       );
     }
     const residual = result.status === "published"

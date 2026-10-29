@@ -12,7 +12,8 @@ import {
   buildApp,
   createSession,
   prepareAdminTestDatabase,
-  seedAdmin
+  seedAdmin,
+  storedSectorColumns
 } from "./helpers/admin.js";
 
 let classifierId;
@@ -73,9 +74,9 @@ async function seedAccount({
   `, [accountPhone, email || `${crypto.randomUUID()}@example.test`, phoneVerified, emailVerified, createdAt]);
   const userId = userResult.rows[0].id;
   await query(`
-    INSERT INTO profiles (user_id, operating_region, sector_id, name, business_name, business_type_id, business_description)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
-  `, [userId, country, sector, name, businessName, businessType, businessDescription]);
+    INSERT INTO profiles (user_id, operating_region, sector_id, sector_source, name, business_name, business_type_id, business_description)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+  `, [userId, country, ...storedSectorColumns({ businessType, sector, businessDescription }), name, businessName, businessType, businessDescription]);
   const deviceIdentity = `device-${crypto.randomUUID()}`;
   await query(`
     INSERT INTO device_identities (device_identity, public_key, phone_number, status)
@@ -194,7 +195,8 @@ before(async () => {
       new URL("../migrations/010_account_classification.sql", import.meta.url),
       new URL("../migrations/011_admin_metrics_rollup.sql", import.meta.url),
       new URL("../migrations/012_admin_dimension_snapshot.sql", import.meta.url),
-      new URL("../migrations/016_admin_exclusion_model.sql", import.meta.url)
+      new URL("../migrations/016_admin_exclusion_model.sql", import.meta.url),
+      new URL("../migrations/017_sector_assignment.sql", import.meta.url)
     ]
   });
   config.adminJwtSecret = crypto.randomBytes(32).toString("hex");
@@ -847,15 +849,20 @@ test("16: an unsafe 6 and 3 country breakdown is withheld without cells", async 
 });
 
 test("16a: the sector route enforces the residual ceiling and also permits a safe residual", async () => {
+  // Universe: 8 sectors + "No business profile" = 9. One 9 and eight 4s leave a residual of 32,
+  // above the ceiling (9 - 1 - 1) x (k - 1) = 28 at k = 5.
   const sectors = [
-    "trade_retail", "food_hospitality", "transport_logistics",
+    "trade_retail", "food_hospitality", "agriculture", "transport_logistics",
     "skilled_construction", "personal_professional", "digital_online"
   ];
   for (let sectorIndex = 0; sectorIndex < sectors.length; sectorIndex += 1) {
     const count = sectorIndex === 0 ? 9 : 4;
     for (let index = 0; index < count; index += 1) await seedAccount({ sector: sectors[sectorIndex] });
   }
+  // An unknown stored sector counts as Other business (fallback); no sector, type or description
+  // means no business profile.
   for (let index = 0; index < 4; index += 1) await seedAccount({ sector: "not-valid" });
+  for (let index = 0; index < 4; index += 1) await seedAccount({ sector: null });
   await rebuildRollups();
   let app = await buildApp();
   try {
@@ -1156,13 +1163,80 @@ test("26: business type is withheld when categories are too small, as for countr
   } finally { await app.close(); }
 });
 
-test("27: the sector statement says the server validates the code, not the business (D3)", async () => {
+test("27: the sector statement explains how the sector is set and that the business is not verified (D3, U2)", async () => {
   for (let index = 0; index < 5; index += 1) await seedAccount();
   await rebuildRollups();
   const app = await buildApp();
   try {
     const body = (await ownerRequest(app, "/admin/v2/breakdown?dimension=sector")).json();
-    assert.ok(body.statements.includes("Sector is the code stored on the account profile. For current app versions the server sets it from the business type chosen in the app; older profiles may hold a code stored before this check. The server validates the code; it does not verify the account's actual business."));
+    assert.ok(body.statements.includes("Sector is Konfirmata's category for the business. For a business type in the catalog it comes from the catalog; otherwise it is the sector the account holder chose, or 'Other business' when no sector could be determined. Accounts without a business profile are shown separately. The server does not verify the account's actual business."));
     assert.equal(body.statements.some((statement) => statement.includes("It is not checked.")), false);
+  } finally { await app.close(); }
+});
+
+test("28 (T-S11): fewer than half with a business profile withholds sector and business type, not country", async () => {
+  for (let index = 0; index < 6; index += 1) await seedAccount({ sector: null });
+  for (let index = 0; index < 4; index += 1) await seedAccount({ sector: "trade_retail" });
+  await rebuildRollups();
+  const app = await buildApp();
+  try {
+    for (const dimension of ["sector", "business_type"]) {
+      const result = (await ownerRequest(app, `/admin/v2/breakdown?dimension=${dimension}`)).json().result;
+      assert.deepEqual(result, {
+        status: "withheld",
+        reason: "business_profiles_below_half",
+        total: { status: "published", value: 10 }
+      }, dimension);
+    }
+    const country = (await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result;
+    assert.notEqual(country.reason, "business_profiles_below_half");
+  } finally { await app.close(); }
+});
+
+test("29 (T-S10, T-S11): exactly half with a business profile publishes, and 'No business profile' is its own cell", async () => {
+  for (let index = 0; index < 5; index += 1) await seedAccount({ sector: null });
+  for (let index = 0; index < 5; index += 1) await seedAccount({ businessType: "ng_kiosk_phone_business", sector: "digital_online" });
+  await rebuildRollups();
+  const app = await buildApp();
+  try {
+    assert.deepEqual((await ownerRequest(app, "/admin/v2/breakdown?dimension=sector")).json().result, {
+      status: "published",
+      cells: [{ category: "no_business_profile", count: 5 }, { category: "trade_retail", count: 5 }],
+      total: 10
+    });
+  } finally { await app.close(); }
+});
+
+test("30 (T-S4, U2): profiles with no determinable sector count as Other business, which passes the gate", async () => {
+  for (let index = 0; index < 6; index += 1) await seedAccount({ sector: null, businessType: "unlisted", businessDescription: "Something unclear" });
+  for (let index = 0; index < 6; index += 1) await seedAccount({ sector: "food_hospitality" });
+  await rebuildRollups();
+  const app = await buildApp();
+  try {
+    const body = (await ownerRequest(app, "/admin/v2/breakdown?dimension=sector")).json();
+    assert.deepEqual(body.result, {
+      status: "published",
+      cells: [{ category: "food_hospitality", count: 6 }, { category: "other_activity", count: 6 }],
+      total: 12
+    });
+    assert.equal(JSON.stringify(body).includes("uncategorised"), false, "no 'not categorised' category exists");
+  } finally { await app.close(); }
+});
+
+test("31 (T-S12): descriptions never reach a breakdown or the owner status; status gives sector-assignment counts only", async () => {
+  const description = "Distinctive farm sideline 90417";
+  for (let index = 0; index < 5; index += 1) await seedAccount({ businessType: "unlisted", businessDescription: description, sector: "agriculture" });
+  for (let index = 0; index < 5; index += 1) await seedAccount({ businessType: "unlisted", businessDescription: description, sector: null });
+  for (let index = 0; index < 5; index += 1) await seedAccount({ businessType: "ng_fashion_tailor", sector: "personal_professional" });
+  await rebuildRollups();
+  const app = await buildApp();
+  try {
+    const responses = [...await suppressedResponses(app), await ownerRequest(app, "/admin/v2/status")];
+    for (const response of responses) {
+      assert.equal(response.statusCode, 200, response.body);
+      assert.equal(response.body.includes(description), false);
+    }
+    const status = responses.at(-1).json();
+    assert.deepEqual(status.sector_assignment, { catalog: 5, user_selected: 5, reviewed_rule: 0, fallback: 5, catalog_mismatches: 0 });
   } finally { await app.close(); }
 });

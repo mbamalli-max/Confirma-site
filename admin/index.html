@@ -224,6 +224,11 @@
           <div><dt>Last rebuild attempt</dt><dd id="q-last-attempt">—</dd></div>
           <div><dt>Last rebuild failure</dt><dd id="q-last-failure">—</dd></div>
           <div><dt>Source rows outside the rollup date range</dt><dd id="q-out-of-range">—</dd></div>
+          <div><dt>External business profiles: sector from the business-type catalog</dt><dd id="q-sector-catalog">—</dd></div>
+          <div><dt>External business profiles: sector chosen by the account holder</dt><dd id="q-sector-user">—</dd></div>
+          <div><dt>External business profiles: sector from a reviewed rule</dt><dd id="q-sector-rule">—</dd></div>
+          <div><dt>External business profiles: Other business by default (not confirmed)</dt><dd id="q-sector-fallback">—</dd></div>
+          <div><dt>Listed business profiles whose stored sector differs from the catalog (expected 0)</dt><dd id="q-sector-mismatch">—</dd></div>
         </dl>
         <p class="muted">Source rows outside the rollup date range counts dated rows of three kinds — account registrations, records received and valid attestations issued — whose date is before 1 January 2000 or after the day after the figures were built. These rows are left out of the figures. It is a count of rows, not of accounts or records.</p>
         <div class="button-row">
@@ -268,6 +273,8 @@
         <p>Records are counted by the time the server received them, not the time recorded on the phone. Activity on a phone that has not synced is not seen until it syncs. The current week or month in a chart is in progress and not complete.</p>
         <h3>Audience figures</h3>
         <p>Country, sector and business type describe the current profiles of External accounts. Categories too small to show safely are withheld or combined as "Other"; withheld figures are never shown as zero.</p>
+        <h3>Business sectors</h3>
+        <p>Sectors are Konfirmata's own categories for organising businesses; they are not an official industry classification or a certification. Every business profile is in exactly one sector, chosen by its main activity. For a business type in the catalog the sector comes from the catalog. For a business that is not listed it is the sector the account holder chose, or "Other business" when no sector could be determined; those default assignments are not confirmed information, and their number is shown in Data quality. Accounts without a business profile are counted separately. A category is corrected when the account holder picks a more suitable business type, describes the business and picks its sector, or asks for a catalog correction.</p>
         <ul id="method-statements"></ul>
         <h3>Activation</h3>
         <p id="activation-note">The locked activation definition cannot be computed by the server (the export step happens on the device), so no activation figure is shown.</p>
