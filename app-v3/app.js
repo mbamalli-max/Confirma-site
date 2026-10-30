@@ -7916,6 +7916,7 @@ function resetRestoreModal() {
   if (els["restore-verify-code"]) {
     els["restore-verify-code"].hidden = true;
     els["restore-verify-code"].disabled = false;
+    els["restore-verify-code"].textContent = "Verify and restore";
   }
   clearRestoreError();
   syncRestoreModalCopy();
@@ -8194,12 +8195,14 @@ async function finishRestoreFlow(country, phoneNumber) {
   }
 
   hydrateProfileUi();
-  closeRestoreModal();
   await showCapture();
+  closeRestoreModal();
   syncDevQaSnapshot("restore_completed");
 }
 
 async function verifyRestoreCode() {
+  const verifyButton = els["restore-verify-code"];
+  if (verifyButton?.disabled) return;
   const country = getRestoreCountryId();
   const channel = getPreferredOtpChannel();
   const phoneNumber = normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", country);
@@ -8211,6 +8214,10 @@ async function verifyRestoreCode() {
     return;
   }
 
+  if (verifyButton) {
+    verifyButton.disabled = true;
+    verifyButton.textContent = "Restoring your account…";
+  }
   try {
     clearRestoreError();
     if (state.otpChallenge?.source !== "server") {
@@ -8220,6 +8227,11 @@ async function verifyRestoreCode() {
     await finishRestoreFlow(country, phoneNumber || state.profile?.phone_number || "");
   } catch (error) {
     showRestoreError(error.message || "Unable to restore this account right now.");
+  } finally {
+    if (verifyButton) {
+      verifyButton.disabled = false;
+      verifyButton.textContent = "Verify and restore";
+    }
   }
 }
 

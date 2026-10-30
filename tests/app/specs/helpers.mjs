@@ -24,7 +24,7 @@ export function nextAccount(label = "account") {
 
 const OTP_WINDOW_MS = 65_000;
 
-async function paceOtp(kind, limit) {
+export async function paceOtp(kind, limit) {
   const startedAt = Date.now();
   while (true) {
     let state = { request: [], verify: [], totals: { request: 0, verify: 0 } };
