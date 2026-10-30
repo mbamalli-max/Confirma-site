@@ -159,6 +159,104 @@ function buildProfileResponse(row, fallbackPhoneNumber, accountId = null) {
   };
 }
 
+async function loadProfileRow(userId) {
+  const result = await query(
+    `
+      SELECT
+        p.name,
+        p.business_name,
+        p.country,
+        p.operating_region,
+        p.language,
+        p.business_type_id,
+        p.sector_id,
+        p.sector_source,
+        p.business_description,
+        p.preferred_labels,
+        p.plan,
+        p.plan_activated_at,
+        u.phone_number,
+        u.email,
+        u.email_verified,
+        u.phone_verified
+      FROM profiles p
+      INNER JOIN users u
+        ON u.id = p.user_id
+      WHERE p.user_id = $1
+      LIMIT 1
+    `,
+    [userId]
+  );
+  return result.rows[0] || null;
+}
+
+// S2 "fill_missing": recover a business profile the phone holds but the server never received.
+// One statement writes only when the stored row has no business at the moment of writing, so a
+// profile saved concurrently from another device is never overwritten. Non-business fields the
+// server already holds are kept; only empty ones are filled.
+async function fillMissingProfile({ user, body, business, email }) {
+  const result = await query(
+    `
+      INSERT INTO profiles (
+        user_id,
+        name,
+        business_name,
+        phone_number,
+        country,
+        operating_region,
+        language,
+        business_type_id,
+        sector_id,
+        sector_source,
+        preferred_labels,
+        business_description,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW())
+      ON CONFLICT (user_id)
+      DO UPDATE SET
+        name = COALESCE(NULLIF(profiles.name, ''), EXCLUDED.name),
+        business_name = COALESCE(NULLIF(profiles.business_name, ''), EXCLUDED.business_name),
+        phone_number = COALESCE(NULLIF(profiles.phone_number, ''), EXCLUDED.phone_number),
+        country = COALESCE(NULLIF(profiles.country, ''), EXCLUDED.country),
+        operating_region = COALESCE(NULLIF(profiles.operating_region, ''), EXCLUDED.operating_region),
+        language = COALESCE(NULLIF(profiles.language, ''), EXCLUDED.language),
+        business_type_id = EXCLUDED.business_type_id,
+        sector_id = EXCLUDED.sector_id,
+        sector_source = EXCLUDED.sector_source,
+        preferred_labels = EXCLUDED.preferred_labels,
+        business_description = EXCLUDED.business_description,
+        updated_at = NOW()
+      WHERE profiles.business_type_id IS NULL
+        AND profiles.sector_id IS NULL
+        AND profiles.business_description IS NULL
+      RETURNING user_id
+    `,
+    [
+      user.id,
+      String(body.name || "").trim() || null,
+      String(body.business_name || "").trim() || null,
+      user.phone_number,
+      normalizeCountry(body.country),
+      normalizeCountry(body.operating_region || body.country),
+      normalizeLanguage(body.language),
+      business.businessTypeId,
+      business.sectorId,
+      business.sectorSource,
+      JSON.stringify(business.preferredLabels),
+      business.description
+    ]
+  );
+  const applied = result.rowCount === 1;
+  if (applied && email) {
+    await query(
+      `UPDATE users SET email = $2 WHERE phone_number = $1 AND (email IS NULL OR email = '')`,
+      [user.phone_number, email]
+    );
+  }
+  return applied;
+}
+
 export async function registerAccountRoutes(app) {
   app.get("/records", {
     config: { rateLimit: { max: 30, timeWindow: "1 minute" } }
@@ -234,35 +332,7 @@ export async function registerAccountRoutes(app) {
       return { profile: null };
     }
 
-    const result = await query(
-      `
-        SELECT
-          p.name,
-          p.business_name,
-          p.country,
-          p.operating_region,
-          p.language,
-          p.business_type_id,
-          p.sector_id,
-          p.sector_source,
-          p.business_description,
-          p.preferred_labels,
-          p.plan,
-          p.plan_activated_at,
-          u.phone_number,
-          u.email,
-          u.email_verified,
-          u.phone_verified
-        FROM profiles p
-        INNER JOIN users u
-          ON u.id = p.user_id
-        WHERE p.user_id = $1
-        LIMIT 1
-      `,
-      [user.id]
-    );
-
-    return buildProfileResponse(result.rows[0] || null, user.phone_number, user.id);
+    return buildProfileResponse(await loadProfileRow(user.id), user.phone_number, user.id);
   });
 
   app.post("/profile", {
@@ -282,6 +352,12 @@ export async function registerAccountRoutes(app) {
       return reply.code(400).send({ error: "Enter a valid email address." });
     }
 
+    const hasMode = Object.hasOwn(body, "mode");
+    if (hasMode && body.mode !== "fill_missing") {
+      return reply.code(400).send({ error: "Unknown profile save mode." });
+    }
+    const fillMissing = hasMode;
+
     const storedResult = await query(
       `SELECT business_type_id, sector_id, sector_source, business_description FROM profiles WHERE user_id = $1 LIMIT 1`,
       [user.id]
@@ -290,6 +366,21 @@ export async function registerAccountRoutes(app) {
     const business = resolveBusinessFields(body, stored);
     if (business.error) {
       return reply.code(400).send({ error: business.error });
+    }
+    if (fillMissing) {
+      // Recovery sends a complete business; it never relies on stored values.
+      if (business.keepStoredBusiness || business.keepStoredDescription || !business.sectorId) {
+        return reply.code(400).send({ error: "A business type, sector or description is required." });
+      }
+      try {
+        const applied = await fillMissingProfile({ user, body, business, email });
+        return { ok: true, applied, ...buildProfileResponse(await loadProfileRow(user.id), user.phone_number, user.id) };
+      } catch (error) {
+        if (error?.code === "23514" && /profiles_(unlisted_description_pairing|business_description_length)/.test(error.constraint || "")) {
+          return reply.code(400).send({ error: "Describe your business in 3 to 60 characters." });
+        }
+        throw error;
+      }
     }
     if (business.keepStoredDescription) {
       if (!stored?.business_description) {

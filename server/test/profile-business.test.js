@@ -7,7 +7,7 @@ import { getPool } from "../src/db.js";
 import { BUSINESS_TYPE_CATALOG, SECTOR_IDS } from "../src/business-catalog.js";
 import { registerAccountRoutes } from "../src/routes/account.js";
 import { registerAuthRoutes } from "../src/routes/auth.js";
-import { assertLocalTestDatabase, createTestPool, resetTestDatabase } from "./helpers/db.js";
+import { assertLocalTestDatabase, createTestPool, getBackendPid, resetTestDatabase, waitForBackendsBlockedBy } from "./helpers/db.js";
 import { BUSINESS_TYPES, SECTORS } from "../../app-v3/catalog-data.js";
 
 // This guard intentionally runs before a pool is created or any SQL is issued.
@@ -52,7 +52,7 @@ async function signIn() {
   assert.equal(verified.statusCode, 200, verified.body);
   const { auth_token: token } = verified.json();
   assert.ok(token, "sign-in returns a token");
-  return { headers: { authorization: `Bearer ${token}`, "x-device-identity": deviceIdentity } };
+  return { phone, headers: { authorization: `Bearer ${token}`, "x-device-identity": deviceIdentity } };
 }
 
 const BASE = { name: "Ada", business_name: "Ada Prints", country: "NG", operating_region: "NG", language: "en" };
@@ -380,4 +380,150 @@ test("S11 (T-S5, T-S7): a row without a business has no sector; the database ref
   assert.equal((await saveProfile(account, { business_type_id: "global_tutoring" })).statusCode, 200);
   profile = await storedProfile(account);
   assert.deepEqual([profile.sector_id, profile.sector_source], ["personal_professional", "catalog"]);
+});
+
+// ---- S2: fill_missing recovery mode ----
+
+function fillMissing(account, fields) {
+  return app.inject({
+    method: "POST", url: "/profile", headers: account.headers,
+    payload: { ...BASE, ...fields, mode: "fill_missing" }
+  });
+}
+
+async function profileRowByPhone(phone) {
+  const result = await database.query(
+    `SELECT p.name, p.country, p.operating_region, p.business_type_id, p.sector_id, p.sector_source, p.business_description
+       FROM profiles p INNER JOIN users u ON u.id = p.user_id WHERE u.phone_number = $1`,
+    [phone]
+  );
+  return result.rows;
+}
+
+test("T-R5: fill_missing creates, fills a business-less row, never touches a stored business, keeps stored fields", async () => {
+  // No row: created with the catalog sector.
+  const fresh = await signIn();
+  let response = await fillMissing(fresh, { business_type_id: "ng_food_vendor" });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(response.json().applied, true);
+  assert.equal(response.json().profile.business_type_id, "ng_food_vendor");
+  assert.equal(response.json().profile.sector_source, "catalog");
+  assert.equal(response.json().profile.profile_complete, true);
+
+  // A row with no business: business filled; stored name/country kept; empty name filled.
+  const phoneOnly = await signIn();
+  assert.equal((await saveProfile(phoneOnly, { name: "", country: "US", operating_region: "US" })).statusCode, 200);
+  response = await fillMissing(phoneOnly, { name: "Supplied", country: "NG", operating_region: "NG", business_type_id: "ng_market_trader" });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(response.json().applied, true);
+  let [row] = await profileRowByPhone(response.json().profile.phone);
+  assert.equal(row.business_type_id, "ng_market_trader");
+  assert.equal(row.sector_id, "trade_retail");
+  assert.equal(row.country, "US", "stored country kept over supplied");
+  assert.equal(row.operating_region, "US");
+  assert.equal(row.name, "Supplied", "an empty stored name is filled");
+
+  const named = await signIn();
+  assert.equal((await saveProfile(named, { name: "Stored", language: "ha" })).statusCode, 200);
+  response = await fillMissing(named, { name: "Supplied", language: "en", business_type_id: "ng_market_trader" });
+  assert.equal(response.json().applied, true);
+  assert.equal(response.json().profile.name, "Stored", "a stored name is kept");
+  assert.equal(response.json().profile.language, "ha", "a stored language is kept");
+
+  // A row with a business: untouched, applied false, the stored profile returned.
+  const owned = await signIn();
+  assert.equal((await saveProfile(owned, { name: "Owner", business_type_id: "ng_provision_shop" })).statusCode, 200);
+  response = await fillMissing(owned, { name: "Other", business_type_id: "ng_food_vendor" });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(response.json().applied, false);
+  assert.equal(response.json().profile.business_type_id, "ng_provision_shop");
+  [row] = await profileRowByPhone(response.json().profile.phone);
+  assert.equal(row.business_type_id, "ng_provision_shop");
+  assert.equal(row.name, "Owner");
+
+  // Stored email kept.
+  const before = (await storedProfile(fresh)).email;
+  response = await fillMissing(fresh, { business_type_id: "ng_market_trader", email: "other@example.test" });
+  assert.equal((await storedProfile(fresh)).email, before);
+
+  // Unlisted with a deliberate sector choice.
+  const unlisted = await signIn();
+  response = await fillMissing(unlisted, { business_type_id: "unlisted", business_description: "Bead making", sector_id: "other_activity", sector_confirmed: true });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(response.json().profile.sector_id, "other_activity");
+  assert.equal(response.json().profile.sector_source, "user");
+});
+
+test("T-R5: no mode keeps today's response; unknown mode and empty recovery are refused", async () => {
+  const account = await signIn();
+  const normal = await saveProfile(account, { business_type_id: "ng_market_trader" });
+  assert.equal(normal.statusCode, 200);
+  assert.deepEqual(normal.json(), { ok: true });
+
+  for (const mode of ["", "overwrite", null, 1]) {
+    const response = await app.inject({ method: "POST", url: "/profile", headers: account.headers, payload: { ...BASE, business_type_id: "ng_food_vendor", mode } });
+    assert.equal(response.statusCode, 400, `mode ${JSON.stringify(mode)}`);
+  }
+  assert.equal((await storedRow(account)).business_type_id, "ng_market_trader");
+
+  const empty = await signIn();
+  assert.equal((await fillMissing(empty, {})).statusCode, 400, "nothing to recover");
+  assert.equal((await fillMissing(empty, { business_type_id: "unlisted" })).statusCode, 400, "unlisted needs its description");
+  assert.equal((await profileRowByPhone(empty.phone)).length, 0);
+});
+
+test("T-R4: a profile saved after the check wins over a late fill_missing", async () => {
+  const account = await signIn();
+  assert.equal((await storedProfile(account)), null, "device A sees no business");
+  assert.equal((await saveProfile(account, { business_type_id: "ng_provision_shop" })).statusCode, 200, "device B saves");
+  const late = await fillMissing(account, { business_type_id: "ng_food_vendor" });
+  assert.equal(late.statusCode, 200, late.body);
+  assert.equal(late.json().applied, false);
+  assert.equal(late.json().profile.business_type_id, "ng_provision_shop", "A receives B's profile to apply");
+});
+
+test("T-R4: the no-business condition is checked in the write itself, not in an earlier read", async () => {
+  const account = await signIn();
+  assert.equal((await saveProfile(account, { name: "Ada" })).statusCode, 200, "a row with no business");
+  const blocker = await database.connect();
+  try {
+    await blocker.query("BEGIN");
+    const blockerPid = await getBackendPid(blocker);
+    await blocker.query(
+      `SELECT 1 FROM profiles p INNER JOIN users u ON u.id = p.user_id WHERE u.phone_number = $1 FOR UPDATE OF p`,
+      [account.phone]
+    );
+    const pending = fillMissing(account, { business_type_id: "ng_food_vendor" });
+    await waitForBackendsBlockedBy(database, blockerPid, [/INSERT INTO profiles/]);
+    // Device B's save commits while A's fill_missing is waiting to write.
+    await blocker.query(
+      `UPDATE profiles p SET business_type_id = 'ng_provision_shop', sector_id = 'trade_retail', sector_source = 'catalog'
+         FROM users u WHERE u.id = p.user_id AND u.phone_number = $1`,
+      [account.phone]
+    );
+    await blocker.query("COMMIT");
+    const response = await pending;
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.json().applied, false);
+    assert.equal(response.json().profile.business_type_id, "ng_provision_shop");
+  } finally {
+    blocker.release();
+  }
+  const [row] = await profileRowByPhone(account.phone);
+  assert.equal(row.business_type_id, "ng_provision_shop", "B's profile is never overwritten");
+});
+
+test("T-R4: concurrent fill_missing and a normal save always leave exactly the normal save", async () => {
+  for (let round = 0; round < 8; round += 1) {
+    const account = await signIn();
+    const [fill, save] = await Promise.all([
+      fillMissing(account, { business_type_id: "ng_food_vendor" }),
+      saveProfile(account, { business_type_id: "ng_provision_shop" })
+    ]);
+    assert.equal(fill.statusCode, 200, fill.body);
+    assert.equal(save.statusCode, 200, save.body);
+    const rows = await profileRowByPhone(account.phone);
+    assert.equal(rows.length, 1, "exactly one profile");
+    assert.equal(rows[0].business_type_id, "ng_provision_shop", `round ${round}: the normal save is never overwritten`);
+  }
 });
