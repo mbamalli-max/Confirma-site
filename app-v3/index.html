@@ -257,6 +257,11 @@
             </label>
             <p class="subtle" id="business-description-help">3 to 60 characters. You'll choose sale, buy or payment yourself when recording.</p>
             <p class="error" id="business-description-error" role="alert" hidden></p>
+            <fieldset class="unlisted-sector" id="unlisted-sector-group">
+              <legend>Which sector is closest?</legend>
+              <div class="unlisted-sector-grid" id="unlisted-sector-grid"></div>
+            </fieldset>
+            <p class="error" id="unlisted-sector-error" role="alert" hidden></p>
             <button class="btn btn-secondary" id="unlisted-continue" type="button">Continue</button>
           </div>
           <h3 class="browse-heading">Or browse by sector</h3>
@@ -352,8 +357,8 @@
         <label class="field" id="otp-phone-field" hidden>
           Phone number
           <div class="phone-input-shell">
-            <span class="phone-prefix" id="otp-country-prefix" aria-hidden="true">+234</span>
-            <input id="otp-phone-input" type="tel" placeholder="08099840666" autocomplete="tel" inputmode="tel" aria-describedby="otp-helper-text">
+            <span class="phone-prefix" id="otp-country-prefix" aria-hidden="true"></span>
+            <input id="otp-phone-input" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel" aria-describedby="otp-helper-text">
           </div>
         </label>
         <div class="button-stack">
@@ -413,6 +418,13 @@
         </div>
         <button class="pill-button" id="change-profile" type="button">Change</button>
       </header>
+      <div class="profile-prompt-banner" id="profile-prompt-banner" role="region" aria-label="Business profile" hidden>
+        <p id="profile-prompt-text">Help us categorise your business: one question.</p>
+        <div class="profile-prompt-actions">
+          <button class="btn btn-primary" id="profile-prompt-complete" type="button">Complete profile</button>
+          <button class="btn btn-secondary" id="profile-prompt-dismiss" type="button">Not now</button>
+        </div>
+      </div>
       <div class="voice-card">
         <button id="mic-button-v2" class="mic-button" type="button" aria-label="Tap to speak">🎤</button>
         <p id="voice-label-v2">Tap to speak your transaction</p>
@@ -832,6 +844,23 @@
     </nav>
   </div>
 
+  <div class="modal-shell" id="region-choice-modal" hidden>
+    <div class="modal-backdrop" id="region-choice-close"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="region-choice-title">
+      <h2 id="region-choice-title">Where does your business operate?</h2>
+      <p class="subtle">We ask once, so amounts are recorded in the right currency. Your phone country is not changed.</p>
+      <label class="field" for="region-choice-select">
+        Business country
+        <select id="region-choice-select"></select>
+      </label>
+      <p class="error" id="region-choice-error" role="alert" hidden></p>
+      <div class="button-stack">
+        <button class="btn btn-primary" id="region-choice-save" type="button">Save country</button>
+        <button class="btn btn-secondary" id="region-choice-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-shell" id="change-confirm-modal" hidden>
     <div class="modal-backdrop" id="change-confirm-close"></div>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="change-confirm-title">
@@ -933,8 +962,8 @@
       <label class="field" id="restore-phone-field" hidden>
         Phone number
         <div class="phone-input-shell">
-          <span class="phone-prefix" id="restore-country-prefix" aria-hidden="true">+234</span>
-          <input id="restore-phone-input" type="tel" placeholder="08099840666" autocomplete="tel" inputmode="tel" aria-describedby="restore-helper-text">
+          <span class="phone-prefix" id="restore-country-prefix" aria-hidden="true"></span>
+          <input id="restore-phone-input" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel" aria-describedby="restore-helper-text">
         </div>
       </label>
       <p class="record-meta" id="restore-helper-text">Request a restore code to continue.</p>

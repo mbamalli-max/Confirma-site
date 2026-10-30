@@ -205,9 +205,11 @@ async function changeProfileToSearchStep(page) {
   await expect(page.getByRole("heading", { name: "What business do you do?" })).toBeVisible();
 }
 
-async function saveUnlisted(page, description) {
+// S2: "isn't listed" needs a description and a sector (default here: "None of these fit").
+async function saveUnlisted(page, description, sectorName = "None of these fit") {
   await page.locator("#business-not-listed").click();
   await page.locator("#business-description").fill(description);
+  await page.locator("#unlisted-sector-grid").getByLabel(sectorName).check();
   await page.locator("#unlisted-continue").click();
 }
 
@@ -236,11 +238,11 @@ test("8 + 9: listed -> unlisted -> listed, persisted on the server and across de
   await saveUnlisted(page, "Document courier and errands");
   await finishProfile(page);
   const local = (await readStoredProfile(page));
-  expect(local).toMatchObject({ business_type_id: "unlisted", business_description: "Document courier and errands", sector_id: null, preferred_labels: [] });
+  expect(local).toMatchObject({ business_type_id: "unlisted", business_description: "Document courier and errands", sector_id: "other_activity", sector_confirmed: true, preferred_labels: [] });
   await expect.poll(() => profileRowForEmail(account.email), SERVER_TIMEOUT).toMatchObject({
     // This app version sends no sector for an unlisted business: the server files it under
-    // "Other business" as a fallback (U2), never as the person's choice.
-    business_type_id: "unlisted", business_description: "Document courier and errands", sector_id: "other_activity", sector_source: "fallback", preferred_labels: []
+    // S2: "None of these fit" is the person's deliberate choice of Other business.
+    business_type_id: "unlisted", business_description: "Document courier and errands", sector_id: "other_activity", sector_source: "user", preferred_labels: []
   });
   await expect(page.locator("#profile-summary")).toContainText("Document courier and errands");
 
@@ -469,7 +471,7 @@ test("13b (T-C1, T-C3): the live v37 app restores new sector ids and its saves n
   await finishProfile(current);
   await currentContext.close();
   await expect.poll(() => profileRowForEmail(account.email), SERVER_TIMEOUT).toMatchObject({
-    business_type_id: "unlisted", sector_id: "other_activity", sector_source: "fallback"
+    business_type_id: "unlisted", sector_id: "other_activity", sector_source: "user"
   });
   // As a newer app would store the person's own choice of a sector the v37 catalog does not know.
   setProfileSectorForEmail(account.email, "agriculture", "user");

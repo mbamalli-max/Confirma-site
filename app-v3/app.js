@@ -36,6 +36,14 @@ const DB_VERSION = 5;
 const FEATURE_TRANSFER_PRIMARY = false;
 const ONBOARDING_TOTAL_STEPS = 6;
 const ONBOARDING_PROFILE_STEP = 6;
+const ONBOARDING_BUSINESS_STEP = 3;
+const OTHER_ACTIVITY_SECTOR_ID = "other_activity";
+const VALID_SECTOR_IDS = new Set(SECTORS.map((sector) => sector.id));
+// S2 profile-completion prompt cadence (proposal §6, U4). Stored only on this device, per account.
+const PROFILE_PROMPT_KEY = "profile_prompt_state";
+const PROFILE_PROMPT_GAP_MS = 7 * 24 * 60 * 60 * 1000;
+const PROFILE_PROMPT_OPEN_WINDOW_MS = 20 * 60 * 60 * 1000;
+const PROFILE_PROMPT_EVERY = 3;
 
 let LABEL_CATALOG = [];
 
@@ -215,7 +223,7 @@ async function init() {
       showPinLock();
     }
     void flushSyncQueue();
-    void restoreServerAccountIntoLocal({ quiet: true });
+    void restoreServerAccountIntoLocal({ quiet: true }).then(() => noteEligibleSignIn("open"));
   } else {
     showScreen("screen-onboarding");
   }
@@ -280,7 +288,9 @@ function cacheElements() {
     "remove-local-data-confirm", "remove-local-data-anyway", "remove-local-data-cancel",
     "otp-back", "otp-screen-header-title", "otp-screen-header-copy", "otp-screen-title", "otp-screen-copy", "otp-status-card",
     "otp-email-field", "otp-email-input", "otp-phone-field", "otp-country-prefix", "otp-phone-input", "otp-request-code",
-    "otp-helper-text", "otp-code-input", "otp-verify-code", "otp-error-text"
+    "otp-helper-text", "otp-code-input", "otp-verify-code", "otp-error-text",
+    "unlisted-sector-grid", "unlisted-sector-error", "profile-prompt-banner", "profile-prompt-complete", "profile-prompt-dismiss",
+    "region-choice-modal", "region-choice-select", "region-choice-error", "region-choice-save", "region-choice-cancel", "region-choice-close"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -299,6 +309,16 @@ function wireEvents() {
     restoreAccountFlow();
   });
   document.getElementById("change-profile").addEventListener("click", openChangeProfileConfirm);
+  els["profile-prompt-complete"]?.addEventListener("click", openProfileCompletionFromPrompt);
+  els["profile-prompt-dismiss"]?.addEventListener("click", hideProfilePrompt);
+  els["region-choice-save"]?.addEventListener("click", () => {
+    void saveRegionChoice();
+  });
+  els["region-choice-cancel"]?.addEventListener("click", closeRegionChoice);
+  els["region-choice-close"]?.addEventListener("click", closeRegionChoice);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void noteEligibleSignIn("open");
+  });
   document.getElementById("anomaly-banner-cta")?.addEventListener("click", () => {
     void openAnomalyReview();
   });
@@ -855,6 +875,7 @@ function selectListedBusinessType(item) {
   state.profile = {
     ...state.profile,
     sector_id: item.sector_id,
+    sector_confirmed: false,
     business_type_id: item.id,
     business_description: "",
     preferred_labels: []
@@ -1014,7 +1035,49 @@ function showUnlistedPanel() {
   els["unlisted-panel"].hidden = false;
   els["business-description"].value = isUnlistedBusiness() ? (state.profile.business_description || "") : "";
   setUnlistedError("");
+  renderUnlistedSectorChoice();
   els["business-description"].focus();
+}
+
+// The 7 named sectors plus "None of these fit" (other_activity). A sector the person browsed (or
+// chose before) is pre-selected; a listed type's catalog sector is never offered as a contradiction
+// because choosing "isn't listed" replaces the listed type.
+function renderUnlistedSectorChoice() {
+  const grid = els["unlisted-sector-grid"];
+  if (!grid) return;
+  grid.innerHTML = "";
+  setUnlistedSectorError("");
+  const preselected = VALID_SECTOR_IDS.has(state.profile?.sector_id) ? state.profile.sector_id : "";
+  const options = [
+    ...SECTORS.filter((sector) => sector.id !== OTHER_ACTIVITY_SECTOR_ID),
+    { id: OTHER_ACTIVITY_SECTOR_ID, name: "None of these fit", icon: "🧩" }
+  ];
+  options.forEach((sector) => {
+    const label = document.createElement("label");
+    label.className = "unlisted-sector-option";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "unlisted-sector";
+    input.value = sector.id;
+    input.checked = sector.id === preselected;
+    input.addEventListener("change", () => setUnlistedSectorError(""));
+    const text = document.createElement("span");
+    text.textContent = `${sector.icon || ""} ${sector.name}`.trim();
+    label.append(input, text);
+    grid.appendChild(label);
+  });
+}
+
+function getChosenUnlistedSector() {
+  const checked = els["unlisted-sector-grid"]?.querySelector('input[name="unlisted-sector"]:checked');
+  return checked && VALID_SECTOR_IDS.has(checked.value) ? checked.value : "";
+}
+
+function setUnlistedSectorError(message) {
+  const error = els["unlisted-sector-error"];
+  if (!error) return;
+  error.textContent = message;
+  error.hidden = !message;
 }
 
 function hideUnlistedPanel() {
@@ -1038,11 +1101,18 @@ function saveUnlistedBusiness() {
     els["business-description"].focus();
     return;
   }
+  const sectorId = getChosenUnlistedSector();
+  if (!sectorId) {
+    setUnlistedSectorError("Choose the closest sector, or None of these fit.");
+    els["unlisted-sector-grid"]?.querySelector("input")?.focus();
+    return;
+  }
   state.profile = {
     ...state.profile,
     business_type_id: UNLISTED_BUSINESS_TYPE_ID,
     business_description: cleanBusinessDescription(els["business-description"].value),
-    sector_id: null,
+    sector_id: sectorId,
+    sector_confirmed: true,
     preferred_labels: []
   };
   hideUnlistedPanel();
@@ -1216,6 +1286,13 @@ async function finishOnboarding() {
   };
 
   await saveFirstProfileWithOrigin(state.profile);
+  // A saved listed type, or "isn't listed" with a chosen sector, completes the profile here; the
+  // server confirms with profile_complete on the next check.
+  if (state.profileCompletion && hasLocalBusinessToResend()
+    && (!isUnlistedBusiness() || state.profile.sector_confirmed === true)) {
+    state.profileCompletion.needed = false;
+    hideProfilePrompt();
+  }
   if (normalizedPhoneNumber && detectedPhoneCountry) {
     await persistAuthPhoneCountry(detectedPhoneCountry);
   }
@@ -2265,6 +2342,7 @@ function showPinLock() {
 
 function hidePinLock() {
   els["pin-lock-screen"].hidden = true;
+  revealPendingProfilePrompt();
 }
 
 function updatePinDots() {
@@ -2327,7 +2405,12 @@ function getPasscodeReminder(profile = state.profile) {
 function normalizeLocalProfile(profile, { trackReminderMigration = false, trackDimensionMigration = false } = {}) {
   if (!profile) return null;
   const { reminder, migrated } = normalizePasscodeReminder(profile.passcodeReminder, profile.passcode_hint);
-  const normalizedOperatingRegion = getRecognizedCountryId(profile.operating_region || profile.country) || "NG";
+  // Unknown stays unknown: a region is never invented (S2).
+  // `country` is read only for legacy profiles saved before operating_region existed; elsewhere it can
+  // hold the phone country, which must never become the business region.
+  const normalizedOperatingRegion = getRecognizedCountryId(
+    Object.hasOwn(profile, "operating_region") ? profile.operating_region : profile.country
+  ) || "";
   const normalizedPhoneCountry = getRecognizedCountryId(profile.phone_country) || detectPhoneCountryFromPhoneNumber(profile.phone_number) || "";
   const normalizedLanguage = normalizeLanguageId(profile.language || "en");
   const needsDimensionMigration = Boolean(
@@ -2343,7 +2426,10 @@ function normalizeLocalProfile(profile, { trackReminderMigration = false, trackD
     business_description: profile.business_type_id === UNLISTED_BUSINESS_TYPE_ID
       ? cleanBusinessDescription(profile.business_description)
       : "",
-    ...(profile.business_type_id === UNLISTED_BUSINESS_TYPE_ID ? { sector_id: null } : {}),
+    // An unlisted business keeps the sector the person chose; anything unrecognised is dropped.
+    ...(profile.business_type_id === UNLISTED_BUSINESS_TYPE_ID
+      ? { sector_id: VALID_SECTOR_IDS.has(profile.sector_id) ? profile.sector_id : null, sector_confirmed: profile.sector_confirmed === true && VALID_SECTOR_IDS.has(profile.sector_id) }
+      : { sector_confirmed: false }),
     operating_region: normalizedOperatingRegion,
     phone_country: normalizedPhoneCountry,
     language: normalizedLanguage
@@ -4527,6 +4613,11 @@ function prepareConfirmation() {
   if (!state.selectedLabel) {
     return showError("Pick a label first.");
   }
+  if (!hasKnownOperatingRegion()) {
+    // S2: an unknown business region is asked once; it never silently becomes a default.
+    openRegionChoice();
+    return;
+  }
   const currency = getProfileCurrency();
   const maxAmount = currency === "NGN" ? 10000000 * 100 : 100000 * 100;
   if (!amount || amount <= 0) {
@@ -5323,6 +5414,7 @@ function showScreen(id) {
   }
   updateBottomNav(id);
   refreshTrustBanner(id);
+  if (id === "screen-capture") revealPendingProfilePrompt();
   if (id === "screen-onboarding") {
     focusFirstInteractive(document.querySelector(`.step[data-step="${state.onboardingStep}"]`));
   } else if (id === "screen-confirm") {
@@ -5716,7 +5808,7 @@ function getRecognizedCountryId(country) {
   return getCountryAliases()[value] || "";
 }
 
-function normalizeCountryId(country, fallback = "NG") {
+function normalizeCountryId(country, fallback = "") {
   return getRecognizedCountryId(country) || fallback;
 }
 
@@ -6499,9 +6591,10 @@ async function verifyActiveOtpChallenge(
   await refreshSyncQueueCount();
   if (activeChallenge.source === "server") {
     await restoreServerAccountIntoLocal({
-      fallbackCountry: country,
       allowProfilePush: persistProfileRemotely
     });
+    // A completed OTP sign-in is an eligible sign-in for the profile prompt (shown once on capture).
+    void noteEligibleSignIn("otp");
   }
   syncDevQaSnapshot("otp_verified");
   return challengeChannel === "email"
@@ -6771,7 +6864,7 @@ async function logoutFromServerSession() {
     pending_revocations: pending,
     session_generation: nextGeneration,
     signed_out: true
-  }, ["local_origin", "legacy_claim_consent"]);
+  }, ["local_origin", "legacy_claim_consent", PROFILE_PROMPT_KEY]);
   state.authSessionKey = "";
   state.authSessionExpiresAt = "";
   state.pendingRevocations = pending;
@@ -6854,7 +6947,7 @@ async function enterRefusedSignedOutState(queueToken, token, reason = "device_mi
     pending_revocations: pending,
     session_generation: nextGeneration,
     signed_out: true
-  }, ["local_origin", "legacy_claim_consent"]);
+  }, ["local_origin", "legacy_claim_consent", PROFILE_PROMPT_KEY]);
   state.authSessionKey = "";
   state.authSessionExpiresAt = "";
   state.pendingRevocations = pending;
@@ -7064,7 +7157,7 @@ async function beginDurableWipeLock() {
   await saveSettings({
     auth_token: "", auth_token_expires_at: "", pending_revocations: pending,
     signed_out: true, wipe_pending: true, session_generation: nextGeneration
-  }, ["local_origin", "legacy_claim_consent"]);
+  }, ["local_origin", "legacy_claim_consent", PROFILE_PROMPT_KEY]);
   state.authSessionKey = "";
   state.authSessionExpiresAt = "";
   state.pendingRevocations = pending;
@@ -7232,6 +7325,9 @@ function buildProfileSyncPayload(profile = state.profile) {
     language,
     business_type_id: String(profile.business_type_id || "").trim() || null,
     sector_id: String(profile.sector_id || "").trim() || null,
+    ...(profile.business_type_id === UNLISTED_BUSINESS_TYPE_ID && profile.sector_confirmed === true && VALID_SECTOR_IDS.has(profile.sector_id)
+      ? { sector_confirmed: true }
+      : {}),
     preferred_labels: normalizePreferredLabels(profile.preferred_labels, profile.business_type_id),
     // Sent only when there is one to send; the server keeps a stored description when the field is absent.
     ...(profile.business_type_id === UNLISTED_BUSINESS_TYPE_ID && cleanBusinessDescription(profile.business_description)
@@ -7258,8 +7354,27 @@ async function pushProfile() {
   }
 }
 
-function mergeServerProfile(serverProfile, fallbackCountry = getSelectedCountryId()) {
+function mergeServerProfile(serverProfile) {
   if (!serverProfile) return null;
+  // A server business replaces the local one as a whole (type, sector, description, labels), so a
+  // listed type is never paired with another profile's sector. With no server business, the local
+  // business is kept.
+  const fromServer = hasServerBusinessProfile(serverProfile);
+  const business = fromServer
+    ? {
+      business_type_id: String(serverProfile.business_type_id || "").trim() || null,
+      sector_id: String(serverProfile.sector_id || "").trim() || null,
+      sector_confirmed: serverProfile.sector_source === "user",
+      business_description: String(serverProfile.business_description || ""),
+      preferred_labels: normalizePreferredLabels(serverProfile.preferred_labels, serverProfile.business_type_id)
+    }
+    : {
+      business_type_id: String(state.profile?.business_type_id || "").trim() || null,
+      sector_id: String(state.profile?.sector_id || "").trim() || null,
+      sector_confirmed: state.profile?.sector_confirmed === true,
+      business_description: String(state.profile?.business_description || ""),
+      preferred_labels: normalizePreferredLabels(state.profile?.preferred_labels, state.profile?.business_type_id)
+    };
   const displayName = String(serverProfile.business_name || serverProfile.name || "").trim();
   return normalizeLocalProfile({
     ...(state.profile || {}),
@@ -7267,16 +7382,12 @@ function mergeServerProfile(serverProfile, fallbackCountry = getSelectedCountryI
     display_name: displayName || state.profile?.display_name || "",
     phone_number: String(serverProfile.phone || state.profile?.phone_number || "").trim(),
     email: normalizeEmailAddress(serverProfile.email || state.profile?.email || ""),
-    operating_region: normalizeCountryId(serverProfile.operating_region || serverProfile.country || fallbackCountry || state.profile?.operating_region),
+    // The business region comes from the server or the saved profile, never from the phone country.
+    operating_region: getRecognizedCountryId(serverProfile.operating_region || serverProfile.country)
+      || getRecognizedCountryId(state.profile?.operating_region) || "",
     phone_country: getRecognizedCountryId(serverProfile.phone_country) || detectPhoneCountryFromPhoneNumber(serverProfile.phone || state.profile?.phone_number) || state.profile?.phone_country || "",
     language: normalizeLanguageId(serverProfile.language || state.profile?.language || "en"),
-    business_type_id: String(serverProfile.business_type_id || state.profile?.business_type_id || "").trim() || null,
-    sector_id: String(serverProfile.sector_id || state.profile?.sector_id || "").trim() || null,
-    business_description: String(serverProfile.business_description || state.profile?.business_description || ""),
-    preferred_labels: normalizePreferredLabels(
-      serverProfile.preferred_labels,
-      serverProfile.business_type_id || state.profile?.business_type_id
-    ),
+    ...business,
     passcodeReminder: clonePasscodeReminder(getPasscodeReminder(state.profile)),
     email_verified: Boolean(serverProfile.email_verified ?? state.profile?.email_verified),
     phone_verified: Boolean(serverProfile.phone_verified ?? state.profile?.phone_verified),
@@ -7287,22 +7398,94 @@ function mergeServerProfile(serverProfile, fallbackCountry = getSelectedCountryI
   });
 }
 
-async function pullProfile(fallbackCountry = getSelectedCountryId()) {
-  const token = state.authSessionKey;
-  const generation = state.sessionGeneration;
-  const guard = { ...captureRecordWriteGuard(), authToken: token };
-  const response = await fetchAuthenticatedJson("/profile", { authToken: token, generation });
-  if (!response.profile) {
-    return null;
-  }
+function hasServerBusinessProfile(profile) {
+  return Boolean(profile && (profile.business_type_id || profile.sector_id || profile.business_description));
+}
 
-  const profile = mergeServerProfile(response.profile, fallbackCountry);
+// A local business the server can be given: a listed type, or "isn't listed" with a valid description.
+function hasLocalBusinessToResend(profile = state.profile) {
+  const typeId = String(profile?.business_type_id || "").trim();
+  if (!typeId) return false;
+  if (typeId === UNLISTED_BUSINESS_TYPE_ID) return !businessDescriptionError(profile.business_description || "");
+  return BUSINESS_TYPES.some((item) => item.id === typeId);
+}
+
+// Three outcomes (S2 3b). Only "missing" (a successful, authenticated answer for this session that
+// holds no business) may trigger recovery or the no-profile prompt. Anything else is "unavailable"
+// and changes nothing on this open.
+async function checkServerProfile({ token, generation }) {
+  let response;
+  try {
+    response = await fetchAuthenticatedJson("/profile", { authToken: token, generation });
+  } catch (error) {
+    return { outcome: "unavailable", error };
+  }
+  if (token !== state.authSessionKey || generation !== state.sessionGeneration) {
+    return { outcome: "unavailable" };
+  }
+  if (!response || typeof response !== "object" || Array.isArray(response) || !Object.hasOwn(response, "profile")) {
+    return { outcome: "unavailable" };
+  }
+  const profile = response.profile;
+  if (profile !== null && (typeof profile !== "object" || Array.isArray(profile))) {
+    return { outcome: "unavailable" };
+  }
+  return { outcome: hasServerBusinessProfile(profile) ? "present" : "missing", profile };
+}
+
+async function applyServerProfile(serverProfile, { token, generation, guard }) {
+  if (!serverProfile) return false;
+  if (token !== state.authSessionKey || generation !== state.sessionGeneration) return false;
+  const profile = mergeServerProfile(serverProfile);
   const saved = await saveServerResponseProfile(profile, guard);
-  if (!saved) return null;
+  if (!saved) return false;
   state.profile = profile;
   initializeAuthPhoneCountry();
   syncDevQaSnapshot("profile_pulled");
-  return response.profile;
+  return true;
+}
+
+function canWriteForBoundAccount(token, generation) {
+  return Boolean(
+    canUseAccountSession("ordinary", token)
+    && token === state.authSessionKey
+    && generation === state.sessionGeneration
+    && !isAccountLocked()
+  );
+}
+
+// S2 3: the server is confirmed missing a business profile but this device holds one. Send it once
+// in fill_missing mode; the server writes only if it still has none, and returns whichever won.
+async function recoverMissingServerProfile({ token, generation, guard }) {
+  if (!canWriteForBoundAccount(token, generation)) return null;
+  // One attempt per session generation: a restore that checks twice in one sign-in, or a failure,
+  // never retries until the next eligible open.
+  const attemptKey = `${token}:${generation}`;
+  if (state.profileRecoveryAttempt === attemptKey) return null;
+  state.profileRecoveryAttempt = attemptKey;
+  const payload = buildProfileSyncPayload();
+  if (!payload) return null;
+  let response;
+  try {
+    response = await fetchAuthenticatedJson("/profile", {
+      method: "POST",
+      body: { ...payload, mode: "fill_missing" },
+      authToken: token,
+      generation
+    });
+  } catch (error) {
+    // A refusal is already handled by fetchAuthenticatedJson; anything else retries on a later open.
+    console.warn("Profile recovery skipped.", error);
+    return null;
+  }
+  if (!response || typeof response !== "object" || !hasServerBusinessProfile(response.profile)) return null;
+  const applied = await applyServerProfile(response.profile, { token, generation, guard });
+  return applied ? response.profile : null;
+}
+
+function setProfileCompletion(needed, { token, generation }) {
+  state.profileCompletion = { needed: Boolean(needed), account: state.boundAccount, token, generation };
+  if (!needed) hideProfilePrompt();
 }
 
 function normalizeServerTransactionType(value) {
@@ -7488,18 +7671,34 @@ async function restoreServerRecordsIntoLocal({ quiet = false } = {}) {
 
 async function restoreServerAccountIntoLocal({
   quiet = false,
-  fallbackCountry = getSelectedCountryId(),
   allowProfilePush = false
 } = {}) {
   if (!(state.db && isAuthSessionValid() && state.syncApiBaseUrl)) {
     return { profile: null, records: 0 };
   }
 
+  const token = state.authSessionKey;
+  const generation = state.sessionGeneration;
+  const guard = { ...captureRecordWriteGuard(), authToken: token };
   let serverProfile = null;
   try {
-    serverProfile = await pullProfile(fallbackCountry);
-    if (!serverProfile && allowProfilePush) {
-      await pushProfile();
+    const check = await checkServerProfile({ token, generation });
+    if (check.outcome === "present") {
+      if (await applyServerProfile(check.profile, { token, generation, guard })) serverProfile = check.profile;
+      setProfileCompletion(check.profile.profile_complete === false, { token, generation });
+    } else if (check.outcome === "missing") {
+      // A row with no business still carries name/region/email: apply those (local business kept).
+      if (check.profile) await applyServerProfile(check.profile, { token, generation, guard });
+      if (hasLocalBusinessToResend()) {
+        const recovered = await recoverMissingServerProfile({ token, generation, guard });
+        if (recovered) {
+          serverProfile = recovered;
+          setProfileCompletion(recovered.profile_complete === false, { token, generation });
+        }
+      } else {
+        if (!check.profile && allowProfilePush) await pushProfile();
+        setProfileCompletion(true, { token, generation });
+      }
     }
   } catch (error) {
     console.warn("Server profile restore skipped.", error);
@@ -7513,6 +7712,156 @@ async function restoreServerAccountIntoLocal({
 
   const records = await restoreServerRecordsIntoLocal({ quiet });
   return { profile: serverProfile, records };
+}
+
+// ---- S2 profile-completion prompt ----
+
+function getProfilePromptNow() {
+  return Date.now();
+}
+
+function isProfilePromptBlocked() {
+  return Boolean(
+    isAccountLocked()
+    || (els["pin-lock-screen"] && !els["pin-lock-screen"].hidden)
+    || document.querySelector(".screen.active")?.id !== "screen-capture"
+  );
+}
+
+async function readProfilePromptState(account) {
+  let stored = null;
+  try {
+    stored = await getSetting(PROFILE_PROMPT_KEY);
+  } catch {
+    stored = null;
+  }
+  const value = stored && typeof stored === "object" ? stored : null;
+  if (!value || value.account !== account) {
+    return { account, eligible: 0, sinceShown: 0, lastShownAt: null, lastOpenCountedAt: null };
+  }
+  return value;
+}
+
+// An eligible sign-in is a completed OTP sign-in, or an interactive open (cold start or a return to
+// the foreground) with a valid session, counted at most once per 20 hours. Shown on the first
+// eligible sign-in, then on every third, never within 7 days of the last showing.
+async function noteEligibleSignIn(kind) {
+  const completion = state.profileCompletion;
+  const token = state.authSessionKey;
+  const generation = state.sessionGeneration;
+  const account = state.boundAccount;
+  if (!completion || completion.account !== account || completion.token !== token || completion.generation !== generation) return;
+  if (!account || !isAuthSessionValid() || !canUseAccountSession("ordinary", token)) return;
+  if (state.profilePromptBusy) return;
+  state.profilePromptBusy = true;
+  try {
+    const now = getProfilePromptNow();
+    const prompt = await readProfilePromptState(account);
+    if (kind === "open" && prompt.lastOpenCountedAt != null && now - prompt.lastOpenCountedAt < PROFILE_PROMPT_OPEN_WINDOW_MS) return;
+    prompt.lastOpenCountedAt = now;
+    let show = false;
+    if (completion.needed) {
+      prompt.eligible += 1;
+      if (prompt.lastShownAt == null) {
+        show = true;
+      } else {
+        prompt.sinceShown += 1;
+        show = prompt.sinceShown >= PROFILE_PROMPT_EVERY && now - prompt.lastShownAt >= PROFILE_PROMPT_GAP_MS;
+      }
+      if (show) {
+        prompt.lastShownAt = now;
+        prompt.sinceShown = 0;
+      }
+    }
+    if (account !== state.boundAccount || token !== state.authSessionKey || generation !== state.sessionGeneration) return;
+    await saveSetting(PROFILE_PROMPT_KEY, prompt);
+    if (show) {
+      state.profilePromptPending = { account, token, generation };
+      revealPendingProfilePrompt();
+    }
+  } catch (error) {
+    console.warn("Profile prompt check skipped.", error);
+  } finally {
+    state.profilePromptBusy = false;
+  }
+}
+
+function revealPendingProfilePrompt() {
+  const pending = state.profilePromptPending;
+  if (!pending || !els["profile-prompt-banner"]) return;
+  if (pending.account !== state.boundAccount || pending.token !== state.authSessionKey
+    || pending.generation !== state.sessionGeneration || state.profileCompletion?.needed !== true) {
+    state.profilePromptPending = null;
+    return;
+  }
+  if (isProfilePromptBlocked()) return;
+  state.profilePromptPending = null;
+  els["profile-prompt-banner"].hidden = false;
+  syncDevQaSnapshot("profile_prompt_shown");
+}
+
+function hideProfilePrompt() {
+  state.profilePromptPending = null;
+  if (els["profile-prompt-banner"]) els["profile-prompt-banner"].hidden = true;
+}
+
+function openProfileCompletionFromPrompt() {
+  hideProfilePrompt();
+  if (isAccountLocked()) return;
+  state.onboardingStep = ONBOARDING_BUSINESS_STEP;
+  renderOnboarding();
+  showScreen("screen-onboarding");
+}
+
+// ---- S2 business region before a currency-dependent record ----
+
+function hasKnownOperatingRegion() {
+  return Boolean(getOperatingRegionId());
+}
+
+function openRegionChoice() {
+  const select = els["region-choice-select"];
+  if (!select || !els["region-choice-modal"]) return;
+  if (!select.options.length) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Choose a country";
+    select.appendChild(placeholder);
+    COUNTRIES.forEach((country) => {
+      const option = document.createElement("option");
+      option.value = country.id;
+      option.textContent = country.name;
+      select.appendChild(option);
+    });
+  }
+  select.value = "";
+  els["region-choice-error"].hidden = true;
+  els["region-choice-modal"].hidden = false;
+  focusFirstInteractive(els["region-choice-modal"]);
+}
+
+function closeRegionChoice() {
+  if (els["region-choice-modal"]) els["region-choice-modal"].hidden = true;
+}
+
+async function saveRegionChoice() {
+  const region = getRecognizedCountryId(els["region-choice-select"]?.value);
+  if (!region) {
+    els["region-choice-error"].textContent = "Choose the country where your business operates.";
+    els["region-choice-error"].hidden = false;
+    return;
+  }
+  if (hasKnownOperatingRegion()) {
+    // Never change a known region from here.
+    closeRegionChoice();
+    return;
+  }
+  // The business region only: the phone country and dial prefix are separate and untouched.
+  state.profile.operating_region = region;
+  await saveProfile(state.profile);
+  closeRegionChoice();
+  hydrateProfileUi();
+  prepareConfirmation();
 }
 
 function getRestoreCountryId() {
@@ -7664,7 +8013,7 @@ function buildFallbackRecoveredProfile(country, phoneNumber) {
     display_name: state.profile?.display_name || "",
     phone_number: phoneNumber,
     email: normalizeEmailAddress(state.profile?.email || ""),
-    operating_region: normalizeCountryId(state.profile?.operating_region || getOperatingRegionId()),
+    operating_region: getRecognizedCountryId(state.profile?.operating_region) || "",
     phone_country: getRecognizedCountryId(country) || detectPhoneCountryFromPhoneNumber(phoneNumber) || state.profile?.phone_country || "",
     language: normalizeLanguageId(state.profile?.language || "en"),
     preferred_labels: normalizePreferredLabels(state.profile?.preferred_labels, state.profile?.business_type_id),
@@ -7833,7 +8182,6 @@ async function maybePromptToRevokeOldDevices() {
 
 async function finishRestoreFlow(country, phoneNumber) {
   await restoreServerAccountIntoLocal({
-    fallbackCountry: country,
     quiet: true
   });
 

@@ -354,6 +354,22 @@ export function setProfileSectorForEmail(email, sectorId, source) {
   databaseCommand(`UPDATE profiles p SET sector_id = '${sectorId}', sector_source = '${source}' FROM users u WHERE u.id = p.user_id AND lower(u.email) = '${normalized}';`);
 }
 
+// Test fixture write (throwaway test database only): remove a test account's server profile row, as
+// for the accounts that signed up before profiles were pushed (S2 recovery and no-profile cases).
+export function deleteProfileForEmail(email) {
+  const normalized = String(email || "").toLowerCase();
+  if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+$/i.test(normalized)) throw new Error("expected a test email address");
+  databaseCommand(`DELETE FROM profiles p USING users u WHERE u.id = p.user_id AND lower(u.email) = '${normalized}';`);
+}
+
+// Read-only: the server profile row (with its region) for a test account, found by its email.
+export function profileRegionForEmail(email) {
+  const normalized = String(email || "").toLowerCase();
+  if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+$/i.test(normalized)) throw new Error("expected a test email address");
+  const json = databaseCommand(`SELECT row_to_json(profile) FROM (SELECT p.country, p.operating_region FROM profiles p INNER JOIN users u ON u.id = p.user_id WHERE lower(u.email) = '${normalized}') profile;`);
+  return json ? JSON.parse(json) : null;
+}
+
 // Read-only: the server profile row for a test account, found by its email.
 export function profileRowForEmail(email) {
   const normalized = String(email || "").toLowerCase();

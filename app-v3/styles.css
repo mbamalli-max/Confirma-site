@@ -1444,3 +1444,60 @@ body.account-locked .sync-status-badge {
   margin: 16px 0 8px;
   font-size: 16px;
 }
+
+/* S2: unlisted sector choice */
+.unlisted-sector {
+  border: 0;
+  margin: 12px 0 8px;
+  padding: 0;
+}
+
+.unlisted-sector legend {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.unlisted-sector-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.unlisted-sector-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+
+.unlisted-sector-option:has(input:checked) {
+  border-color: var(--accent, #1a7f5a);
+  background: #F1FAF5;
+}
+
+/* S2: profile-completion prompt */
+.profile-prompt-banner {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--accent-light);
+  background: #FFF8EE;
+}
+
+.profile-prompt-banner p {
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+.profile-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profile-prompt-actions .btn {
+  min-height: 44px;
+}
