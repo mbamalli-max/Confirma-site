@@ -109,6 +109,20 @@ CREATE TABLE IF NOT EXISTS profiles (
     CHECK ((COALESCE(business_type_id, '') = 'unlisted') = (business_description IS NOT NULL))
 );
 
+-- Rejected sync submissions (T4, migration 020): conflicting chain submissions
+-- and hash mismatches, written after the rejected batch rolls back.
+CREATE TABLE IF NOT EXISTS ledger_integrity_events (
+  id BIGSERIAL PRIMARY KEY,
+  device_identity TEXT NOT NULL,
+  entry_id BIGINT,
+  kind TEXT NOT NULL CHECK (kind IN ('fork_continuity', 'fork_id_conflict', 'hash_mismatch')),
+  detail JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ledger_integrity_events_device_kind
+  ON ledger_integrity_events (device_identity, kind, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS attestations (
   vt_id            TEXT PRIMARY KEY,
   device_identity  TEXT NOT NULL REFERENCES device_identities(device_identity),

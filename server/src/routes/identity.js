@@ -147,7 +147,8 @@ export async function registerIdentityRoutes(app) {
         await client.query(
           `
             UPDATE device_identities
-            SET status = 'ROTATED', rotated_to = $2, updated_at = NOW()
+            -- A FORKED device keeps its marker; the rotation still links it to the new device.
+            SET status = CASE WHEN status = 'FORKED' THEN 'FORKED' ELSE 'ROTATED' END, rotated_to = $2, updated_at = NOW()
             WHERE device_identity = $1
           `,
           [oldDeviceIdentity, newDeviceIdentity]

@@ -1,0 +1,197 @@
+{
+  "generated_from": [
+    "current (96b0d74)",
+    "live v37 (96a7b22)",
+    "oldest checked (a3d6c25, 2026-03-29)"
+  ],
+  "sources": [
+    {
+      "label": "current (96b0d74)",
+      "rev": "96b0d74",
+      "app_js_sha256": "ecc1326dcf9a390d7d2d8ad728e4fb554aec999ea82b7515958e8d3af0aff62c",
+      "canonical_source": "function buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash) {\n  return [\n    id,\n    record.transaction_type,\n    record.normalized_label,\n    record.amount_minor,\n    record.currency,\n    record.counterparty,\n    record.business_type_id,\n    record.country,\n    record.source_account,\n    record.destination_account,\n    record.reversed_entry_hash,\n    record.reversed_transaction_type,\n    confirmedAt,\n    prevHash\n  ].map((value) => value == null ? \"\" : String(value)).join(\"|\");\n}",
+      "sha256_source": "async function sha256(input) {\n  const buffer = await crypto.subtle.digest(\"SHA-256\", new TextEncoder().encode(input));\n  return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, \"0\")).join(\"\");\n}"
+    },
+    {
+      "label": "live v37 (96a7b22)",
+      "rev": "96a7b22",
+      "app_js_sha256": "6f666da5f4c90af179ceea57e6fc71a3d06440c44778013decfe1fdd4d806b82",
+      "canonical_source": "function buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash) {\n  return [\n    id,\n    record.transaction_type,\n    record.normalized_label,\n    record.amount_minor,\n    record.currency,\n    record.counterparty,\n    record.business_type_id,\n    record.country,\n    record.source_account,\n    record.destination_account,\n    record.reversed_entry_hash,\n    record.reversed_transaction_type,\n    confirmedAt,\n    prevHash\n  ].map((value) => value == null ? \"\" : String(value)).join(\"|\");\n}",
+      "sha256_source": "async function sha256(input) {\n  const buffer = await crypto.subtle.digest(\"SHA-256\", new TextEncoder().encode(input));\n  return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, \"0\")).join(\"\");\n}"
+    },
+    {
+      "label": "oldest checked (a3d6c25, 2026-03-29)",
+      "rev": "a3d6c25",
+      "app_js_sha256": "1b7f6bd29ce62ea41a9269b31f68bcd56c42bf7e4f425b1db7ef66e0c719f6f0",
+      "canonical_source": "function buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash) {\n  return [\n    id,\n    record.transaction_type,\n    record.normalized_label,\n    record.amount_minor,\n    record.currency,\n    record.counterparty,\n    record.business_type_id,\n    record.country,\n    record.source_account,\n    record.destination_account,\n    record.reversed_entry_hash,\n    record.reversed_transaction_type,\n    confirmedAt,\n    prevHash\n  ].map((value) => value == null ? \"\" : String(value)).join(\"|\");\n}",
+      "sha256_source": "async function sha256(input) {\n  const buffer = await crypto.subtle.digest(\"SHA-256\", new TextEncoder().encode(input));\n  return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, \"0\")).join(\"\");\n}"
+    }
+  ],
+  "vectors": [
+    {
+      "name": "first sale",
+      "entry": {
+        "transaction_type": "sale",
+        "normalized_label": "rice",
+        "amount_minor": 250000,
+        "currency": "NGN",
+        "counterparty": null,
+        "business_type_id": "ng_market_trader",
+        "country": "NG",
+        "source_account": null,
+        "destination_account": null,
+        "reversed_entry_hash": null,
+        "reversed_transaction_type": null,
+        "id": 1,
+        "confirmed_at": 1793000000,
+        "prev_entry_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "canonical": "1|sale|rice|250000|NGN||ng_market_trader|NG|||||1793000000|0000000000000000000000000000000000000000000000000000000000000000",
+      "entry_hash": "c9c8284eab9aaf498959f73871e8a48e0cdce61d0e16dc8cccf9a601c849df0a"
+    },
+    {
+      "name": "purchase with counterparty",
+      "entry": {
+        "transaction_type": "purchase",
+        "normalized_label": "cement bags",
+        "amount_minor": 1800000,
+        "currency": "NGN",
+        "counterparty": "Alhaji Musa",
+        "business_type_id": "ng_building_supplies",
+        "country": "NG",
+        "id": 2,
+        "confirmed_at": 1793000100,
+        "prev_entry_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "canonical": "2|purchase|cement bags|1800000|NGN|Alhaji Musa|ng_building_supplies|NG|||||1793000100|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "entry_hash": "b614c069fdae22315fc642de954b549c69b8d67da90502921dfc2c876aafc90d"
+    },
+    {
+      "name": "transfer between accounts",
+      "entry": {
+        "transaction_type": "transfer",
+        "normalized_label": "move to savings",
+        "amount_minor": 500000,
+        "currency": "NGN",
+        "source_account": "cash",
+        "destination_account": "bank",
+        "business_type_id": "unlisted",
+        "country": "NG",
+        "id": 3,
+        "confirmed_at": 1793000200,
+        "prev_entry_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "canonical": "3|transfer|move to savings|500000|NGN||unlisted|NG|cash|bank|||1793000200|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "entry_hash": "bafc389d374a05c7bc059cf50c5fca024172091e030a1257575e17ecb570b4de"
+    },
+    {
+      "name": "reversal",
+      "entry": {
+        "transaction_type": "reversal",
+        "normalized_label": "rice",
+        "amount_minor": 250000,
+        "currency": "NGN",
+        "reversed_entry_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "reversed_transaction_type": "sale",
+        "country": "NG",
+        "id": 4,
+        "confirmed_at": 1793000300,
+        "prev_entry_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "canonical": "4|reversal|rice|250000|NGN|||NG|||cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc|sale|1793000300|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "entry_hash": "36a929737f31ba66cca40a57669dc201f334a8e39b87d9d51cedf7207df0e683"
+    },
+    {
+      "name": "null versus empty string",
+      "entry": {
+        "transaction_type": "receipt",
+        "normalized_label": "",
+        "amount_minor": 0,
+        "currency": "USD",
+        "counterparty": "",
+        "business_type_id": null,
+        "country": "US",
+        "id": 5,
+        "confirmed_at": 1793000400,
+        "prev_entry_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "canonical": "5|receipt||0|USD|||US|||||1793000400|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "entry_hash": "de45db799b5662674994298846e99ae2523d430cc4a1608a6bf98135846ce27f"
+    },
+    {
+      "name": "non-ASCII text",
+      "entry": {
+        "transaction_type": "sale",
+        "normalized_label": "ƙwai da gishiri",
+        "amount_minor": 1234,
+        "currency": "NGN",
+        "counterparty": "Ɗan Kasuwa — ₦",
+        "country": "NG",
+        "id": 6,
+        "confirmed_at": 1793000500,
+        "prev_entry_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "canonical": "6|sale|ƙwai da gishiri|1234|NGN|Ɗan Kasuwa — ₦||NG|||||1793000500|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "entry_hash": "08635f2291ef3423dc7b463bcae34df26aa8df80c041fe5ce4c4a05ebe3f2230"
+    },
+    {
+      "name": "large amount",
+      "entry": {
+        "transaction_type": "liability_in",
+        "normalized_label": "loan",
+        "amount_minor": 900719925474099,
+        "currency": "NGN",
+        "country": "NG",
+        "id": 7,
+        "confirmed_at": 1793000600,
+        "prev_entry_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "canonical": "7|liability_in|loan|900719925474099|NGN|||NG|||||1793000600|ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "entry_hash": "bc209aa6a0732c76f347be91459e5dad30ace232088ef75691bcada50485b227"
+    },
+    {
+      "name": "missing optional fields",
+      "entry": {
+        "transaction_type": "payment",
+        "normalized_label": "rent",
+        "amount_minor": 75000,
+        "currency": "GHS",
+        "id": 8,
+        "confirmed_at": 1793000700,
+        "prev_entry_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "canonical": "8|payment|rent|75000|GHS||||||||1793000700|1111111111111111111111111111111111111111111111111111111111111111",
+      "entry_hash": "bd4628963bbda752257512a8e04ba1a64322b58b6fbfacbba3613f9092ecfe68"
+    },
+    {
+      "name": "pipe collision A (known limitation)",
+      "entry": {
+        "transaction_type": "sale",
+        "normalized_label": "a|b",
+        "amount_minor": 100,
+        "currency": "NGN",
+        "counterparty": "",
+        "id": 9,
+        "confirmed_at": 1793000800,
+        "prev_entry_hash": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "canonical": "9|sale|a|b|100|NGN||||||||1793000800|2222222222222222222222222222222222222222222222222222222222222222",
+      "entry_hash": "7f1ded31ad8665f2e01ac056481ac2ee8450ad96bef86be50b2043729a7989a6"
+    },
+    {
+      "name": "pipe collision B (known limitation)",
+      "entry": {
+        "transaction_type": "sale|a",
+        "normalized_label": "b",
+        "amount_minor": 100,
+        "currency": "NGN",
+        "counterparty": "",
+        "id": 9,
+        "confirmed_at": 1793000800,
+        "prev_entry_hash": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "canonical": "9|sale|a|b|100|NGN||||||||1793000800|2222222222222222222222222222222222222222222222222222222222222222",
+      "entry_hash": "7f1ded31ad8665f2e01ac056481ac2ee8450ad96bef86be50b2043729a7989a6"
+    }
+  ]
+}
