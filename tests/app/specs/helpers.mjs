@@ -378,6 +378,12 @@ export function profileRowForEmail(email) {
   return json ? JSON.parse(json) : null;
 }
 
+export function userCountForEmail(email) {
+  const normalized = String(email || "").toLowerCase();
+  if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+$/i.test(normalized)) throw new Error("expected a test email address");
+  return Number(databaseCommand(`SELECT count(*) FROM users WHERE lower(email) = '${normalized}';`) || 0);
+}
+
 // Restore an existing account on a fresh device through the "Restore your account" link.
 export async function restoreThroughUi(page, account) {
   await page.locator("#restore-account-link").click();
@@ -411,7 +417,7 @@ export async function revokeOnServer(page, token) {
   expect([204, 401]).toContain(response.status());
 }
 
-export async function completeOnboarding(page, account, { navigate = true, clockInstalled = false } = {}) {
+export async function completeOnboarding(page, account, { navigate = true, clockInstalled = false, apiBaseUrl = APP_API_URL, leaveAtOtp = false } = {}) {
   const expectOnboardingStep = async (step, heading) => {
     await expect(page.locator("#onboarding-step-copy"), `expected onboarding step ${step} before continuing`).toHaveText(`Step ${step} of 6`, { timeout: 5_000 });
     await expect(page.getByRole("heading", { name: heading }), `expected onboarding heading for step ${step}`).toBeVisible({ timeout: 5_000 });
@@ -431,7 +437,13 @@ export async function completeOnboarding(page, account, { navigate = true, clock
     throw new Error(`onboarding ${id} received ${JSON.stringify(received)} instead of ${JSON.stringify(value)}; ${values.join("; ")}`);
   };
 
-  if (navigate) await page.goto("/");
+  if (navigate) {
+    await page.goto("/");
+    // Verification now happens during onboarding, so the test server must be
+    // in IndexedDB before the OTP request can be made.
+    await writeLocalState(page, { sync_api_base_url: apiBaseUrl });
+    await page.reload();
+  }
   await expectOnboardingStep(1, "Choose your phone country");
   await page.locator("#country-grid").getByRole("button", { name: /Nigeria/ }).click();
   await expectOnboardingStep(2, "Where does your business primarily operate?");
@@ -468,11 +480,40 @@ export async function completeOnboarding(page, account, { navigate = true, clock
   await expect(page.locator("#onboarding-email")).toHaveValue(account.email);
   await expectOnboardingStep(6, "About you");
   await page.locator("#finish-onboarding").click();
-  await expect(page.locator("#screen-capture.active")).toBeVisible();
+  await expect(page.locator("#screen-otp.active")).toBeVisible();
+  if (!leaveAtOtp) {
+    // A local profile remains usable after an interrupted registration. Reload
+    // creates that pre-existing local-only state for legacy-flow tests.
+    await page.reload();
+    await expect(page.locator("#screen-capture.active")).toBeVisible();
+  }
   const storedProfile = await readStoredProfile(page);
   if (Boolean(String(storedProfile?.phone_number || "").trim()) !== Boolean(String(account.phone || "").trim())) {
     throw new Error("onboarding lost the phone number");
   }
+}
+
+// Product onboarding now stops at verification. Tests that intentionally cover
+// pre-existing offline installs can seed the legacy local-only state directly.
+export async function seedUnverifiedProfile(page, account, { navigate = true } = {}) {
+  if (navigate) await page.goto("/");
+  await putStoreValue(page, "settings", {
+    key: "profile",
+    display_name: account.name,
+    email: account.email,
+    phone_number: `+234${String(account.phone || "08030000000").replace(/^0/, "")}`,
+    phone_country: "NG",
+    country: "NG",
+    operating_region: "NG",
+    language: "en",
+    sector_id: "trade_retail",
+    business_type_id: "ng_market_trader",
+    preferred_labels: [],
+    created_at: new Date().toISOString()
+  });
+  await writeLocalState(page, { local_origin: "this_version", sync_api_base_url: APP_API_URL });
+  await page.reload();
+  await expect(page.locator("#screen-capture.active")).toBeVisible();
 }
 
 export async function openVerification(page, account) {
@@ -552,21 +593,12 @@ export async function verifyWithCode(page, code) {
 }
 
 export async function signInThroughUi(page, account, onboardingOptions) {
-  await completeOnboarding(page, account, onboardingOptions);
-  // The shipped development default is 8787. Persist the configured local API
-  // before verification so APP_TEST_API_URL can safely use another local port.
-  await writeLocalState(page, { sync_api_base_url: APP_API_URL });
-  await page.reload();
-  await expect(page.locator("#screen-capture.active")).toBeVisible();
-  await expect.poll(async () => (await page.locator("#profile-summary").textContent())?.trim() || "", {
-    message: "the reloaded app should hydrate its working profile before verification opens"
-  }).not.toBe("");
-  await openVerification(page, account);
+  await completeOnboarding(page, account, { ...onboardingOptions, leaveAtOtp: true });
   const code = await requestCode(page);
   const verifyResponse = await verifyWithCode(page, code);
   expect(verifyResponse.status()).toBe(200);
   const responseBody = await verifyResponse.json();
-  await expect(page.locator("#screen-settings.active")).toBeVisible();
+  await expect(page.locator("#screen-capture.active")).toBeVisible();
   const local = await readLocalState(page);
   expect(local.settings.auth_token).toBe(responseBody.auth_token);
   expect(local.settings.bound_account).toBe(responseBody.account_id);

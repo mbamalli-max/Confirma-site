@@ -9,8 +9,10 @@ import {
   putStoreValue,
   readLocalState,
   readStoredProfile,
+  requestCode,
   restoreThroughUi,
   signInThroughUi,
+  verifyWithCode,
   writeLocalState
 } from "./helpers.mjs";
 
@@ -111,6 +113,7 @@ async function reloadToCapture(page) {
 }
 
 test("T-A1, T-A2, T-K2: unlisted needs a description and a sector; no Nigerian default before a country is known", async ({ page }) => {
+  const account = nextAccount("s2-unlisted-local");
   const profileRequests = [];
   page.on("request", (request) => {
     if (new URL(request.url()).pathname === "/profile") profileRequests.push(request.method());
@@ -159,8 +162,13 @@ test("T-A1, T-A2, T-K2: unlisted needs a description and a sector; no Nigerian d
   await page.locator("#unlisted-continue").click();
   await expect(page.locator(".step.active")).toHaveAttribute("data-step", "6");
   await page.locator("#onboarding-name").fill("Bead maker");
+  await page.locator("#onboarding-phone").fill(account.phone);
+  await page.locator("#onboarding-email").fill(account.email);
   await page.locator("#finish-onboarding").click();
+  await expect(page.locator("#screen-otp.active")).toBeVisible();
+  await page.reload();
   await expect(page.locator("#screen-capture.active")).toBeVisible();
+  await expect(page.locator("#registration-verify-banner")).toBeVisible();
   await page.reload();
   await expect(page.locator("#screen-capture.active")).toBeVisible();
   expect(await readStoredProfile(page)).toMatchObject({

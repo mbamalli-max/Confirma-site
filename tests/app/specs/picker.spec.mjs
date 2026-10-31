@@ -19,7 +19,7 @@ import {
   readStoredProfile,
   restoreThroughUi,
   setProfileSectorForEmail,
-  signInThroughUi
+  signInThroughUi,
 } from "./helpers.mjs";
 
 // The service worker would serve cached modules and bypass the alias fixtures below.
@@ -68,10 +68,17 @@ async function openSearchStep(page, country = "Nigeria") {
 const search = (page) => page.locator("#business-search");
 
 async function finishLocalOnboarding(page, name = "Picker test") {
+  const account = nextAccount("picker-local");
   await expect(page.getByRole("heading", { name: "About you" })).toBeVisible();
   await page.locator("#onboarding-name").fill(name);
+  await page.locator("#onboarding-phone").fill(account.phone);
+  await page.locator("#onboarding-email").fill(account.email);
   await page.locator("#finish-onboarding").click();
+  await expect(page.locator("#screen-otp.active")).toBeVisible();
+  // Picker-only tests need a local profile, not an account or server state.
+  await page.reload();
   await expect(page.locator("#screen-capture.active")).toBeVisible();
+  await expect(page.locator("#registration-verify-banner")).toBeVisible();
 }
 const optionNames = (page) => page.locator("#business-search-results [role=option]").evaluateAll(
   (nodes) => nodes.map((node) => node.querySelector(".option-name")?.textContent.trim())
@@ -217,6 +224,15 @@ async function finishProfile(page) {
   await expect(page.getByRole("heading", { name: "About you" })).toBeVisible();
   await page.locator("#finish-onboarding").click();
   await expect(page.locator("#screen-capture.active")).toBeVisible();
+}
+
+async function finishLocalProfile(page) {
+  await expect(page.getByRole("heading", { name: "About you" })).toBeVisible();
+  await page.locator("#finish-onboarding").click();
+  await expect(page.locator("#screen-otp.active")).toBeVisible();
+  await page.reload();
+  await expect(page.locator("#screen-capture.active")).toBeVisible();
+  await expect(page.locator("#registration-verify-banner")).toBeVisible();
 }
 
 const SERVER_TIMEOUT = { timeout: 20_000 };
@@ -365,7 +381,7 @@ test("12: an unlisted or unknown type keeps no old shortcut preferences", async 
   await withLabels("ng_market_trader");
   await changeProfileToSearchStep(page);
   await saveUnlisted(page, "Document courier and errands");
-  await finishProfile(page);
+  await finishLocalProfile(page);
   expect(await readStoredProfile(page)).toMatchObject({ business_type_id: "unlisted", preferred_labels: [] });
 });
 

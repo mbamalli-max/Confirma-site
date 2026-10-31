@@ -283,22 +283,21 @@
 
         <div class="step" data-step="6">
           <h2>About you</h2>
-          <p class="subtle">This helps personalise your records and supports account
-          recovery. All fields except name are optional.</p>
+          <p class="subtle">Your name, phone number and email are required. We verify your email with a code and use it to create and recover your account. Your phone number is not verified by text; all other fields are optional.</p>
 
           <label class="field">
             Full name
-            <input id="onboarding-name" type="text" placeholder="Your name or business name" autocomplete="name">
+            <input id="onboarding-name" type="text" placeholder="Your name or business name" autocomplete="name" required>
           </label>
 
           <label class="field">
             Phone number
-            <input id="onboarding-phone" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel">
+            <input id="onboarding-phone" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel" required>
           </label>
 
           <label class="field">
-            Email address <span style="font-weight:400;color:var(--muted)">(optional)</span>
-            <input id="onboarding-email" type="email" placeholder="you@example.com" autocomplete="email" inputmode="email">
+            Email address
+            <input id="onboarding-email" type="email" placeholder="you@example.com" autocomplete="email" inputmode="email" required>
           </label>
 
           <label class="field">
@@ -418,6 +417,12 @@
         </div>
         <button class="pill-button" id="change-profile" type="button">Change</button>
       </header>
+      <div class="profile-prompt-banner" id="registration-verify-banner" role="region" aria-label="Finish registration" hidden>
+        <p>Finish registration: verify your email to back up your records and recover your account.</p>
+        <div class="profile-prompt-actions">
+          <button class="btn btn-primary" id="registration-verify-now" type="button">Verify now</button>
+        </div>
+      </div>
       <div class="profile-prompt-banner" id="profile-prompt-banner" role="region" aria-label="Business profile" hidden>
         <p id="profile-prompt-text">Help us categorise your business: one question.</p>
         <div class="profile-prompt-actions">

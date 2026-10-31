@@ -111,7 +111,9 @@ test("S8 an aborted binding transaction preserves the marker and leaves nothing 
 test("onboarding does not mark an install that became non-empty before its first profile write", async ({ page }) => {
   await page.goto("/");
   await putStoreValue(page, "records", { id: 811, label: "pre-existing record" });
-  await completeOnboarding(page, nextAccount("non-empty-onboarding"), { navigate: false });
+  // The pre-existing record intentionally makes this a non-local install; do
+  // not reload out of the registration OTP state before inspecting its marker.
+  await completeOnboarding(page, nextAccount("non-empty-onboarding"), { navigate: false, leaveAtOtp: true });
   const state = await readLocalState(page);
   expect(state.settings.local_origin).toBeUndefined();
   expect(state.stores.records).toEqual(expect.arrayContaining([expect.objectContaining({ id: 811 })]));

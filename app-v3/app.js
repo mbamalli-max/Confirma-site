@@ -71,6 +71,7 @@ const state = {
   lowStorageWarning: "",
   otpChallenge: null,
   otpReturnScreen: "screen-capture",
+  otpFromOnboarding: false,
   activeRecognition: null,
   captureExampleIndex: 0,
   captureExampleInterval: null,
@@ -281,7 +282,7 @@ function cacheElements() {
     "pin-reminder-editor", "pin-reminder-question", "pin-reminder-answer", "pin-reminder-save", "pin-reminder-cancel",
     "pin-reset-btn", "pin-save-btn", "pin-remove-btn", "pin-setup-error",
     "settings-security-status", "pin-setup-label", "pin-lock-screen", "pin-error", "first-record-guide",
-    "storage-warning-v2", "record-history-banner", "banner-tier-icon", "banner-headline", "banner-subtext", "banner-cta",
+    "storage-warning-v2", "record-history-banner", "banner-tier-icon", "banner-headline", "banner-subtext", "banner-cta", "registration-verify-banner", "registration-verify-now",
     "settings-logout-v2", "settings-logout-all-v2", "settings-remove-local-data", "settings-account-status",
     "signed-out-copy", "signed-out-pending", "signed-out-sign-in", "signed-out-remove-data",
     "remove-local-data-panel", "remove-local-data-copy", "remove-local-data-confirmation", "remove-local-data-error",
@@ -309,6 +310,7 @@ function wireEvents() {
     restoreAccountFlow();
   });
   document.getElementById("change-profile").addEventListener("click", openChangeProfileConfirm);
+  els["registration-verify-now"]?.addEventListener("click", () => openTrustSetup("screen-capture"));
   els["profile-prompt-complete"]?.addEventListener("click", openProfileCompletionFromPrompt);
   els["profile-prompt-dismiss"]?.addEventListener("click", hideProfilePrompt);
   els["region-choice-save"]?.addEventListener("click", () => {
@@ -443,6 +445,8 @@ function wireEvents() {
       element?.addEventListener("change", markDirty);
     });
   document.getElementById("onboarding-name").addEventListener("input", updateFinishOnboardingState);
+  document.getElementById("onboarding-phone").addEventListener("input", updateFinishOnboardingState);
+  document.getElementById("onboarding-email").addEventListener("input", updateFinishOnboardingState);
   document.getElementById("onboarding-phone").addEventListener("change", () => {
     const normalizedPhone = normalizePhoneNumber(
       document.getElementById("onboarding-phone")?.value.trim() || "",
@@ -459,6 +463,13 @@ function wireEvents() {
   document.getElementById("otp-back").addEventListener("click", () => {
     if (isAccountLocked()) {
       void showSignedOutScreen();
+      return;
+    }
+    if (state.otpFromOnboarding) {
+      state.otpFromOnboarding = false;
+      state.onboardingStep = ONBOARDING_PROFILE_STEP;
+      renderOnboardingProfileStep();
+      showScreen("screen-onboarding");
       return;
     }
     showScreen(state.otpReturnScreen || "screen-capture");
@@ -1258,12 +1269,19 @@ async function finishOnboarding() {
     return;
   }
 
-  if (rawPhoneNumber && !normalizedPhoneNumber) {
-    showOnboardingProfileError(getPhoneValidationMessage(phoneCountry));
+  if (!email) {
+    showOnboardingProfileError("Enter your email address");
+    updateFinishOnboardingState();
     return;
   }
 
-  if (email && !isValidEmailAddress(email)) {
+  if (!normalizedPhoneNumber) {
+    showOnboardingProfileError(getPhoneValidationMessage(phoneCountry));
+    updateFinishOnboardingState();
+    return;
+  }
+
+  if (!isValidEmailAddress(email)) {
     showOnboardingProfileError("Enter a valid email address");
     return;
   }
@@ -1297,7 +1315,15 @@ async function finishOnboarding() {
     await persistAuthPhoneCountry(detectedPhoneCountry);
   }
   hydrateProfileUi();
-  await showCapture();
+  // Verification creates the server account. Keep this local profile usable
+  // if the person leaves, but do not complete registration until the OTP does.
+  const channel = getPreferredOtpChannel();
+  syncVerificationState();
+  if (hasVerifiedSessionForChannel(channel)) {
+    await showCapture();
+    return;
+  }
+  openTrustSetup("screen-capture", { onboarding: true });
 }
 
 function hydrateProfileUi() {
@@ -2080,6 +2106,11 @@ function renderRecordListWithMarketing(containerId, records, emptyHtml, renderer
 }
 
 function refreshTrustBanner(screenId) {
+  const banner = els["registration-verify-banner"];
+  if (banner) {
+    syncVerificationState();
+    banner.hidden = screenId !== "screen-capture" || !state.profile || hasVerifiedSessionForChannel("email");
+  }
   return screenId;
 }
 
@@ -5422,13 +5453,14 @@ function showScreen(id) {
   }
 }
 
-function openTrustSetup(returnScreen = "screen-capture") {
+function openTrustSetup(returnScreen = "screen-capture", { onboarding = false } = {}) {
   const channel = getPreferredOtpChannel();
   syncVerificationState();
   if (hasVerifiedSessionForChannel(channel)) {
     return;
   }
   state.otpReturnScreen = returnScreen;
+  state.otpFromOnboarding = onboarding;
   renderOtpScreen();
   showScreen("screen-otp");
 }
@@ -6260,21 +6292,30 @@ function renderOtpScreen() {
     els["otp-screen-header-title"].textContent = getVerificationChannelLabel(channel);
   }
   if (els["otp-screen-header-copy"]) {
-    els["otp-screen-header-copy"].textContent = state.smsSupported
+    els["otp-screen-header-copy"].textContent = state.otpFromOnboarding
+      ? "Last step: verify your email to finish registration"
+      : (state.smsSupported
       ? "Prepare this device for trusted exports and recovery"
-      : "Email OTP is active right now. SMS is not enabled yet.";
+      : "Email OTP is active right now. SMS is not enabled yet.");
+  }
+  if (els["otp-back"]) {
+    els["otp-back"].textContent = state.otpFromOnboarding ? "Back to edit" : "Back";
   }
   if (els["otp-screen-title"]) {
-    els["otp-screen-title"].textContent = channel === "sms" ? "Verify your phone on this device" : "Verify your email on this device";
+    els["otp-screen-title"].textContent = state.otpFromOnboarding
+      ? "Finish registration by verifying your email"
+      : (channel === "sms" ? "Verify your phone on this device" : "Verify your email on this device");
   }
   if (els["otp-screen-copy"]) {
-    els["otp-screen-copy"].textContent = channel === "sms"
+    els["otp-screen-copy"].textContent = state.otpFromOnboarding
+      ? "We will send a code to your email. If this email already belongs to an account, verifying it restores that account instead of creating a duplicate."
+      : (channel === "sms"
       ? "Konfirmata will send a code to your phone number when SMS delivery is available."
       : (missingPhoneAnchor
         ? `${getPhoneAnchorRequirementMessage(channel)} Existing phone-anchored accounts with a saved email can still restore by email on a new device.`
         : (isLocalDevelopmentOtpFallbackAllowed()
           ? "Konfirmata sends a code to your email address. If delivery is unavailable in local development, this device can still use a local development code."
-          : "Konfirmata sends a code to your email address to verify this device."));
+          : "Konfirmata sends a code to your email address to verify this device.")));
   }
   if (els["otp-email-input"]) {
     els["otp-email-input"].value = state.profile?.email || "";
@@ -6372,8 +6413,11 @@ async function requestOtpChallenge(identifier, {
     state.syncStatus = `${getVerificationChannelLabel(normalizedChannel)} requested from sync server.`;
     syncDevQaSnapshot("otp_requested");
   } catch (error) {
+    const statusCode = Number(error?.statusCode);
+    const hasHttpStatus = Number.isInteger(statusCode) && statusCode > 0;
     const allowLocalFallback = fallbackToLocal
       && normalizedChannel === "email"
+      && !hasHttpStatus
       && isLocalDevelopmentOtpFallbackAllowed();
     if (!allowLocalFallback) {
       throw error;
@@ -6644,10 +6688,15 @@ async function requestLocalOtpCode() {
   try {
     await requestOtpChallenge(identifier, {
       channel,
-      phoneNumber
+      phoneNumber,
+      fallbackToLocal: !state.otpFromOnboarding
     });
   } catch (error) {
-    showOtpError(error.message || "Failed to request OTP");
+    const networkFailure = !Number(error?.statusCode) || /failed to fetch|network|unavailable|not configured/i.test(error?.message || "");
+    showOtpError(getRegistrationOtpErrorMessage(error, {
+      networkFailure,
+      fallback: "Failed to request OTP"
+    }));
     return;
   }
   renderOtpScreen();
@@ -6667,7 +6716,11 @@ async function verifyLocalOtpCode() {
   } catch (error) {
     if (error.accountLocked) return;
     renderOtpScreen();
-    showOtpError(error.message || "Verification failed.");
+    const networkFailure = !Number(error?.statusCode) || /failed to fetch|network|unavailable|not configured/i.test(error?.message || "");
+    showOtpError(getRegistrationOtpErrorMessage(error, {
+      networkFailure,
+      fallback: "Verification failed."
+    }));
     return;
   }
   const returnScreen = state.otpReturnScreen || "screen-capture";
@@ -6681,7 +6734,26 @@ async function verifyLocalOtpCode() {
     await renderRecentRecords();
   }
   void flushSyncQueue();
+  state.otpFromOnboarding = false;
   showScreen(returnScreen);
+}
+
+function isRegistrationPhoneConflict(error) {
+  return state.otpFromOnboarding
+    && error?.statusCode === 409
+    // The current server has no machine-readable identity-conflict code. Limit
+    // this mapping to its established message so unrelated 409s remain clear.
+    && /couldn't complete sign-in with these details/i.test(error?.message || "");
+}
+
+function getRegistrationOtpErrorMessage(error, { networkFailure = false, fallback } = {}) {
+  if (isRegistrationPhoneConflict(error)) {
+    return "This phone number is already linked to another account. Use that account's email to restore it, or change the phone number.";
+  }
+  if (state.otpFromOnboarding && networkFailure) {
+    return "A connection is needed once to finish registration. Please check your connection and try again.";
+  }
+  return error?.message || fallback;
 }
 
 function getVerificationStatusLabel(channel = getPreferredOtpChannel()) {
@@ -8289,7 +8361,12 @@ function updateFinishOnboardingState() {
   if (!els["finish-onboarding"]) return;
   const hasBusinessType = Boolean(state.profile && state.profile.business_type_id);
   const hasDisplayName = Boolean(els["onboarding-name"]?.value.trim());
-  els["finish-onboarding"].disabled = !(hasBusinessType && hasDisplayName);
+  const hasValidPhone = Boolean(normalizePhoneNumber(
+    els["onboarding-phone"]?.value.trim() || "",
+    getPhoneInputCountry()
+  ));
+  const hasEmail = isValidEmailAddress(normalizeEmailAddress(els["onboarding-email"]?.value.trim() || ""));
+  els["finish-onboarding"].disabled = !(hasBusinessType && hasDisplayName && hasValidPhone && hasEmail);
 }
 
 function showOnboardingProfileError(message) {
@@ -9797,7 +9874,9 @@ async function requestServerOtpCode() {
   try {
     await requestLocalOtpCode();
   } finally {
+    const errorMessage = els["otp-error-text"]?.textContent?.trim();
     renderOtpScreen();
+    if (errorMessage) showOtpError(errorMessage);
   }
 }
 

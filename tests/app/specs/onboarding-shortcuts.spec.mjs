@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { readLocalState, readStoredProfile } from "./helpers.mjs";
+import { nextAccount, readLocalState, readStoredProfile } from "./helpers.mjs";
 
 test("a shortcut chosen during first onboarding survives reload without signing the device out", async ({ page }) => {
+  const account = nextAccount("onboarding-shortcut");
   await page.goto("/");
   await page.locator("#country-grid").getByRole("button", { name: /Nigeria/ }).click();
   await page.locator("#operating-region-grid").getByRole("button", { name: /Nigeria/ }).click();
@@ -15,8 +16,14 @@ test("a shortcut chosen during first onboarding survives reload without signing 
 
   await page.locator("#onboarding-next").click();
   await page.locator("#onboarding-name").fill("Shortcut test");
+  await page.locator("#onboarding-phone").fill(account.phone);
+  await page.locator("#onboarding-email").fill(account.email);
   await page.locator("#finish-onboarding").click();
+  await expect(page.locator("#screen-otp.active")).toBeVisible();
+  // This test intentionally covers an interrupted, local-only registration.
+  await page.reload();
   await expect(page.locator("#screen-capture.active")).toBeVisible();
+  await expect(page.locator("#registration-verify-banner")).toBeVisible();
   const local = await readLocalState(page);
   expect(local.settings.local_origin).toBe("this_version");
   expect((await readStoredProfile(page)).preferred_labels).toEqual([label]);
@@ -28,6 +35,7 @@ test("a shortcut chosen during first onboarding survives reload without signing 
 });
 
 test("changing a shortcut after onboarding is still saved straight away", async ({ page }) => {
+  const account = nextAccount("onboarding-shortcut-change");
   await page.goto("/");
   await page.locator("#country-grid").getByRole("button", { name: /Nigeria/ }).click();
   await page.locator("#operating-region-grid").getByRole("button", { name: /Nigeria/ }).click();
@@ -35,8 +43,13 @@ test("changing a shortcut after onboarding is still saved straight away", async 
   await page.locator("#business-grid").getByRole("button", { name: /Market Trader/ }).click();
   await page.locator("#onboarding-next").click();
   await page.locator("#onboarding-name").fill("Shortcut test");
+  await page.locator("#onboarding-phone").fill(account.phone);
+  await page.locator("#onboarding-email").fill(account.email);
   await page.locator("#finish-onboarding").click();
+  await expect(page.locator("#screen-otp.active")).toBeVisible();
+  await page.reload();
   await expect(page.locator("#screen-capture.active")).toBeVisible();
+  await expect(page.locator("#registration-verify-banner")).toBeVisible();
   expect((await readStoredProfile(page)).preferred_labels).toEqual([]);
 
   await page.locator("#nav-settings-v2").click();

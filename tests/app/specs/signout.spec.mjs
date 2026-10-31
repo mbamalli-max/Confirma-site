@@ -13,6 +13,13 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function signOut(page) {
+  // Registration now returns to Record. These scenarios exercise the Settings
+  // sign-out control, so enter its screen explicitly instead of relying on the
+  // old post-sign-in destination.
+  if (!(await page.locator("#screen-settings.active").isVisible())) {
+    await page.locator("#nav-settings-v2").click();
+    await expect(page.locator("#screen-settings.active")).toBeVisible();
+  }
   await page.locator("#settings-logout-v2").click();
   await expect(page.getByRole("heading", { name: "Signed out" })).toBeVisible();
 }
@@ -566,6 +573,8 @@ test("10 logout-all 204 revokes a same-account session on another real device", 
   const otherPage = await other.newPage();
   await signInThroughUi(otherPage, { ...account, name: "other device" });
   const otherToken = (await readLocalState(otherPage)).settings.auth_token;
+  await page.locator("#nav-settings-v2").click();
+  await expect(page.locator("#screen-settings.active")).toBeVisible();
   await page.locator("#settings-logout-all-v2").click();
   await expect(page.getByText("Signed out on all devices.")).toBeVisible();
   await expect.poll(() => sessionState(otherToken)?.active).toBe(false);
@@ -620,6 +629,8 @@ test("12 an aborted sign-out transaction reloads wholly signed-in", async ({ pag
   const account = await signInThroughUi(page, nextAccount("twelve"));
   const before = await readLocalState(page);
   await armFault(page, { settingKey: "signed_out" });
+  await page.locator("#nav-settings-v2").click();
+  await expect(page.locator("#screen-settings.active")).toBeVisible();
   await page.locator("#settings-logout-v2").click();
   await expect.poll(() => page.evaluate(() => window.__signoutTestFault?.fired)).toEqual(expect.objectContaining({
     settingKey: "signed_out",
@@ -708,6 +719,8 @@ test("15 an aborted Settings wipe reopens locked and a retry completes", async (
   // Keep the original early-transaction abort, then test the post-delete
   // abort against a snapshot made after the durable lock is committed.
   await armFault(page, "wipe");
+  await page.locator("#nav-settings-v2").click();
+  await expect(page.locator("#screen-settings.active")).toBeVisible();
   await page.locator("#settings-remove-local-data").click();
   await page.locator("#remove-local-data-confirmation").fill("REMOVE");
   await page.locator("#remove-local-data-confirm").click();
@@ -741,6 +754,8 @@ test("15 an aborted Settings wipe reopens locked and a retry completes", async (
 test("16 logout-all 503 and a lost response never falsely confirm other devices", async ({ page }) => {
   const account = await signInThroughUi(page, nextAccount("sixteen"));
   await page.route("**/auth/logout-all", (route) => route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"auth_unavailable"}' }));
+  await page.locator("#nav-settings-v2").click();
+  await expect(page.locator("#screen-settings.active")).toBeVisible();
   await page.locator("#settings-logout-all-v2").click();
   await expect(page.locator("#settings-account-status")).toContainText("Couldn't confirm whether other devices were signed out");
   expect((await readLocalState(page)).settings.auth_token).toBe(account.token);
