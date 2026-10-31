@@ -3,11 +3,9 @@ import net from "node:net";
 import { config } from "../../config.js";
 import { query, withTransaction } from "../../db.js";
 import {
-  decryptTotpSecret,
   issueAdminToken,
   requireAdmin,
   verifyAdminPassword,
-  verifyTotp,
   writeAuditRow
 } from "../../admin-auth-utils.js";
 
@@ -121,14 +119,13 @@ export async function registerAdminAuthRoutes(app) {
     const body = request.body || {};
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
-    const totp = String(body.totp || "");
-    if (!email || !password || !totp) {
-      return reply.code(400).send({ error: "Email, password, and TOTP are required." });
+    if (!email || !password) {
+      return reply.code(400).send({ error: "Email and password are required." });
     }
 
     const result = await query(
       `
-        SELECT id, email, password_hash, totp_secret_enc, role, status,
+        SELECT id, email, password_hash, role, status,
                failed_login_count, locked_until,
                (locked_until IS NOT NULL AND locked_until > clock_timestamp()) AS is_locked
         FROM admin_users
@@ -158,16 +155,7 @@ export async function registerAdminAuthRoutes(app) {
     }
 
     const passwordValid = await verifyAdminPassword(password, adminUser.password_hash);
-    let totpValid = false;
-    if (passwordValid) {
-      try {
-        totpValid = verifyTotp(decryptTotpSecret(adminUser.totp_secret_enc), totp);
-      } catch {
-        totpValid = false;
-      }
-    }
-
-    if (!passwordValid || !totpValid) {
+    if (!passwordValid) {
       await recordLoginFailure(adminUser, request, "invalid_credentials");
       return reply.code(401).send({ error: "Invalid admin credentials." });
     }

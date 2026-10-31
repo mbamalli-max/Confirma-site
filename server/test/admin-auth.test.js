@@ -18,14 +18,11 @@ import {
   ADMIN_ORIGIN,
   PUBLIC_ORIGINS,
   TEST_ADMIN_PASSWORD,
-  TEST_TOTP_SECRET,
   buildApp,
   createSession,
   prepareAdminTestDatabase,
   rejectAuditInserts,
-  seedAdmin,
-  totpToken,
-  wrongTotp
+  seedAdmin
 } from "./helpers/admin.js";
 
 async function login(app, adminUser, overrides = {}, remoteAddress = `198.51.100.${crypto.randomInt(1, 250)}`) {
@@ -36,7 +33,6 @@ async function login(app, adminUser, overrides = {}, remoteAddress = `198.51.100
     payload: {
       email: adminUser.email,
       password: TEST_ADMIN_PASSWORD,
-      totp: totpToken(TEST_TOTP_SECRET),
       ...overrides
     }
   });
@@ -128,24 +124,33 @@ test("3: an authenticated admin with an insufficient role receives 403", async (
   }
 });
 
-test("4: password-only login is rejected", async () => {
+test("4: password-only login succeeds and a stale TOTP is ignored", async () => {
   const app = await buildApp();
   const adminUser = await seedAdmin();
   try {
-    const response = await login(app, adminUser, { totp: undefined });
-    assert.notEqual(response.statusCode, 200);
-    assert.equal(response.statusCode, 400);
+    const missingPassword = await app.inject({
+      method: "POST",
+      url: "/admin/auth/login",
+      payload: { email: adminUser.email }
+    });
+    assert.equal(missingPassword.statusCode, 400);
+    assert.deepEqual(missingPassword.json(), { error: "Email and password are required." });
+    assert.equal((await login(app, adminUser)).statusCode, 200);
+    assert.equal((await login(app, adminUser, { totp: "stale-code" })).statusCode, 200);
   } finally {
     await app.close();
   }
 });
 
-test("5: a wrong TOTP is rejected and increments failed_login_count", async () => {
+test("5: wrong passwords and unknown emails receive the same generic error", async () => {
   const app = await buildApp();
   const adminUser = await seedAdmin();
   try {
-    const response = await login(app, adminUser, { totp: wrongTotp() });
-    assert.equal(response.statusCode, 401);
+    const wrongPassword = await login(app, adminUser, { password: "wrong-password" });
+    const unknownEmail = await login(app, adminUser, { email: "unknown@example.test" });
+    assert.equal(wrongPassword.statusCode, 401);
+    assert.equal(unknownEmail.statusCode, 401);
+    assert.deepEqual(wrongPassword.json(), unknownEmail.json());
     const result = await query("SELECT failed_login_count FROM admin_users WHERE id = $1", [adminUser.id]);
     assert.equal(result.rows[0].failed_login_count, 1);
   } finally {
@@ -158,7 +163,7 @@ test("6: ten failures lock the admin for 15 minutes and block correct credential
   const adminUser = await seedAdmin();
   try {
     for (let attempt = 1; attempt <= 10; attempt += 1) {
-      const response = await login(app, adminUser, { totp: wrongTotp() }, `203.0.113.${attempt}`);
+      const response = await login(app, adminUser, { password: "wrong-password" }, `203.0.113.${attempt}`);
       assert.equal(response.statusCode, 401);
     }
     const locked = await query("SELECT failed_login_count, locked_until FROM admin_users WHERE id = $1", [adminUser.id]);
@@ -366,7 +371,7 @@ test("11: login success and failure each create exactly one audit row", async ()
   const adminUser = await seedAdmin();
   try {
     assert.equal((await login(app, adminUser)).statusCode, 200);
-    assert.equal((await login(app, adminUser, { totp: wrongTotp() })).statusCode, 401);
+    assert.equal((await login(app, adminUser, { password: "wrong-password" })).statusCode, 401);
     const result = await query(
       `SELECT action, COUNT(*)::int AS count FROM admin_audit_log GROUP BY action ORDER BY action`
     );
@@ -416,7 +421,7 @@ test("11b: login failure rolls back lockout state when its audit insert fails", 
   );
   try {
     await rejectAuditInserts(async () => {
-      const response = await login(app, adminUser, { totp: wrongTotp() });
+      const response = await login(app, adminUser, { password: "wrong-password" });
       assert.equal(response.statusCode, 500);
     });
     const user = await query(
@@ -581,8 +586,7 @@ test("16c: a trusted proxy can forward an allowlisted client address", async () 
       headers: { "x-forwarded-for": "203.0.113.10" },
       payload: {
         email: adminUser.email,
-        password: TEST_ADMIN_PASSWORD,
-        totp: totpToken(TEST_TOTP_SECRET)
+        password: TEST_ADMIN_PASSWORD
       }
     });
     assert.equal(response.statusCode, 200);

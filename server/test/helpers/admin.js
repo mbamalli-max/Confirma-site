@@ -21,50 +21,9 @@ import { registerAdminSuppressedRoutes } from "../../src/routes/admin/suppressed
 export const PUBLIC_ORIGINS = ["https://konfirmata.com", "https://www.konfirmata.com"];
 export const ADMIN_ORIGIN = "https://admin.example.test";
 export const TEST_ADMIN_PASSWORD = crypto.randomBytes(24).toString("base64url");
-export const TEST_TOTP_SECRET = generateTotpSecret();
 
 let testPasswordHash;
 let testTotpSecretEnc;
-
-export function totpToken(secret, now = Date.now()) {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  const normalized = secret.replace(/=+$/g, "");
-  let bits = 0;
-  let bitCount = 0;
-  const bytes = [];
-  for (const character of normalized) {
-    bits = (bits << 5) | alphabet.indexOf(character);
-    bitCount += 5;
-    if (bitCount >= 8) {
-      bitCount -= 8;
-      bytes.push((bits >>> bitCount) & 0xff);
-      bits &= (1 << bitCount) - 1;
-    }
-  }
-  const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(now / 30_000)));
-  const digest = crypto.createHmac("sha1", Buffer.from(bytes)).update(counter).digest();
-  const offset = digest[digest.length - 1] & 0x0f;
-  const binary = ((digest[offset] & 0x7f) << 24)
-    | ((digest[offset + 1] & 0xff) << 16)
-    | ((digest[offset + 2] & 0xff) << 8)
-    | (digest[offset + 3] & 0xff);
-  return String(binary % 1_000_000).padStart(6, "0");
-}
-
-export function wrongTotp() {
-  const now = Date.now();
-  const validWindow = new Set([
-    totpToken(TEST_TOTP_SECRET, now - 30_000),
-    totpToken(TEST_TOTP_SECRET, now),
-    totpToken(TEST_TOTP_SECRET, now + 30_000)
-  ]);
-  for (let candidate = 0; candidate < 10; candidate += 1) {
-    const token = String(candidate).padStart(6, "0");
-    if (!validWindow.has(token)) return token;
-  }
-  throw new Error("Unable to construct a non-matching test TOTP.");
-}
 
 export function assertDisposableTestDatabase(databaseUrl = config.databaseUrl) {
   let parsed;
@@ -115,7 +74,7 @@ export async function buildApp({ trustProxy, logger = false } = {}) {
 async function getTestCredentials() {
   if (!testPasswordHash) {
     testPasswordHash = await hashAdminPassword(TEST_ADMIN_PASSWORD);
-    testTotpSecretEnc = encryptTotpSecret(TEST_TOTP_SECRET);
+    testTotpSecretEnc = encryptTotpSecret(generateTotpSecret());
   }
   return { passwordHash: testPasswordHash, totpSecretEnc: testTotpSecretEnc };
 }
