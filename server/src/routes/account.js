@@ -115,15 +115,15 @@ function resolveBusinessFields(body, stored) {
   };
 }
 
-async function getUserRow(phoneNumber) {
+async function getUserRow(accountId) {
   const result = await query(
     `
       SELECT id, phone_number
       FROM users
-      WHERE phone_number = $1
+      WHERE id = $1
       LIMIT 1
     `,
-    [normalizePhoneNumber(phoneNumber)]
+    [accountId]
   );
   return result.rows[0] || null;
 }
@@ -250,8 +250,8 @@ async function fillMissingProfile({ user, body, business, email }) {
   const applied = result.rowCount === 1;
   if (applied && email) {
     await query(
-      `UPDATE users SET email = $2 WHERE phone_number = $1 AND (email IS NULL OR email = '')`,
-      [user.phone_number, email]
+      `UPDATE users SET email = $2 WHERE id = $1 AND (email IS NULL OR email = '')`,
+      [user.id, email]
     );
   }
   return applied;
@@ -279,13 +279,11 @@ export async function registerAccountRoutes(app) {
         FROM ledger_entries le
         INNER JOIN device_identities di
           ON di.device_identity = le.device_identity
-        INNER JOIN users u
-          ON u.phone_number = di.phone_number
-        WHERE u.phone_number = $1
+        WHERE di.user_id = $1
         ORDER BY le.confirmed_at ASC, le.device_identity ASC, le.entry_id ASC
         LIMIT 1000 OFFSET $2
       `,
-      [auth.phone_number, offset]
+      [auth.account_id, offset]
     );
 
     return {
@@ -327,7 +325,7 @@ export async function registerAccountRoutes(app) {
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
-    const user = await getUserRow(auth.phone_number);
+    const user = await getUserRow(auth.account_id);
     if (!user) {
       return { profile: null };
     }
@@ -341,7 +339,7 @@ export async function registerAccountRoutes(app) {
     const auth = await authenticateRequest(request, reply);
     if (!auth) return reply;
 
-    const user = await getUserRow(auth.phone_number);
+    const user = await getUserRow(auth.account_id);
     if (!user) {
       return reply.code(404).send({ error: "User account not found." });
     }
@@ -405,9 +403,9 @@ export async function registerAccountRoutes(app) {
         `
           UPDATE users
           SET email = $2
-          WHERE phone_number = $1
+          WHERE id = $1
         `,
-        [user.phone_number, email]
+        [user.id, email]
       );
     }
 
@@ -486,10 +484,10 @@ export async function registerAccountRoutes(app) {
       `
         SELECT device_identity, created_at, last_seen_at, revoked_at
         FROM device_identities
-        WHERE phone_number = $1
+        WHERE user_id = $1
         ORDER BY created_at DESC
       `,
-      [auth.phone_number]
+      [auth.account_id]
     );
 
     return {

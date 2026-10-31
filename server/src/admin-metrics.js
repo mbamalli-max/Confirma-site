@@ -164,7 +164,7 @@ async function performRebuild({ automatic }) {
           INNER JOIN device_identities device
             ON device.device_identity = entry.device_identity
           INNER JOIN users account
-            ON account.phone_number = device.phone_number
+            ON account.id = device.user_id
 
           UNION ALL
 
@@ -174,7 +174,7 @@ async function performRebuild({ automatic }) {
             account.id AS user_id
           FROM attestations attestation
           INNER JOIN users account
-            ON account.phone_number = attestation.phone_number
+            ON account.id = attestation.user_id
           WHERE attestation.status = 'VALID'
         ), classified AS (
           SELECT
@@ -201,7 +201,7 @@ async function performRebuild({ automatic }) {
           SELECT account.id AS user_id, COUNT(entry.entry_id)::int AS record_count
           FROM users account
           LEFT JOIN device_identities device
-            ON device.phone_number = account.phone_number
+            ON device.user_id = account.id
           LEFT JOIN ledger_entries entry
             ON entry.device_identity = device.device_identity
           GROUP BY account.id
@@ -219,7 +219,7 @@ async function performRebuild({ automatic }) {
           INNER JOIN device_identities device
             ON device.device_identity = entry.device_identity
           INNER JOIN users account
-            ON account.phone_number = device.phone_number
+            ON account.id = device.user_id
 
           UNION ALL
 
@@ -229,7 +229,7 @@ async function performRebuild({ automatic }) {
             (attestation.issued_at AT TIME ZONE 'UTC')::date AS event_date
           FROM attestations attestation
           INNER JOIN users account
-            ON account.phone_number = attestation.phone_number
+            ON account.id = attestation.user_id
           WHERE attestation.status = 'VALID'
         ), snapshot_rows AS (
           SELECT 'accounts_phone_verified'::text AS metric_key, account.id AS user_id
@@ -246,7 +246,7 @@ async function performRebuild({ automatic }) {
 
           SELECT 'devices_active'::text AS metric_key, account.id AS user_id
           FROM device_identities device
-          INNER JOIN users account ON account.phone_number = device.phone_number
+          INNER JOIN users account ON account.id = device.user_id
           WHERE device.status = 'ACTIVE'
 
           UNION ALL
@@ -288,7 +288,7 @@ async function performRebuild({ automatic }) {
 
           SELECT DISTINCT 'contributors_devices_active'::text AS metric_key, account.id AS user_id
           FROM device_identities device
-          INNER JOIN users account ON account.phone_number = device.phone_number
+          INNER JOIN users account ON account.id = device.user_id
           WHERE device.status = 'ACTIVE'
 
           UNION ALL

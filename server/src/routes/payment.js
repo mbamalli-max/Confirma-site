@@ -100,7 +100,7 @@ function truncateText(value, maxLength) {
 
 async function getDeviceRecord(deviceIdentity) {
   const result = await query(
-    `SELECT phone_number, status, revoked_at FROM device_identities WHERE device_identity = $1 LIMIT 1`,
+    `SELECT user_id, status, revoked_at FROM device_identities WHERE device_identity = $1 LIMIT 1`,
     [deviceIdentity]
   );
   return result.rows[0] || null;
@@ -131,7 +131,7 @@ function computeAccountLedgerRootHash(entries) {
   return `sha256:${digest.digest("hex")}`;
 }
 
-async function getLedgerEntries(phoneNumber, windowDays, db = null) {
+async function getLedgerEntries(accountId, windowDays, db = null) {
   const runner = db || { query };
   if (windowDays === 0) {
     const result = await runner.query(
@@ -147,10 +147,10 @@ async function getLedgerEntries(phoneNumber, windowDays, db = null) {
         FROM ledger_entries le
         INNER JOIN device_identities di
           ON di.device_identity = le.device_identity
-        WHERE di.phone_number = $1
+        WHERE di.user_id = $1
         ORDER BY le.confirmed_at ASC, le.device_identity ASC, le.entry_id ASC
       `,
-      [phoneNumber]
+      [accountId]
     );
     return result.rows;
   }
@@ -168,19 +168,19 @@ async function getLedgerEntries(phoneNumber, windowDays, db = null) {
       FROM ledger_entries le
       INNER JOIN device_identities di
         ON di.device_identity = le.device_identity
-      WHERE di.phone_number = $1
+      WHERE di.user_id = $1
         AND le.confirmed_at >= NOW() - ($2 || ' days')::interval
       ORDER BY le.confirmed_at ASC, le.device_identity ASC, le.entry_id ASC
     `,
-    [phoneNumber, String(windowDays)]
+    [accountId, String(windowDays)]
   );
   return result.rows;
 }
 
-async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = null) {
+async function createAttestation(phoneNumber, accountId, deviceIdentity, windowDays, db = null) {
   const runner = db || { query };
   await ensureReportAttestationColumns(runner);
-  const entries = await getLedgerEntries(phoneNumber, windowDays, runner);
+  const entries = await getLedgerEntries(accountId, windowDays, runner);
 
   if (!entries.length) {
     const error = new Error("No entries in this window.");
@@ -213,6 +213,7 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = n
         vt_id,
         device_identity,
         phone_number,
+        user_id,
         ledger_root_hash,
         window_start,
         window_end,
@@ -224,12 +225,13 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = n
         scope_description,
         signing_kid
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'VALID', $9, $10, $11, $12)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'VALID', $10, $11, $12, $13)
     `,
     [
       attestation.vt_id,
       deviceIdentity,
       phoneNumber,
+      accountId,
       attestation.ledger_root_hash,
       attestation.window_start,
       attestation.window_end,
@@ -248,20 +250,20 @@ async function createAttestation(phoneNumber, deviceIdentity, windowDays, db = n
   };
 }
 
-async function getKeyRotationCount(phoneNumber, db = null) {
+async function getKeyRotationCount(accountId, db = null) {
   const runner = db || { query };
   const result = await runner.query(
     `
       SELECT COUNT(*)::int AS rotation_count
       FROM key_rotation_events
       WHERE old_device_identity IN (
-        SELECT device_identity FROM device_identities WHERE phone_number = $1
+        SELECT device_identity FROM device_identities WHERE user_id = $1
       )
       OR new_device_identity IN (
-        SELECT device_identity FROM device_identities WHERE phone_number = $1
+        SELECT device_identity FROM device_identities WHERE user_id = $1
       )
     `,
-    [phoneNumber]
+    [accountId]
   );
   return result.rows[0]?.rotation_count || 0;
 }
@@ -283,7 +285,7 @@ async function ensureReportProfileColumns() {
   reportProfileColumnsReady = true;
 }
 
-async function ensureProfileRowForPhone(phoneNumber) {
+async function ensureProfileRowForAccount(accountId) {
   await ensureReportProfileColumns();
   await query(
     `
@@ -297,17 +299,17 @@ async function ensureProfileRowForPhone(phoneNumber) {
         u.phone_number,
         NOW()
       FROM users u
-      WHERE u.phone_number = $1
+      WHERE u.id = $1
       ON CONFLICT (user_id)
       DO UPDATE SET
         phone_number = EXCLUDED.phone_number
     `,
-    [phoneNumber]
+    [accountId]
   );
 }
 
-async function getFreeReportContext(phoneNumber) {
-  await ensureProfileRowForPhone(phoneNumber);
+async function getFreeReportContext(accountId) {
+  await ensureProfileRowForAccount(accountId);
   const result = await query(
     `
       SELECT
@@ -316,15 +318,15 @@ async function getFreeReportContext(phoneNumber) {
         (
           SELECT MIN(di.created_at)
           FROM device_identities di
-          WHERE di.phone_number = u.phone_number
+          WHERE di.user_id = u.id
         ) AS first_device_created_at
       FROM users u
       LEFT JOIN profiles p
         ON p.user_id = u.id
-      WHERE u.phone_number = $1
+      WHERE u.id = $1
       LIMIT 1
     `,
-    [phoneNumber]
+    [accountId]
   );
   return result.rows[0] || null;
 }
@@ -924,9 +926,9 @@ async function buildVerifiedReportPdf({
   return pdfReady;
 }
 
-async function assertActiveDevice(phoneNumber, deviceIdentity) {
+async function assertActiveDevice(accountId, deviceIdentity) {
   const device = await getDeviceRecord(deviceIdentity);
-  if (!device || device.phone_number !== phoneNumber) {
+  if (!device || device.user_id !== accountId) {
     const error = new Error("Device does not belong to this account.");
     error.statusCode = 403;
     throw error;
@@ -949,6 +951,7 @@ async function assertActiveDevice(phoneNumber, deviceIdentity) {
 
 async function generateVerifiedReport({
   phoneNumber,
+  accountId,
   deviceIdentity,
   businessName,
   email,
@@ -957,8 +960,8 @@ async function generateVerifiedReport({
   amountKobo,
   db = null
 }) {
-  const attestation = await createAttestation(phoneNumber, deviceIdentity, windowDays, db);
-  const keyRotationEvents = await getKeyRotationCount(phoneNumber, db);
+  const attestation = await createAttestation(phoneNumber, accountId, deviceIdentity, windowDays, db);
+  const keyRotationEvents = await getKeyRotationCount(accountId, db);
   const filename = `konfirmata-verified-report-${new Date().toISOString().slice(0, 10)}.pdf`;
   const pdfBuffer = await buildVerifiedReportPdf({
     attestation,
@@ -1015,13 +1018,13 @@ export async function registerPaymentRoutes(app) {
       return reply.code(400).send({ error: "device_identity is required." });
     }
 
-    const freeReportContext = await getFreeReportContext(auth.phone_number);
+    const freeReportContext = await getFreeReportContext(auth.account_id);
     if (!freeReportContext) {
       return reply.code(404).send({ error: "User account not found." });
     }
 
     try {
-      await assertActiveDevice(auth.phone_number, deviceIdentity);
+      await assertActiveDevice(auth.account_id, deviceIdentity);
     } catch (error) {
       return reply.code(error.statusCode || 500).send({ error: error.message });
     }
@@ -1031,6 +1034,7 @@ export async function registerPaymentRoutes(app) {
       report = await withTransaction(async (client) => {
         return generateVerifiedReport({
           phoneNumber: auth.phone_number,
+          accountId: auth.account_id,
           deviceIdentity,
           businessName: String(freeReportContext.business_name || "").trim(),
           email: String(freeReportContext.email || "").trim(),

@@ -19,10 +19,10 @@ export async function registerIdentityRoutes(app) {
       `
         SELECT 1
         FROM device_identities
-        WHERE device_identity = $1 AND phone_number = $2 AND revoked_at IS NULL
+        WHERE device_identity = $1 AND user_id = $2 AND revoked_at IS NULL
         LIMIT 1
       `,
-      [oldDeviceIdentity, auth.phone_number]
+      [oldDeviceIdentity, auth.account_id]
     );
 
     if (deviceResult.rowCount === 0) {
@@ -34,10 +34,10 @@ export async function registerIdentityRoutes(app) {
 
     await query(
       `
-        INSERT INTO rotation_challenges (phone_number, old_device_identity, challenge_nonce, expires_at)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO rotation_challenges (phone_number, user_id, old_device_identity, challenge_nonce, expires_at)
+        VALUES ($1, $2, $3, $4, $5)
       `,
-      [auth.phone_number, oldDeviceIdentity, nonce, expiresAt.toISOString()]
+      [auth.phone_number, auth.account_id, oldDeviceIdentity, nonce, expiresAt.toISOString()]
     );
 
     return { challenge_nonce: nonce, expires_at: expiresAt.toISOString() };
@@ -70,10 +70,10 @@ export async function registerIdentityRoutes(app) {
           `
             SELECT 1
             FROM device_identities
-            WHERE device_identity = $1 AND phone_number = $2 AND revoked_at IS NULL
+            WHERE device_identity = $1 AND user_id = $2 AND revoked_at IS NULL
             LIMIT 1
           `,
-          [oldDeviceIdentity, auth.phone_number]
+          [oldDeviceIdentity, auth.account_id]
         );
         if (existingDeviceResult.rowCount === 0) {
           throw Object.assign(new Error("Device not found for this account."), { statusCode: 403 });
@@ -82,7 +82,7 @@ export async function registerIdentityRoutes(app) {
         // Validate and atomically consume the challenge.
         const challengeResult = await client.query(
           `
-            SELECT id, phone_number, old_device_identity, expires_at, consumed_at
+            SELECT id, user_id, old_device_identity, expires_at, consumed_at
             FROM rotation_challenges
             WHERE challenge_nonce = $1
             FOR UPDATE
@@ -93,7 +93,7 @@ export async function registerIdentityRoutes(app) {
 
         if (
           !challenge ||
-          challenge.phone_number !== auth.phone_number ||
+          challenge.user_id !== auth.account_id ||
           challenge.old_device_identity !== oldDeviceIdentity ||
           challenge.consumed_at ||
           new Date(challenge.expires_at) <= new Date()
@@ -124,31 +124,37 @@ export async function registerIdentityRoutes(app) {
         }
 
         // Consume the challenge.
-        await client.query(
-          `UPDATE rotation_challenges SET consumed_at = NOW() WHERE id = $1`,
+        const newDeviceResult = await client.query(
+          `UPDATE rotation_challenges SET user_id = user_id, consumed_at = NOW() WHERE id = $1`,
           [challenge.id]
         );
 
         // Register new device.
         await client.query(
           `
-            INSERT INTO device_identities (device_identity, public_key, phone_number, status)
-            VALUES ($1, $2, $3, 'ACTIVE')
+            INSERT INTO device_identities (device_identity, public_key, phone_number, user_id, status)
+            VALUES ($1, $2, $3, $4, 'ACTIVE')
             ON CONFLICT (device_identity)
             DO UPDATE SET
               public_key = EXCLUDED.public_key,
               phone_number = EXCLUDED.phone_number,
+              user_id = EXCLUDED.user_id,
               updated_at = NOW()
+            WHERE device_identities.user_id = EXCLUDED.user_id
+            RETURNING device_identity
           `,
-          [newDeviceIdentity, newPublicKey, auth.phone_number]
+          [newDeviceIdentity, newPublicKey, auth.phone_number, auth.account_id]
         );
+        if (newDeviceResult.rowCount === 0) {
+          throw Object.assign(new Error("New device belongs to another account."), { statusCode: 403 });
+        }
 
         // Mark old device as rotated.
         await client.query(
           `
             UPDATE device_identities
             -- A FORKED device keeps its marker; the rotation still links it to the new device.
-            SET status = CASE WHEN status = 'FORKED' THEN 'FORKED' ELSE 'ROTATED' END, rotated_to = $2, updated_at = NOW()
+            SET user_id = user_id, status = CASE WHEN status = 'FORKED' THEN 'FORKED' ELSE 'ROTATED' END, rotated_to = $2, updated_at = NOW()
             WHERE device_identity = $1
           `,
           [oldDeviceIdentity, newDeviceIdentity]
@@ -167,12 +173,13 @@ export async function registerIdentityRoutes(app) {
               old_device_identity,
               new_device_identity,
               phone_number,
+              user_id,
               otp_verified_at,
               rotation_receipt
             )
-            VALUES ($1, $2, $3, NOW(), $4)
+            VALUES ($1, $2, $3, $4, NOW(), $5)
           `,
-          [oldDeviceIdentity, newDeviceIdentity, auth.phone_number, rotationReceipt]
+          [oldDeviceIdentity, newDeviceIdentity, auth.phone_number, auth.account_id, rotationReceipt]
         );
 
         return {
@@ -205,7 +212,7 @@ export async function registerIdentityRoutes(app) {
     const revoked = await withTransaction(async (client) => {
       const deviceResult = await client.query(
         `
-          SELECT device_identity, phone_number
+          SELECT device_identity, user_id
           FROM device_identities
           WHERE device_identity = $1
           LIMIT 1
@@ -214,12 +221,12 @@ export async function registerIdentityRoutes(app) {
         [deviceIdentity]
       );
       const device = deviceResult.rows[0];
-      if (!device || device.phone_number !== auth.phone_number) return false;
+      if (!device || device.user_id !== auth.account_id) return false;
 
       await client.query(
         `
           UPDATE device_identities
-          SET revoked_at = NOW(), updated_at = NOW()
+          SET user_id = user_id, revoked_at = NOW(), updated_at = NOW()
           WHERE device_identity = $1
         `,
         [deviceIdentity]

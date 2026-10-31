@@ -196,7 +196,7 @@ async function registerDevice(database, user, deviceIdentity, publicKey) {
 
   const existingDeviceResult = await database.query(
     `
-      SELECT phone_number
+      SELECT user_id
       FROM device_identities
       WHERE device_identity = $1
       LIMIT 1
@@ -205,7 +205,7 @@ async function registerDevice(database, user, deviceIdentity, publicKey) {
   );
   const existingDevice = existingDeviceResult.rows[0];
 
-  if (existingDevice && existingDevice.phone_number !== user.phone_number) {
+  if (existingDevice && existingDevice.user_id !== user.id) {
     throw createDeviceConflictError();
   }
 
@@ -215,7 +215,7 @@ async function registerDevice(database, user, deviceIdentity, publicKey) {
     await database.query(
       `
         UPDATE device_identities
-        SET last_seen_at = NOW(), updated_at = NOW()
+        SET user_id = user_id, last_seen_at = NOW(), updated_at = NOW()
         WHERE device_identity = $1
       `,
       [deviceIdentity]
@@ -229,12 +229,13 @@ async function registerDevice(database, user, deviceIdentity, publicKey) {
         device_identity,
         public_key,
         phone_number,
+        user_id,
         status,
         last_seen_at
       )
-      VALUES ($1, $2, $3, 'ACTIVE', NOW())
+      VALUES ($1, $2, $3, $4, 'ACTIVE', NOW())
     `,
-    [deviceIdentity, publicKey, user.phone_number]
+    [deviceIdentity, publicKey, user.phone_number, user.id]
   );
 }
 
@@ -251,6 +252,7 @@ function buildVerificationResponse(user, channel, deviceIdentity = "", sessionId
     sms_available: config.smsProviderEnabled,
     ...buildAuthReply(user.phone_number, deviceIdentity, {
       sid: sessionId,
+      account_id: user.id,
       email: user.email || "",
       email_verified: Boolean(user.email_verified),
       phone_verified: Boolean(user.phone_verified)
@@ -266,13 +268,11 @@ async function revokeSessionForToken(auth) {
     `
       UPDATE user_sessions AS s
       SET revoked_at = COALESCE(s.revoked_at, NOW())
-      FROM users AS u
       WHERE s.id = $1
-        AND s.user_id = u.id
-        AND u.phone_number = $2
+        AND ($2::text IS NULL OR s.user_id::text = $2::text)
       RETURNING s.id
     `,
-    [sessionId, auth.phone_number]
+    [sessionId, auth.account_id || null]
   );
   return result.rowCount > 0;
 }

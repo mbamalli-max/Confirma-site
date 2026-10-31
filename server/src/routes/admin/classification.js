@@ -48,7 +48,7 @@ async function readAccountFacts(userId) {
       LEFT JOIN account_classification classification
         ON classification.user_id = account.id
       LEFT JOIN device_identities device
-        ON device.phone_number = account.phone_number
+        ON device.user_id = account.id
       LEFT JOIN ledger_entries entries
         ON entries.device_identity = device.device_identity
       WHERE account.id = $1

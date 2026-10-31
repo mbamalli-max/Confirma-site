@@ -44,7 +44,7 @@ async function recordIntegrityEvent(deviceIdentity, integrity) {
       await client.query(
         `
           UPDATE device_identities
-          SET status = 'FORKED', updated_at = NOW()
+          SET user_id = user_id, status = 'FORKED', updated_at = NOW()
           WHERE device_identity = $1
             AND revoked_at IS NULL
         `,
@@ -85,7 +85,7 @@ export async function registerSyncRoutes(app) {
       const result = await withTransaction(async (client) => {
         const pinnedDeviceResult = await client.query(
           `
-            SELECT phone_number, public_key, status, receipt_counter, last_synced_entry_id, revoked_at
+            SELECT user_id, public_key, status, receipt_counter, last_synced_entry_id, revoked_at
             FROM device_identities
             WHERE device_identity = $1
             LIMIT 1
@@ -102,7 +102,7 @@ export async function registerSyncRoutes(app) {
           );
         }
 
-        if (device.phone_number !== auth.phone_number) {
+        if (device.user_id !== auth.account_id) {
           throw Object.assign(new Error("Device belongs to another account."), { statusCode: 403 });
         }
 
@@ -216,7 +216,7 @@ export async function registerSyncRoutes(app) {
         const statusResult = await client.query(
           `
             UPDATE device_identities
-            SET
+            SET user_id = user_id,
               -- Only an active device is refreshed; FORKED, ROTATED and others stay as they are.
               status = CASE WHEN status IS NULL OR status = 'ACTIVE' THEN 'ACTIVE' ELSE status END,
               last_synced_entry_id = $2,

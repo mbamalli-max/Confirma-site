@@ -443,8 +443,11 @@ test("H9: integrity event details hold hashes and ids only", async () => {
 
 test("H10: migration 020 follows 019, applies once over populated pre-020 history without changing it, and reruns", async () => {
   const names = (await readdir(new URL("../migrations/", import.meta.url))).filter((name) => /^\d+.*\.sql$/.test(name)).sort();
-  assert.equal(names.at(-1), "020_ledger_integrity_events.sql");
-  assert.equal(names.at(-2), "019_otp_verify_failures.sql");
+  const migration020 = names.indexOf("020_ledger_integrity_events.sql");
+  const migration019 = names.indexOf("019_otp_verify_failures.sql");
+  assert.notEqual(migration020, -1, "migration 020 must exist");
+  assert.notEqual(migration019, -1, "migration 019 must exist");
+  assert.ok(migration020 > migration019, "migration 020 must follow migration 019");
   const device = await seedAccount();
   await syncGenuine(device);
   await syncGenuine(device);

@@ -30,8 +30,8 @@ assertLocalTestDatabase(config.databaseUrl);
 const INVALID_SESSION_REPLY = { error: "session_invalid" };
 const MISSING_TOKEN_REPLY = { error: "token_missing" };
 const DEVICE_MISMATCH_REPLY = { error: "device_mismatch" };
-const DEVICE_ACTIVITY_UPDATE = /UPDATE\s+device_identities\s+SET\s+last_seen_at\s+=\s+NOW\(\),\s*updated_at\s+=\s+NOW\(\)\s+WHERE\s+device_identity\s+=\s+\$1/i;
-const SMS_PHONE_VERIFICATION_OR_DEVICE_ACTIVITY_UPDATE = /UPDATE\s+(?:users\s+SET\s+phone_verified\s+=\s+TRUE\s+WHERE\s+phone_number\s+=\s+\$1|device_identities\s+SET\s+last_seen_at\s+=\s+NOW\(\),\s*updated_at\s+=\s+NOW\(\)\s+WHERE\s+device_identity\s+=\s+\$1)/i;
+const DEVICE_ACTIVITY_UPDATE = /UPDATE\s+device_identities\s+SET\s+user_id\s+=\s+user_id,\s*last_seen_at\s+=\s+NOW\(\),\s*updated_at\s+=\s+NOW\(\)\s+WHERE\s+device_identity\s+=\s+\$1/i;
+const SMS_PHONE_VERIFICATION_OR_DEVICE_ACTIVITY_UPDATE = /UPDATE\s+(?:users\s+SET\s+phone_verified\s+=\s+TRUE\s+WHERE\s+phone_number\s+=\s+\$1|device_identities\s+SET\s+user_id\s+=\s+user_id,\s*last_seen_at\s+=\s+NOW\(\),\s*updated_at\s+=\s+NOW\(\)\s+WHERE\s+device_identity\s+=\s+\$1)/i;
 const appPool = getPool();
 const database = createTestPool(config.databaseUrl, config.databaseSsl);
 const poolRecorder = instrumentApplicationPool(appPool);
@@ -637,7 +637,7 @@ test("A3: every definitive invalid-session refusal has the session_invalid code"
   const cases = [
     [jwt.sign({ phone_number: first.phone }, config.jwtSecret, { expiresIn: "30d" }), "bound-device"],
     [jwt.sign({ phone_number: first.phone, sid: crypto.randomUUID() }, config.jwtSecret, { expiresIn: "30d" }), "bound-device"],
-    [jwt.sign({ phone_number: second.phone, sid: firstSid }, config.jwtSecret, { expiresIn: "30d" }), "bound-device"],
+    [jwt.sign({ sid: firstSid, account_id: second.account_id }, config.jwtSecret, { expiresIn: "30d" }), "bound-device"],
     [jwt.sign({ phone_number: first.phone, sid: firstSid }, "wrong-signing-secret", { expiresIn: "30d" }), "bound-device"],
     [jwt.sign({ phone_number: first.phone, sid: firstSid }, config.jwtSecret, { expiresIn: -1 }), "bound-device"]
   ];
@@ -651,6 +651,18 @@ test("A3: every definitive invalid-session refusal has the session_invalid code"
     assert.equal(response.statusCode, 401, response.body);
     assert.deepEqual(response.json(), INVALID_SESSION_REPLY);
   }
+
+  // Signed sid is authoritative; stale phone claim is ignored in M1a.
+  const stalePhoneProfile = await app.inject({
+    method: "GET",
+    url: "/profile",
+    headers: authHeaders(
+      jwt.sign({ phone_number: second.phone, sid: firstSid }, config.jwtSecret, { expiresIn: "30d" }),
+      "bound-device"
+    )
+  });
+  assert.equal(stalePhoneProfile.statusCode, 200, stalePhoneProfile.body);
+  assert.equal(stalePhoneProfile.json().account_id, first.account_id);
 
   const mismatchedDevice = await app.inject({
     method: "GET",
@@ -691,6 +703,7 @@ test("A3: every definitive invalid-session refusal has the session_invalid code"
     assert.equal(invalidLogout.statusCode, 401, invalidLogout.body);
     assert.deepEqual(invalidLogout.json(), INVALID_SESSION_REPLY);
   }
+  assert.equal((await sessionRow(firstSid)).revoked_at, null);
 });
 
 test("A3: a guarded route distinguishes a missing token from an invalid session", async () => {

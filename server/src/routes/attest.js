@@ -32,14 +32,14 @@ export async function registerAttestRoutes(app) {
       return reply.code(400).send({ error: "device_identity is required." });
     }
 
-    // Validate device belongs to this phone_number
+    // Validate device belongs to this permanent account.
     const deviceResult = await query(
-      `SELECT phone_number, status, revoked_at FROM device_identities WHERE device_identity = $1 LIMIT 1`,
+      `SELECT user_id, status, revoked_at FROM device_identities WHERE device_identity = $1 LIMIT 1`,
       [deviceIdentity]
     );
 
     const device = deviceResult.rows[0];
-    if (!device || device.phone_number !== auth.phone_number) {
+    if (!device || device.user_id !== auth.account_id) {
       return reply.code(403).send({ error: "Device does not belong to this account." });
     }
 
@@ -99,13 +99,14 @@ export async function registerAttestRoutes(app) {
 
     await query(
       `
-        INSERT INTO attestations (vt_id, device_identity, phone_number, ledger_root_hash, window_start, window_end, entry_count, server_signature, status, issued_at, signing_kid)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'VALID', $9, $10)
+        INSERT INTO attestations (vt_id, device_identity, phone_number, user_id, ledger_root_hash, window_start, window_end, entry_count, server_signature, status, issued_at, signing_kid)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'VALID', $10, $11)
       `,
       [
         attestation.vt_id,
         deviceIdentity,
         auth.phone_number,
+        auth.account_id,
         attestation.ledger_root_hash,
         attestation.window_start,
         attestation.window_end,

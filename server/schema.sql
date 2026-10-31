@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS device_identities (
   device_identity TEXT PRIMARY KEY,
   public_key TEXT NOT NULL,
   phone_number TEXT NOT NULL REFERENCES users(phone_number),
+  user_id UUID REFERENCES users(id),
   status TEXT NOT NULL DEFAULT 'ACTIVE',
   rotated_to TEXT,
   receipt_counter BIGINT NOT NULL DEFAULT 0,
@@ -43,11 +44,14 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
   PRIMARY KEY (device_identity, entry_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_device_identities_user_id ON device_identities (user_id);
+
 CREATE TABLE IF NOT EXISTS key_rotation_events (
   id BIGSERIAL PRIMARY KEY,
   old_device_identity TEXT NOT NULL,
   new_device_identity TEXT NOT NULL,
   phone_number TEXT NOT NULL REFERENCES users(phone_number),
+  user_id UUID REFERENCES users(id),
   otp_verified_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   rotation_receipt TEXT NOT NULL
 );
@@ -127,6 +131,7 @@ CREATE TABLE IF NOT EXISTS attestations (
   vt_id            TEXT PRIMARY KEY,
   device_identity  TEXT NOT NULL REFERENCES device_identities(device_identity),
   phone_number     TEXT NOT NULL REFERENCES users(phone_number),
+  user_id          UUID REFERENCES users(id),
   ledger_root_hash TEXT NOT NULL,
   window_start     TIMESTAMPTZ NOT NULL,
   window_end       TIMESTAMPTZ NOT NULL,
@@ -143,6 +148,7 @@ CREATE INDEX IF NOT EXISTS idx_attestations_device
 CREATE TABLE IF NOT EXISTS payments (
   id BIGSERIAL PRIMARY KEY,
   phone_number TEXT NOT NULL REFERENCES users(phone_number),
+  user_id UUID REFERENCES users(id),
   device_identity TEXT NOT NULL,
   reference TEXT UNIQUE NOT NULL,
   amount_kobo INTEGER NOT NULL,
@@ -153,6 +159,10 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at TIMESTAMPTZ
 );
+
+CREATE INDEX IF NOT EXISTS idx_key_rotation_events_user_id ON key_rotation_events (user_id);
+CREATE INDEX IF NOT EXISTS idx_attestations_user_id ON attestations (user_id);
+CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments (user_id);
 
 CREATE INDEX IF NOT EXISTS idx_payments_phone
   ON payments (phone_number, created_at DESC);
