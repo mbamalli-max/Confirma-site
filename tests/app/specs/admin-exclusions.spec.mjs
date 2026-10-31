@@ -70,7 +70,6 @@ async function ownerPage(browser, { extra, configExtra = "", viewport } = {}) {
 async function signIn(page) {
   await page.fill("#signin-email", owner.email);
   await page.fill("#signin-password", "x");
-  await page.fill("#signin-totp", "123456");
   await page.click("#signin-submit");
   await expect(page.locator("#app-shell")).toBeVisible();
 }

@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
-import { API_BASE, routeAdminConfig, seedOwner, totpToken, withDb } from "./admin-helpers.mjs";
+import { API_BASE, routeAdminConfig, seedOwner, withDb } from "./admin-helpers.mjs";
 
 const ADMIN_DIR = fileURLToPath(new URL("../../../admin/", import.meta.url));
 const ROOT_VERCEL = fileURLToPath(new URL("../../../vercel.json", import.meta.url));
@@ -39,7 +39,6 @@ async function openPage(target) {
 async function signIn(target) {
   await target.fill("#signin-email", owner.email);
   await target.fill("#signin-password", owner.password);
-  await target.fill("#signin-totp", totpToken(owner.totpSecret));
   // The first reads after a fresh database may find the figures still building (503) and ask again.
   const ok = (part) => (r) => r.url().includes(part) && r.status() === 200;
   const all = target.waitForResponse(ok("/admin/v2/overview?range=all"));
@@ -83,26 +82,23 @@ test.afterAll(async () => {
   await context?.close();
 });
 
-test("1. sign-in needs all three fields; a wrong code gives one generic error and no figures", async () => {
+test("1. sign-in needs email and password; a wrong password gives one generic error and no figures", async () => {
   await openPage(page);
   await expect(page.locator("#signin-email")).toHaveAttribute("autocomplete", "username");
   await expect(page.locator("#signin-password")).toHaveAttribute("autocomplete", "current-password");
-  await expect(page.locator("#signin-totp")).toHaveAttribute("autocomplete", "one-time-code");
-  await expect(page.locator("#signin-totp")).toHaveAttribute("inputmode", "numeric");
 
   const loginsBefore = requests.filter((r) => r.url.includes("/admin/auth/login")).length;
   await page.fill("#signin-email", owner.email);
-  await page.fill("#signin-password", owner.password);
   await page.click("#signin-submit");
-  await expect(page.locator("#signin-error")).not.toHaveText("");
-  expect(requests.filter((r) => r.url.includes("/admin/auth/login")).length, "no login without a code").toBe(loginsBefore);
+  await expect(page.locator("#signin-error")).toHaveText("Enter your email and password.");
+  expect(requests.filter((r) => r.url.includes("/admin/auth/login")).length, "no login without a password").toBe(loginsBefore);
 
-  const good = totpToken(owner.totpSecret);
-  const wrong = String((Number(good) + 500_000) % 1_000_000).padStart(6, "0");
-  await page.fill("#signin-totp", wrong);
+  await page.fill("#signin-password", "wrong-password");
   const response = page.waitForResponse((r) => r.url().includes("/admin/auth/login"));
   await page.click("#signin-submit");
-  expect((await response).status()).toBe(401);
+  const loginResponse = await response;
+  expect(loginResponse.status()).toBe(401);
+  expect(loginResponse.request().postDataJSON()).toEqual({ email: owner.email, password: "wrong-password" });
   await expect(page.locator("#signin-error")).toHaveText("Sign-in failed. Check your details and try again.");
   await expect(page.locator("#signin-error")).toHaveAttribute("role", "alert");
   await expect(page.locator("#dashboard-screen")).toBeHidden();
@@ -286,7 +282,6 @@ test("1b. a rate-limited sign-in says to wait", async ({ browser }) => {
     await target.goto(PAGE);
     await target.fill("#signin-email", "owner@example.test");
     await target.fill("#signin-password", "x");
-    await target.fill("#signin-totp", "123456");
     await target.click("#signin-submit");
     await expect(target.locator("#signin-error")).toHaveText("Too many sign-in attempts. Wait 15 minutes, then try again.");
     await expect(target.locator("#dashboard-screen")).toBeHidden();
@@ -369,7 +364,6 @@ async function servedPage(browser, handle) {
 async function servedSignIn(target, { expectDashboard = true } = {}) {
   await target.fill("#signin-email", "owner@example.test");
   await target.fill("#signin-password", "x");
-  await target.fill("#signin-totp", "123456");
   await target.click("#signin-submit");
   if (expectDashboard) await expect(target.locator("#dashboard-screen")).toBeVisible();
 }
@@ -618,8 +612,7 @@ test("20. a hanging logout holds sign-in, then times out into the retry state", 
     await expect(target.locator("#signin-submit")).toBeDisabled();
     await target.fill("#signin-email", "owner@example.test");
     await target.fill("#signin-password", "x");
-    await target.fill("#signin-totp", "123456");
-    await target.locator("#signin-totp").press("Enter");
+    await target.locator("#signin-password").press("Enter");
     await expect(target.locator("#dashboard-screen")).toBeHidden();
     // After the time limit the logout counts as unconfirmed and can be retried.
     await expect(target.locator("#signin-error")).toContainText("the server did not confirm the session was ended", { timeout: 5000 });
@@ -707,7 +700,6 @@ test("12. phone width: no sideways scroll and 44px touch targets on every screen
     expect(await noSideways(), "sign-in screen").toBe(true);
     await target.fill("#signin-email", "owner@example.test");
     await target.fill("#signin-password", "x");
-    await target.fill("#signin-totp", "123456");
     await target.click("#signin-submit");
     await expect(target.locator("#aud-country .bar-row").first()).toBeVisible();
     await expect(target.locator("#growth-records_received svg")).toBeVisible();
@@ -737,7 +729,7 @@ test("12. phone width: no sideways scroll and 44px touch targets on every screen
     await target.click("#signout-button");
     await expect(target.locator("#signin-screen")).toBeVisible();
     expect(await noSideways(), "sign-in after sign out").toBe(true);
-    for (const selector of ["#signin-email", "#signin-password", "#signin-totp", "#signin-submit"]) {
+    for (const selector of ["#signin-email", "#signin-password", "#signin-submit"]) {
       const box = await target.locator(selector).boundingBox();
       expect(box.height, `${selector} height`).toBeGreaterThanOrEqual(44);
     }

@@ -825,19 +825,18 @@ async function onSubmit(ev) {
   ev.preventDefault();
   const email = $("signin-email").value.trim();
   const password = $("signin-password").value;
-  const totp = $("signin-totp").value.trim();
   const err = $("signin-error");
   // Sign-in waits while an earlier sign-out is still being sent.
   if (logoutPending) return;
-  if (!email || !password || !/^\d{6}$/.test(totp)) {
-    err.textContent = "Enter your email, password and the 6-digit code.";
+  if (!email || !password) {
+    err.textContent = "Enter your email and password.";
     return;
   }
   $("signin-submit").disabled = true;
   err.textContent = "";
   let r;
   try {
-    r = await api("POST", "/admin/auth/login", { email, password, totp });
+    r = await api("POST", "/admin/auth/login", { email, password });
   } catch {
     r = null;
   }
@@ -849,7 +848,7 @@ async function onSubmit(ev) {
   if (r.status !== 200 || !r.data || !r.data.token) {
     $("signin-submit").disabled = false;
     err.textContent = r.status === 400
-      ? "Enter your email, password and the 6-digit code."
+      ? "Enter your email and password."
       : r.status === 429
         ? "Too many sign-in attempts. Wait 15 minutes, then try again."
         : "Sign-in failed. Check your details and try again.";

@@ -37,7 +37,7 @@ export async function seedOwner(email = ADMIN_EMAIL) {
     );
     return result.rows[0];
   });
-  return { ...row, password: ADMIN_PASSWORD, totpSecret };
+  return { ...row, password: ADMIN_PASSWORD };
 }
 
 // A genuine admin session (signed token + session row), made without the login
@@ -54,32 +54,6 @@ export async function mintSession(admin) {
   return { token, expires_at: expiresAt.toISOString() };
 }
 
-// Copied from server/test/helpers/admin.js.
-export function totpToken(secret, now = Date.now()) {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  const normalized = secret.replace(/=+$/g, "");
-  let bits = 0;
-  let bitCount = 0;
-  const bytes = [];
-  for (const character of normalized) {
-    bits = (bits << 5) | alphabet.indexOf(character);
-    bitCount += 5;
-    if (bitCount >= 8) {
-      bitCount -= 8;
-      bytes.push((bits >>> bitCount) & 0xff);
-      bits &= (1 << bitCount) - 1;
-    }
-  }
-  const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(now / 30_000)));
-  const digest = crypto.createHmac("sha1", Buffer.from(bytes)).update(counter).digest();
-  const offset = digest[digest.length - 1] & 0x0f;
-  const binary = ((digest[offset] & 0x7f) << 24)
-    | ((digest[offset + 1] & 0xff) << 16)
-    | ((digest[offset + 2] & 0xff) << 8)
-    | (digest[offset + 3] & 0xff);
-  return String(binary % 1_000_000).padStart(6, "0");
-}
 
 export async function routeAdminConfig(page) {
   await page.route("**/admin/config.js", (route) => route.fulfill({
