@@ -96,6 +96,7 @@ const state = {
   authSessionKey: "",
   authSessionExpiresAt: "",
   boundAccount: "",
+  boundPhoneNumber: "",
   pendingRevocations: [],
   sessionGeneration: 0,
   wipeEpoch: 0,
@@ -141,6 +142,7 @@ async function init() {
   // local profile is not authority to display an account's data.
   await loadDeviceTrustState();
   await loadSyncState();
+  syncBoundPhoneInputs();
   if (await resolveAccountStartup()) {
     wireEvents();
     window.addEventListener("online", () => {
@@ -163,6 +165,7 @@ async function init() {
     console.warn("Unable to load saved profile. Continuing with onboarding.", error);
     state.profile = null;
   }
+  await ensureBoundPhoneSnapshot();
   if (state.profile?._needsReminderMigration) {
     delete state.profile._needsReminderMigration;
     try {
@@ -249,7 +252,7 @@ function cacheElements() {
     "country-grid", "operating-region-grid", "operating-region-note", "operating-region-next", "restore-account-link", "sector-grid", "business-grid",
     "business-search", "business-search-results", "business-search-status", "business-not-listed", "unlisted-panel",
     "business-description", "business-description-error", "unlisted-continue", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
-    "onboarding-next", "onboarding-name", "onboarding-phone", "onboarding-email", "onboarding-state",
+    "onboarding-next", "onboarding-name", "onboarding-phone", "onboarding-phone-readonly-note", "onboarding-email", "onboarding-state",
     "onboarding-birth-year", "onboarding-gender", "onboarding-profile-error",
     "business-helper", "profile-summary", "anomaly-banner", "anomaly-banner-text", "anomaly-banner-cta", "primary-actions", "advanced-panel", "transfer-actions", "liability-actions",
     "quick-label-grid", "selected-label-chip", "amount-input-v2", "amount-helper-v2", "counterparty-input-v2", "source-account-input",
@@ -261,7 +264,7 @@ function cacheElements() {
     "pin-forgot-link", "pin-forgot-modal", "pin-forgot-close", "pin-forgot-copy", "pin-forgot-hint", "pin-forgot-helper", "pin-forgot-code-wrap",
     "pin-forgot-code", "pin-forgot-send", "pin-forgot-confirm", "pin-forgot-cancel", "pin-forgot-error",
     "pin-wipe-modal", "pin-wipe-close", "pin-wipe-confirm", "pin-wipe-cancel",
-    "restore-modal", "restore-close", "restore-copy", "restore-email-field", "restore-email-input", "restore-phone-field", "restore-country-prefix", "restore-phone-input", "restore-helper-text",
+    "restore-modal", "restore-close", "restore-copy", "restore-email-field", "restore-email-input", "restore-phone-field", "restore-country-prefix", "restore-phone-input", "restore-phone-readonly-note", "restore-helper-text",
     "restore-code-wrap", "restore-code-input", "restore-error-text", "restore-send-code", "restore-verify-code", "restore-cancel",
     "revoke-old-devices-modal", "revoke-old-devices-list", "revoke-old-devices-skip",
     "mic-button-v2", "voice-label-v2", "voice-error-v2", "quick-text-input-v2",
@@ -288,7 +291,7 @@ function cacheElements() {
     "remove-local-data-panel", "remove-local-data-copy", "remove-local-data-confirmation", "remove-local-data-error",
     "remove-local-data-confirm", "remove-local-data-anyway", "remove-local-data-cancel",
     "otp-back", "otp-screen-header-title", "otp-screen-header-copy", "otp-screen-title", "otp-screen-copy", "otp-status-card",
-    "otp-email-field", "otp-email-input", "otp-phone-field", "otp-country-prefix", "otp-phone-input", "otp-request-code",
+    "otp-email-field", "otp-email-input", "otp-phone-field", "otp-country-prefix", "otp-phone-input", "otp-phone-readonly-note", "otp-request-code",
     "otp-helper-text", "otp-code-input", "otp-verify-code", "otp-error-text",
     "unlisted-sector-grid", "unlisted-sector-error", "profile-prompt-banner", "profile-prompt-complete", "profile-prompt-dismiss",
     "region-choice-modal", "region-choice-select", "region-choice-error", "region-choice-save", "region-choice-cancel", "region-choice-close"
@@ -1256,7 +1259,9 @@ async function finishOnboarding() {
   const phoneCountry = getPhoneInputCountry();
   const displayName = document.getElementById("onboarding-name")?.value.trim() || "";
   const rawPhoneNumber = document.getElementById("onboarding-phone")?.value.trim() || "";
-  const normalizedPhoneNumber = rawPhoneNumber ? normalizePhoneNumber(rawPhoneNumber, phoneCountry) : "";
+  const normalizedPhoneNumber = isPhoneBoundToServerAccount()
+    ? getBoundPhoneNumber()
+    : (rawPhoneNumber ? normalizePhoneNumber(rawPhoneNumber, phoneCountry) : "");
   const email = normalizeEmailAddress(document.getElementById("onboarding-email")?.value.trim() || "");
   const region = document.getElementById("onboarding-state")?.value.trim() || "";
   const birthYear = document.getElementById("onboarding-birth-year")?.value.trim() || "";
@@ -6323,6 +6328,7 @@ function renderOtpScreen() {
   if (els["otp-phone-input"]) {
     els["otp-phone-input"].value = formatPhoneForInput(state.profile?.phone_number || "", getPhoneInputCountry());
   }
+  syncBoundPhoneInputs();
   if (els["otp-request-code"]) {
     if (state.otpChallenge) {
       const elapsed = Date.now() - (state.otpChallenge.sentAt || 0);
@@ -6367,14 +6373,18 @@ function renderOtpScreen() {
 
 function getCurrentOtpIdentifier(channel = getPreferredOtpChannel()) {
   if (channel === "sms") {
-    return normalizePhoneNumber(els["otp-phone-input"]?.value.trim() || state.profile?.phone_number || "", getPhoneInputCountry());
+    return isPhoneBoundToServerAccount()
+      ? getBoundPhoneNumber()
+      : normalizePhoneNumber(els["otp-phone-input"]?.value.trim() || state.profile?.phone_number || "", getPhoneInputCountry());
   }
   return normalizeEmailAddress(els["otp-email-input"]?.value.trim() || state.profile?.email || "");
 }
 
 function getCurrentRestoreIdentifier(channel = getPreferredOtpChannel()) {
   if (channel === "sms") {
-    return normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", getPhoneInputCountry());
+    return isPhoneBoundToServerAccount()
+      ? getBoundPhoneNumber()
+      : normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", getPhoneInputCountry());
   }
   return normalizeEmailAddress(els["restore-email-input"]?.value.trim() || state.profile?.email || "");
 }
@@ -6592,9 +6602,11 @@ async function verifyActiveOtpChallenge(
     state.profile.email_verified = Boolean(response.email_verified ?? state.profile.email_verified);
     state.profile.phone_verified = Boolean(response.phone_verified ?? state.profile.phone_verified);
     state.profile.phone_country = detectPhoneCountryFromPhoneNumber(state.profile.phone_number) || state.profile.phone_country || "";
+    state.boundPhoneNumber = normalizePhoneNumber(state.profile.phone_number || "", country);
     const responseGuard = { sessionGeneration: nextGeneration, wipeEpoch: verifyGuard.wipeEpoch, authToken: returnedToken };
     const savedResponse = await saveServerResponseProfile(state.profile, responseGuard, {
       ...(response.device_identity ? { device_identity: state.deviceIdentity } : {}),
+      ...(state.boundPhoneNumber ? { bound_phone_number: state.boundPhoneNumber } : {}),
       ...(state.profile.phone_country ? { auth_phone_country: state.profile.phone_country } : {})
     });
     if (!savedResponse) {
@@ -7156,6 +7168,7 @@ async function openSignedOutSignIn() {
     state.legacyChoiceShown = false;
   }
   if (!state.profile) state.profile = await getProfile();
+  await ensureBoundPhoneSnapshot();
   if (!state.profile) {
     document.body.classList.remove("account-locked");
     showScreen("screen-onboarding");
@@ -7341,6 +7354,7 @@ async function wipeAllLocalData(confirmedRemovalCount) {
   });
   state.profile = null;
   state.boundAccount = "";
+  state.boundPhoneNumber = "";
   state.pendingRevocations = [];
   state.wipeEpoch = nextWipeEpoch;
   state.signedOut = false;
@@ -7509,9 +7523,11 @@ async function applyServerProfile(serverProfile, { token, generation, guard }) {
   if (!serverProfile) return false;
   if (token !== state.authSessionKey || generation !== state.sessionGeneration) return false;
   const profile = mergeServerProfile(serverProfile);
-  const saved = await saveServerResponseProfile(profile, guard);
+  const serverPhone = normalizePhoneNumber(serverProfile.phone || profile.phone_number || "", getPhoneInputCountry());
+  const saved = await saveServerResponseProfile(profile, guard, serverPhone ? { bound_phone_number: serverPhone } : {});
   if (!saved) return false;
   state.profile = profile;
+  if (serverPhone) state.boundPhoneNumber = serverPhone;
   initializeAuthPhoneCountry();
   syncDevQaSnapshot("profile_pulled");
   return true;
@@ -8012,6 +8028,7 @@ function openRestoreModal() {
   if (els["restore-phone-input"]) {
     els["restore-phone-input"].value = formatPhoneForInput(state.profile?.phone_number || "", getRestoreCountryId());
   }
+  syncBoundPhoneInputs();
   resetRestoreModal();
   if (els["restore-modal"]) {
     els["restore-modal"].hidden = false;
@@ -8035,7 +8052,9 @@ async function sendRestoreCode() {
   const channel = getPreferredOtpChannel();
   const country = getRestoreCountryId();
   const identifier = getCurrentRestoreIdentifier(channel);
-  const phoneNumber = normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", country);
+  const phoneNumber = isPhoneBoundToServerAccount()
+    ? getBoundPhoneNumber()
+    : normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", country);
   if (!identifier) {
     showRestoreError(getIdentifierValidationMessage(channel, country));
     return;
@@ -8277,7 +8296,9 @@ async function verifyRestoreCode() {
   if (verifyButton?.disabled) return;
   const country = getRestoreCountryId();
   const channel = getPreferredOtpChannel();
-  const phoneNumber = normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", country);
+  const phoneNumber = isPhoneBoundToServerAccount()
+    ? getBoundPhoneNumber()
+    : normalizePhoneNumber(els["restore-phone-input"]?.value.trim() || state.profile?.phone_number || "", country);
   const identifier = getCurrentRestoreIdentifier(channel);
   const code = (els["restore-code-input"]?.value || "").trim();
 
@@ -8348,6 +8369,7 @@ function renderOnboardingProfileStep() {
   };
   setIfUntouched("onboarding-name", state.profile?.display_name || "");
   setIfUntouched("onboarding-phone", formatPhoneForInput(state.profile?.phone_number || "", getPhoneInputCountry()));
+  syncBoundPhoneInputs();
   setIfUntouched("onboarding-email", state.profile?.email || "");
   setIfUntouched("onboarding-state", state.profile?.region || "");
   setIfUntouched("onboarding-birth-year", state.profile?.birth_year || "");
@@ -8357,14 +8379,59 @@ function renderOnboardingProfileStep() {
   updateFinishOnboardingState();
 }
 
+// `bound_account` is deliberately retained when a session is signed out or
+// expires. The phone snapshot gives that durable binding an immutable local
+// value, rather than trusting a form field or a currently-valid token.
+function isPhoneBoundToServerAccount() {
+  return Boolean(state.boundAccount);
+}
+
+function getBoundPhoneNumber() {
+  return normalizePhoneNumber(
+    state.boundPhoneNumber || state.profile?.phone_number || "",
+    getPhoneInputCountry()
+  );
+}
+
+function syncBoundPhoneInputs() {
+  const locked = isPhoneBoundToServerAccount();
+  const boundPhone = getBoundPhoneNumber();
+  [
+    ["onboarding-phone", "onboarding-phone-readonly-note"],
+    ["otp-phone-input", "otp-phone-readonly-note"],
+    ["restore-phone-input", "restore-phone-readonly-note"]
+  ].forEach(([inputId, noteId]) => {
+    const input = els[inputId];
+    const note = els[noteId];
+    if (input) {
+      input.readOnly = locked;
+      input.setAttribute("aria-readonly", String(locked));
+      if (locked && boundPhone) input.value = formatPhoneForInput(boundPhone, getPhoneInputCountry());
+    }
+    if (note) note.hidden = !locked;
+  });
+}
+
+async function ensureBoundPhoneSnapshot() {
+  if (!isPhoneBoundToServerAccount() || state.boundPhoneNumber || !state.profile?.phone_number) return;
+  state.boundPhoneNumber = normalizePhoneNumber(state.profile.phone_number, getPhoneInputCountry());
+  if (state.boundPhoneNumber) await saveSetting("bound_phone_number", state.boundPhoneNumber);
+}
+
+function preserveBoundPhone(profile) {
+  if (!isPhoneBoundToServerAccount()) return profile;
+  const boundPhone = getBoundPhoneNumber();
+  if (!boundPhone) return profile;
+  return { ...profile, phone_number: boundPhone };
+}
+
 function updateFinishOnboardingState() {
   if (!els["finish-onboarding"]) return;
   const hasBusinessType = Boolean(state.profile && state.profile.business_type_id);
   const hasDisplayName = Boolean(els["onboarding-name"]?.value.trim());
-  const hasValidPhone = Boolean(normalizePhoneNumber(
-    els["onboarding-phone"]?.value.trim() || "",
-    getPhoneInputCountry()
-  ));
+  const hasValidPhone = Boolean(isPhoneBoundToServerAccount()
+    ? getBoundPhoneNumber()
+    : normalizePhoneNumber(els["onboarding-phone"]?.value.trim() || "", getPhoneInputCountry()));
   const hasEmail = isValidEmailAddress(normalizeEmailAddress(els["onboarding-email"]?.value.trim() || ""));
   els["finish-onboarding"].disabled = !(hasBusinessType && hasDisplayName && hasValidPhone && hasEmail);
 }
@@ -8689,7 +8756,7 @@ function getProfile() {
 function saveProfile(profile, { skipPush = false } = {}) {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction("settings", "readwrite");
-    const nextProfile = normalizeLocalProfile(profile) || {};
+    const nextProfile = normalizeLocalProfile(preserveBoundPhone(profile)) || {};
     const normalizedProfile = {
       ...nextProfile,
       key: "profile"
@@ -9183,7 +9250,7 @@ async function loadDeviceTrustState() {
 async function loadSyncState() {
   if (!state.db) return;
   const [authSessionKey, authSessionExpiresAt, syncApiBaseUrl, lastSyncAt, lastSyncReceipt,
-    boundAccount, pendingRevocations, sessionGeneration, signedOut, wipePending, localOrigin,
+    boundAccount, boundPhoneNumber, pendingRevocations, sessionGeneration, signedOut, wipePending, localOrigin,
     legacyClaimConsent, wipeEpoch] = await Promise.all([
     getSetting("auth_" + "to" + "ken"),
     getSetting("auth_" + "to" + "ken_expires_at"),
@@ -9191,6 +9258,7 @@ async function loadSyncState() {
     getSetting("last_sync_at"),
     getSetting("last_sync_receipt"),
     getSetting("bound_account"),
+    getSetting("bound_phone_number"),
     getSetting("pending_revocations"),
     getSetting("session_generation"),
     getSetting("signed_out"),
@@ -9205,6 +9273,7 @@ async function loadSyncState() {
   state.lastSyncAt = lastSyncAt || "";
   state.lastSyncReceipt = lastSyncReceipt || "";
   state.boundAccount = String(boundAccount || "");
+  state.boundPhoneNumber = String(boundPhoneNumber || "");
   state.pendingRevocations = Array.isArray(pendingRevocations) ? pendingRevocations.filter((entry) => entry?.token) : [];
   state.sessionGeneration = Number(sessionGeneration || 0);
   state.signedOut = signedOut === true;

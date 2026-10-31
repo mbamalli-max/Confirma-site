@@ -293,6 +293,7 @@
           <label class="field">
             Phone number
             <input id="onboarding-phone" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel" required>
+            <span class="record-meta" id="onboarding-phone-readonly-note" hidden>Phone number changes aren't available yet.</span>
           </label>
 
           <label class="field">
@@ -359,6 +360,7 @@
             <span class="phone-prefix" id="otp-country-prefix" aria-hidden="true"></span>
             <input id="otp-phone-input" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel" aria-describedby="otp-helper-text">
           </div>
+          <span class="record-meta" id="otp-phone-readonly-note" hidden>Phone number changes aren't available yet.</span>
         </label>
         <div class="button-stack">
           <button class="btn btn-secondary" id="otp-request-code" type="button">Send verification code</button>
@@ -970,6 +972,7 @@
           <span class="phone-prefix" id="restore-country-prefix" aria-hidden="true"></span>
           <input id="restore-phone-input" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel" aria-describedby="restore-helper-text">
         </div>
+        <span class="record-meta" id="restore-phone-readonly-note" hidden>Phone number changes aren't available yet.</span>
       </label>
       <p class="record-meta" id="restore-helper-text">Request a restore code to continue.</p>
       <div id="restore-code-wrap" hidden>
