@@ -72,10 +72,10 @@ async function seedUser({
   const deviceIdentity = `device-${crypto.randomUUID()}`;
   await query(
     `
-      INSERT INTO device_identities (device_identity, public_key, phone_number, status)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO device_identities (device_identity, public_key, phone_number, user_id, status)
+      VALUES ($1, $2, $3, $4, $5)
     `,
-    [deviceIdentity, "synthetic-key", phone, deviceStatus]
+    [deviceIdentity, "synthetic-key", phone, user.id, deviceStatus]
   );
   for (let index = 0; index < records.length; index += 1) {
     const record = records[index];
@@ -103,14 +103,15 @@ async function seedUser({
     await query(
       `
         INSERT INTO attestations (
-          vt_id, device_identity, phone_number, ledger_root_hash,
+          vt_id, device_identity, phone_number, user_id, ledger_root_hash,
           window_start, window_end, entry_count, server_signature, status, issued_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'VALID', $9)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'VALID', $10)
       `,
       [
         `vt-${crypto.randomUUID()}`,
         deviceIdentity,
         phone,
+        user.id,
         crypto.randomBytes(32).toString("hex"),
         issuedAt,
         issuedAt,

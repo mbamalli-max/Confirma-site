@@ -97,7 +97,7 @@ before(async () => {
     );
     // Signed records carry their own copy of the sector at capture time.
     const device = `device-${crypto.randomUUID()}`;
-    await query(`INSERT INTO device_identities (device_identity, public_key, phone_number, status) VALUES ($1, 'k', $2, 'ACTIVE')`, [device, phone]);
+    await query(`INSERT INTO device_identities (device_identity, public_key, phone_number, user_id, status) VALUES ($1, 'k', $2, $3, 'ACTIVE')`, [device, phone, userId]);
     await query(
       `INSERT INTO ledger_entries (device_identity, entry_id, entry_hash, prev_entry_hash, signature, confirmed_at, payload)
        VALUES ($1, 1, $2, $3, 'sig', NOW(), $4::jsonb)`,
@@ -106,14 +106,14 @@ before(async () => {
     );
     const vtId = `vt-${crypto.randomUUID()}`;
     await query(
-      `INSERT INTO attestations (vt_id, device_identity, phone_number, ledger_root_hash, window_start, window_end, entry_count, server_signature)
-       VALUES ($1, $2, $3, $4, NOW() - INTERVAL '30 days', NOW(), 1, 'signature')`,
-      [vtId, device, phone, crypto.randomBytes(32).toString("hex")]
+      `INSERT INTO attestations (vt_id, device_identity, phone_number, user_id, ledger_root_hash, window_start, window_end, entry_count, server_signature)
+       VALUES ($1, $2, $3, $4, $5, NOW() - INTERVAL '30 days', NOW(), 1, 'signature')`,
+      [vtId, device, phone, userId, crypto.randomBytes(32).toString("hex")]
     );
     await query(
-      `INSERT INTO payments (phone_number, device_identity, reference, amount_kobo, tier, window_days, paystack_status, vt_id)
-       VALUES ($1, $2, $3, 150000, 'standard', 30, 'success', $4)`,
-      [phone, device, `ref-${crypto.randomUUID()}`, vtId]
+      `INSERT INTO payments (phone_number, user_id, device_identity, reference, amount_kobo, tier, window_days, paystack_status, vt_id)
+       VALUES ($1, $2, $3, $4, 150000, 'standard', 30, 'success', $5)`,
+      [phone, userId, device, `ref-${crypto.randomUUID()}`, vtId]
     );
   }
   // Figures built under the old rule.

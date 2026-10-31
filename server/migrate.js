@@ -7,6 +7,37 @@ import { listMigrationFiles } from "./src/migration-files.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const migrationsDir = path.join(__dirname, "migrations");
+const migrationsThrough = process.env.MIGRATIONS_THROUGH === undefined
+  ? null
+  : Number(process.env.MIGRATIONS_THROUGH);
+
+if (migrationsThrough !== null && (!Number.isInteger(migrationsThrough) || migrationsThrough < 1)) {
+  throw new Error("MIGRATIONS_THROUGH must be a positive migration version.");
+}
+
+function assertLocalTestMigrationBoundary(databaseUrl) {
+  let parsed;
+  try {
+    parsed = new URL(String(databaseUrl || ""));
+  } catch {
+    throw new Error("MIGRATIONS_THROUGH is permitted only for a valid local PostgreSQL test database URL.");
+  }
+
+  const localHosts = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+  const databaseName = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
+  if (!/^postgres(ql)?:$/i.test(parsed.protocol)
+      || !localHosts.has(parsed.hostname)
+      || !databaseName.toLowerCase().includes("test")) {
+    throw new Error("MIGRATIONS_THROUGH is permitted only for a local PostgreSQL database whose name contains 'test'.");
+  }
+}
+
+if (migrationsThrough !== null) {
+  // This is a test-fixture boundary, never a production migration control.
+  // Validate it before getPool() so an unsafe invocation cannot connect or apply.
+  assertLocalTestMigrationBoundary(process.env.DATABASE_URL);
+  console.log(`Migration boundary in force through version ${migrationsThrough} (validated local test database).`);
+}
 
 function stripLineComments(sql) {
   return String(sql || "").replace(/--.*$/gm, "").trim();
@@ -27,6 +58,7 @@ async function getPendingMigrations(pool) {
 
   const migrations = await listMigrationFiles(migrationsDir);
   return migrations
+    .filter((entry) => migrationsThrough === null || entry.version <= migrationsThrough)
     .filter((entry) => !appliedVersions.has(entry.version));
 }
 

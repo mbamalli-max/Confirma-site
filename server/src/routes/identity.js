@@ -124,13 +124,13 @@ export async function registerIdentityRoutes(app) {
         }
 
         // Consume the challenge.
-        const newDeviceResult = await client.query(
+        await client.query(
           `UPDATE rotation_challenges SET user_id = user_id, consumed_at = NOW() WHERE id = $1`,
           [challenge.id]
         );
 
         // Register new device.
-        await client.query(
+        const newDeviceResult = await client.query(
           `
             INSERT INTO device_identities (device_identity, public_key, phone_number, user_id, status)
             VALUES ($1, $2, $3, $4, 'ACTIVE')

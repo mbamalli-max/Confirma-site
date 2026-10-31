@@ -1,6 +1,79 @@
 import pg from "pg";
+import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 const { Pool } = pg;
+const runFile = promisify(execFile);
+const serverDir = fileURLToPath(new URL("../..", import.meta.url));
+
+function quoteIdentifier(identifier) {
+  return `"${String(identifier).replaceAll('"', '""')}"`;
+}
+
+/**
+ * Build a private, local database at a migration boundary. Historical stages
+ * start from the pinned pre-M1 fixture; the working schema.sql is deliberately
+ * post-022 and is used by fresh-install tests.
+ */
+export async function createStageDatabase(throughVersion, {
+  databaseUrl,
+  databaseSsl = false,
+  freshSchema = false
+} = {}) {
+  assertLocalTestDatabase(databaseUrl);
+  if (!Number.isInteger(throughVersion) || throughVersion < 1) {
+    throw new TypeError("throughVersion must be a positive migration version.");
+  }
+  const source = new URL(databaseUrl);
+  // PostgreSQL identifiers are limited to 63 bytes.  Do not derive this from
+  // the configured database name: long test database names are silently
+  // truncated by PostgreSQL and can collide across concurrent test processes.
+  const name = `kf_stage_test_${Math.random().toString(16).slice(2, 10)}`;
+  source.pathname = `/${encodeURIComponent(name)}`;
+  const stageUrl = source.toString();
+  assertLocalTestDatabase(stageUrl);
+  const adminUrl = new URL(stageUrl);
+  adminUrl.pathname = "/postgres";
+  const admin = new Pool({ connectionString: adminUrl.toString(), ssl: databaseSsl ? { rejectUnauthorized: false } : undefined, max: 1 });
+  let pool;
+  try {
+    await admin.query(`CREATE DATABASE ${quoteIdentifier(name)}`);
+    pool = createTestPool(stageUrl, databaseSsl);
+    const schema = freshSchema
+      ? await readFile(path.join(serverDir, "schema.sql"), "utf8")
+      : await readFile(path.join(serverDir, "test", "fixtures", "schema-pre-m1.sql"), "utf8");
+    await pool.query(schema);
+    await pool.end();
+    await runFile(process.execPath, ["migrate.js"], {
+      cwd: serverDir,
+      env: { ...process.env, DATABASE_URL: stageUrl, MIGRATIONS_THROUGH: String(throughVersion) }
+    });
+    pool = createTestPool(stageUrl, databaseSsl);
+  } catch (error) {
+    if (pool) await pool.end().catch(() => {});
+    await admin.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(name)} WITH (FORCE)`).catch(() => {});
+    await admin.end();
+    throw error;
+  }
+  return {
+    pool,
+    url: stageUrl,
+    async runMigrations(through = throughVersion) {
+      return runFile(process.execPath, ["migrate.js"], {
+        cwd: serverDir,
+        env: { ...process.env, DATABASE_URL: stageUrl, MIGRATIONS_THROUGH: String(through) }
+      });
+    },
+    async drop() {
+      await pool.end();
+      await admin.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(name)} WITH (FORCE)`);
+      await admin.end();
+    }
+  };
+}
 
 export function assertLocalTestDatabase(databaseUrl) {
   let parsed;

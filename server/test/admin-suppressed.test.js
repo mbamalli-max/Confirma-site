@@ -79,9 +79,9 @@ async function seedAccount({
   `, [userId, country, ...storedSectorColumns({ businessType, sector, businessDescription }), name, businessName, businessType, businessDescription]);
   const deviceIdentity = `device-${crypto.randomUUID()}`;
   await query(`
-    INSERT INTO device_identities (device_identity, public_key, phone_number, status)
-    VALUES ($1, 'test-key', $2, $3)
-  `, [deviceIdentity, accountPhone, active ? "ACTIVE" : "REVOKED"]);
+    INSERT INTO device_identities (device_identity, public_key, phone_number, user_id, status)
+    VALUES ($1, 'test-key', $2, $3, $4)
+  `, [deviceIdentity, accountPhone, userId, active ? "ACTIVE" : "REVOKED"]);
   for (let index = 0; index < records.length; index += 1) {
     await query(`
       INSERT INTO ledger_entries (
@@ -99,13 +99,14 @@ async function seedAccount({
   for (const issuedAt of attestations) {
     await query(`
       INSERT INTO attestations (
-        vt_id, device_identity, phone_number, ledger_root_hash,
+        vt_id, device_identity, phone_number, user_id, ledger_root_hash,
         window_start, window_end, entry_count, server_signature, status, issued_at
-      ) VALUES ($1, $2, $3, $4, $5, $5, 1, 'test-signature', 'VALID', $5)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $6, 1, 'test-signature', 'VALID', $6)
     `, [
       `vt-${crypto.randomUUID()}`,
       deviceIdentity,
       accountPhone,
+      userId,
       crypto.randomBytes(32).toString("hex"),
       issuedAt
     ]);
@@ -520,9 +521,9 @@ test("8a: overview event disclosure uses eligible contributors and eligible even
     `, [device.rows[0].device_identity, crypto.randomBytes(32).toString("hex"), "0".repeat(64), now]);
     const phone = await query(`SELECT phone_number FROM users WHERE id = $1`, [ids[index]]);
     await query(`
-      INSERT INTO attestations (vt_id, device_identity, phone_number, ledger_root_hash, window_start, window_end, entry_count, server_signature, status, issued_at)
-      VALUES ($1, $2, $3, $4, $5, $5, 1, 'test', 'VALID', $5)
-    `, [`vt-${crypto.randomUUID()}`, device.rows[0].device_identity, phone.rows[0].phone_number, crypto.randomBytes(32).toString("hex"), now]);
+      INSERT INTO attestations (vt_id, device_identity, phone_number, user_id, ledger_root_hash, window_start, window_end, entry_count, server_signature, status, issued_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $6, 1, 'test', 'VALID', $6)
+    `, [`vt-${crypto.randomUUID()}`, device.rows[0].device_identity, phone.rows[0].phone_number, ids[index], crypto.randomBytes(32).toString("hex"), now]);
   }
   await rebuildRollups();
   app = await buildApp();

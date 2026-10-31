@@ -53,8 +53,8 @@ async function addDevice(phone, userId, label) {
   const keys = deviceKeys();
   const deviceIdentity = crypto.randomBytes(16).toString("hex");
   await query(
-    `INSERT INTO device_identities (device_identity, public_key, phone_number, status) VALUES ($1, $2, $3, 'ACTIVE')`,
-    [deviceIdentity, keys.publicKeyJson, phone]
+    `INSERT INTO device_identities (device_identity, public_key, phone_number, user_id, status) VALUES ($1, $2, $3, $4, 'ACTIVE')`,
+    [deviceIdentity, keys.publicKeyJson, phone, userId]
   );
   const sessionId = crypto.randomUUID();
   await query(

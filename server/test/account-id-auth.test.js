@@ -1,7 +1,6 @@
 import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { readFile } from "node:fs/promises";
 import Fastify from "fastify";
 import jwt from "jsonwebtoken";
 import { config } from "../src/config.js";
@@ -19,7 +18,6 @@ assertLocalTestDatabase(config.databaseUrl);
 const appPool = getPool();
 const database = createTestPool(config.databaseUrl, config.databaseSsl);
 const app = Fastify({ logger: false });
-const migrationSql = await readFile(new URL("../migrations/021_account_id_links.sql", import.meta.url), "utf8");
 
 config.allowDevOtp = true;
 config.resendApiKey = "";
@@ -84,8 +82,8 @@ function signedEntry(deviceIdentity, privateKey) {
 }
 
 before(async () => {
-  // This suite intentionally runs on the post-021 shape even when invoked alone.
-  await database.query(migrationSql);
+  // The normal test setup has already migrated the shared local database.
+  await resetTestDatabase(database);
   await registerAuthRoutes(app);
   await registerAccountRoutes(app);
   await registerSyncRoutes(app);
@@ -182,6 +180,22 @@ test("M1a ownership checks refuse another account's device for sync and attest",
   assert.equal(attest.statusCode, 403, attest.body);
 });
 
+test("M1b rotation refuses another account's target without consuming its challenge", async () => {
+  const ownerKeys = deviceKeys();
+  const owner = await signIn({ phone: "+12025550360", deviceIdentity: "m1b-rotation-old", publicKey: ownerKeys.publicKey });
+  const other = await signIn({ phone: "+12025550361", deviceIdentity: "m1b-rotation-other", publicKey: deviceKeys().publicKey });
+  const challenge = await app.inject({ method: "POST", url: "/identity/rotate/challenge", headers: headers(owner.auth_token, owner.deviceIdentity), payload: { old_device_identity: owner.deviceIdentity } });
+  assert.equal(challenge.statusCode, 200, challenge.body);
+  const nonce = challenge.json().challenge_nonce;
+  const signature = crypto.sign("sha256", Buffer.from(`${nonce}|${other.deviceIdentity}|replacement-key`, "utf8"), { key: ownerKeys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64");
+  const response = await app.inject({ method: "POST", url: "/identity/rotate", headers: headers(owner.auth_token, owner.deviceIdentity), payload: { old_device_identity: owner.deviceIdentity, new_device_identity: other.deviceIdentity, new_public_key: "replacement-key", challenge_nonce: nonce, challenge_signature: signature } });
+  assert.equal(response.statusCode, 403, response.body);
+  assert.equal((await database.query("SELECT consumed_at FROM rotation_challenges WHERE challenge_nonce=$1", [nonce])).rows[0].consumed_at, null);
+  assert.deepEqual((await database.query("SELECT status,rotated_to FROM device_identities WHERE device_identity=$1", [owner.deviceIdentity])).rows[0], { status: "ACTIVE", rotated_to: null });
+  assert.equal((await database.query("SELECT count(*)::int AS count FROM key_rotation_events WHERE old_device_identity=$1", [owner.deviceIdentity])).rows[0].count, 0);
+  assert.deepEqual((await database.query("SELECT user_id,public_key FROM device_identities WHERE device_identity=$1", [other.deviceIdentity])).rows[0], { user_id: other.account_id, public_key: other.publicKey });
+});
+
 test("M1a current-app request shapes still sign in, sync, attest, records, profile, and logout with account and legacy tokens", async () => {
   for (const [label, phone, tokenForRequest] of [
     ["account", "+12025550307", (signedIn) => signedIn.auth_token],
@@ -220,7 +234,7 @@ test("M1a current-app request shapes still sign in, sync, attest, records, profi
   }
 });
 
-test("M1a post-migration triggers link the exact phone-only writes from the pre-M1a server", async () => {
+test("M1a rollback write statements remain compatible with post-022 ownership", async () => {
   const phone = "+12025550309";
   const initial = await signIn({ phone, deviceIdentity: "m1a-old-write-session-device" });
   const legacyKeys = deviceKeys();
@@ -238,23 +252,24 @@ test("M1a post-migration triggers link the exact phone-only writes from the pre-
     status: "VALID"
   });
 
-  // ca4c7dd server/src/routes/auth.js:226-238 (registerDevice INSERT).
+  // cd0f870 server/src/routes/auth.js (registerDevice INSERT).
   await database.query(
-    "INSERT INTO device_identities (device_identity, public_key, phone_number, status, last_seen_at) VALUES ($1, $2, $3, 'ACTIVE', NOW())",
-    [legacyDevice, legacyKeys.publicKey, phone]
+    "INSERT INTO device_identities (device_identity, public_key, phone_number, user_id, status, last_seen_at) VALUES ($1, $2, $3, $4, 'ACTIVE', NOW())",
+    [legacyDevice, legacyKeys.publicKey, phone, initial.account_id]
   );
   // ca4c7dd server/src/routes/auth.js:215-222 (registerDevice last_seen refresh).
   await database.query(
     "UPDATE device_identities SET last_seen_at = NOW(), updated_at = NOW() WHERE device_identity = $1",
     [legacyDevice]
   );
-  // ca4c7dd server/src/routes/attest.js:100-117.
+  // cd0f870 server/src/routes/attest.js (attestation INSERT).
   await database.query(
-    "INSERT INTO attestations (vt_id, device_identity, phone_number, ledger_root_hash, window_start, window_end, entry_count, server_signature, status, issued_at, signing_kid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+    "INSERT INTO attestations (vt_id, device_identity, phone_number, user_id, ledger_root_hash, window_start, window_end, entry_count, server_signature, status, issued_at, signing_kid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
     [
       legacyEnvelope.vt_id,
       legacyEnvelope.device_identity,
       phone,
+      initial.account_id,
       legacyEnvelope.ledger_root_hash,
       legacyEnvelope.window_start,
       legacyEnvelope.window_end,
@@ -265,15 +280,15 @@ test("M1a post-migration triggers link the exact phone-only writes from the pre-
       legacyEnvelope.signing_kid
     ]
   );
-  // ca4c7dd server/src/routes/identity.js:164-176.
+  // cd0f870 server/src/routes/identity.js (rotation event INSERT).
   await database.query(
-    "INSERT INTO key_rotation_events (old_device_identity, new_device_identity, phone_number, otp_verified_at, rotation_receipt) VALUES ($1, $2, $3, NOW(), 'old-write-receipt')",
-    [legacyDevice, "m1a-old-write-next-device", phone]
+    "INSERT INTO key_rotation_events (old_device_identity, new_device_identity, phone_number, user_id, otp_verified_at, rotation_receipt) VALUES ($1, $2, $3, $4, NOW(), 'old-write-receipt')",
+    [legacyDevice, "m1a-old-write-next-device", phone, initial.account_id]
   );
-  // ca4c7dd server/src/routes/identity.js:35-41.
+  // cd0f870 server/src/routes/identity.js (rotation challenge INSERT).
   await database.query(
-    "INSERT INTO rotation_challenges (phone_number, old_device_identity, challenge_nonce, expires_at) VALUES ($1, $2, $3, NOW() + INTERVAL '5 minutes')",
-    [phone, legacyDevice, legacyChallenge]
+    "INSERT INTO rotation_challenges (phone_number, user_id, old_device_identity, challenge_nonce, expires_at) VALUES ($1, $2, $3, $4, $5)",
+    [phone, initial.account_id, legacyDevice, legacyChallenge, new Date(Date.now() + 5 * 60 * 1000).toISOString()]
   );
 
   const linkedRows = await database.query(

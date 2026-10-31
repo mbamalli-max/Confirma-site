@@ -30,8 +30,8 @@ async function seedUser({ phone = `+1555${crypto.randomInt(1_000_000, 9_999_999)
   if (records > 0) {
     const deviceIdentity = `device-${crypto.randomUUID()}`;
     await query(
-      `INSERT INTO device_identities (device_identity, public_key, phone_number) VALUES ($1, $2, $3)`,
-      [deviceIdentity, "synthetic-test-key", phone]
+      `INSERT INTO device_identities (device_identity, public_key, phone_number, user_id) VALUES ($1, $2, $3, $4)`,
+      [deviceIdentity, "synthetic-test-key", phone, user.id]
     );
     for (let entryId = 1; entryId <= records; entryId += 1) {
       await query(

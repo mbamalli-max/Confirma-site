@@ -543,8 +543,8 @@ test("E5: migration 014 keeps the newest active session and adds the partial uni
     );
     const deviceIdentity = "migration-session-device";
     await client.query(
-      "INSERT INTO device_identities (device_identity, public_key, phone_number) VALUES ($1, $2, $3)",
-      [deviceIdentity, "migration-public-key", "+12025550219"]
+      "INSERT INTO device_identities (device_identity, public_key, phone_number, user_id) VALUES ($1, $2, $3, $4)",
+      [deviceIdentity, "migration-public-key", "+12025550219", user.rows[0].id]
     );
     const olderId = "00000000-0000-0000-0000-000000000001";
     const newerId = "00000000-0000-0000-0000-000000000002";

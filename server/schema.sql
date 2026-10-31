@@ -1,8 +1,8 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS users (
-  id UUID NOT NULL DEFAULT gen_random_uuid(),
-  phone_number TEXT PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_number TEXT UNIQUE,
   email TEXT,
   email_verified BOOLEAN NOT NULL DEFAULT FALSE,
   phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
@@ -19,8 +19,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
 CREATE TABLE IF NOT EXISTS device_identities (
   device_identity TEXT PRIMARY KEY,
   public_key TEXT NOT NULL,
-  phone_number TEXT NOT NULL REFERENCES users(phone_number),
-  user_id UUID REFERENCES users(id),
+  phone_number TEXT,
+  user_id UUID NOT NULL REFERENCES users(id),
   status TEXT NOT NULL DEFAULT 'ACTIVE',
   rotated_to TEXT,
   receipt_counter BIGINT NOT NULL DEFAULT 0,
@@ -50,8 +50,8 @@ CREATE TABLE IF NOT EXISTS key_rotation_events (
   id BIGSERIAL PRIMARY KEY,
   old_device_identity TEXT NOT NULL,
   new_device_identity TEXT NOT NULL,
-  phone_number TEXT NOT NULL REFERENCES users(phone_number),
-  user_id UUID REFERENCES users(id),
+  phone_number TEXT,
+  user_id UUID NOT NULL REFERENCES users(id),
   otp_verified_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   rotation_receipt TEXT NOT NULL
 );
@@ -130,8 +130,8 @@ CREATE INDEX IF NOT EXISTS idx_ledger_integrity_events_device_kind
 CREATE TABLE IF NOT EXISTS attestations (
   vt_id            TEXT PRIMARY KEY,
   device_identity  TEXT NOT NULL REFERENCES device_identities(device_identity),
-  phone_number     TEXT NOT NULL REFERENCES users(phone_number),
-  user_id          UUID REFERENCES users(id),
+  phone_number     TEXT,
+  user_id          UUID NOT NULL REFERENCES users(id),
   ledger_root_hash TEXT NOT NULL,
   window_start     TIMESTAMPTZ NOT NULL,
   window_end       TIMESTAMPTZ NOT NULL,
@@ -147,8 +147,8 @@ CREATE INDEX IF NOT EXISTS idx_attestations_device
 
 CREATE TABLE IF NOT EXISTS payments (
   id BIGSERIAL PRIMARY KEY,
-  phone_number TEXT NOT NULL REFERENCES users(phone_number),
-  user_id UUID REFERENCES users(id),
+  phone_number TEXT,
+  user_id UUID NOT NULL REFERENCES users(id),
   device_identity TEXT NOT NULL,
   reference TEXT UNIQUE NOT NULL,
   amount_kobo INTEGER NOT NULL,

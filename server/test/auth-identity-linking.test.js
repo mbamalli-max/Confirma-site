@@ -347,7 +347,7 @@ test("9: step-two failures roll back account and device, including a forced comm
   const ownerPhone = "+12025550111";
   await insertUser(ownerPhone, `${unique("device-owner")}@example.test`, true, false);
   await database.query(
-    `INSERT INTO device_identities (device_identity, public_key, phone_number) VALUES ('occupied-device', 'owner-key', $1)`,
+    `INSERT INTO device_identities (device_identity, public_key, phone_number, user_id) VALUES ('occupied-device', 'owner-key', $1, (SELECT id FROM users WHERE phone_number = $1))`,
     [ownerPhone]
   );
   const email = `${unique("orphan")}@example.test`;
@@ -465,8 +465,8 @@ test("15a: a pre-existing foreign device causes 409 and leaves both account and 
   await insertUser(ownerPhone, `${unique("owner")}@example.test`, true, false);
   await database.query(
     `
-      INSERT INTO device_identities (device_identity, public_key, phone_number, revoked_at)
-      VALUES ('foreign-device', 'original-key', $1, NOW())
+      INSERT INTO device_identities (device_identity, public_key, phone_number, user_id, revoked_at)
+      VALUES ('foreign-device', 'original-key', $1, (SELECT id FROM users WHERE phone_number = $1), NOW())
     `,
     [ownerPhone]
   );
@@ -493,7 +493,7 @@ test("15b: forced device insert collision blocks, rolls back the new account, an
   const newEmail = `${unique("device-race")}@example.test`;
   const code = await requestCode(newEmail, newPhone);
   const response = await forceCollision(
-    `INSERT INTO device_identities (device_identity, public_key, phone_number) VALUES ($1, $2, $3)`,
+    `INSERT INTO device_identities (device_identity, public_key, phone_number, user_id) VALUES ($1, $2, $3, (SELECT id FROM users WHERE phone_number = $3))`,
     ["racing-device", "original-race-key", ownerPhone],
     () => verifyEmail(newEmail, code, {
       phone_number: newPhone,
@@ -516,8 +516,8 @@ test("15c: re-verifying a known device updates activity only and issues a token 
   await database.query(
     `
       INSERT INTO device_identities (
-        device_identity, public_key, phone_number, status, last_seen_at, updated_at, revoked_at
-      ) VALUES ('known-device', 'immutable-key', $1, 'ACTIVE', '2020-01-01', '2020-01-01', '2021-01-01')
+        device_identity, public_key, phone_number, user_id, status, last_seen_at, updated_at, revoked_at
+      ) VALUES ('known-device', 'immutable-key', $1, (SELECT id FROM users WHERE phone_number = $1), 'ACTIVE', '2020-01-01', '2020-01-01', '2021-01-01')
     `,
     [phone]
   );

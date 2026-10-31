@@ -1,50 +1,72 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import Fastify from "fastify";
 import { config } from "../src/config.js";
-import { getPool, query } from "../src/db.js";
+import { getPool } from "../src/db.js";
 import { buildAttestationEnvelope } from "../src/attestation-signing.js";
 import { registerAttestRoutes } from "../src/routes/attest.js";
-import { assertLocalTestDatabase } from "./helpers/db.js";
+import { assertLocalTestDatabase, createStageDatabase } from "./helpers/db.js";
 
-// This suite deliberately recreates the pre-021 shape, then leaves the shared
-// local test database at the post-021 shape for the route suites.
 assertLocalTestDatabase(config.databaseUrl);
-const migrationUrl = new URL("../migrations/021_account_id_links.sql", import.meta.url);
-const migrationSql = await readFile(migrationUrl, "utf8");
-const serverDir = fileURLToPath(new URL("..", import.meta.url));
-const runFile = promisify(execFile);
 const verifyApp = Fastify({ logger: false });
+const linkedTables = ["device_identities", "key_rotation_events", "attestations", "payments", "rotation_challenges"];
+let stage;
+let originalDatabaseUrl;
+const query = (...args) => stage.pool.query(...args);
 
 async function pre021Shape() {
   await query("TRUNCATE rotation_challenges, users RESTART IDENTITY CASCADE");
-  for (const table of ["device_identities", "key_rotation_events", "attestations", "payments", "rotation_challenges"]) {
-    await query(`DROP TRIGGER IF EXISTS ${table}_account_id_link ON ${table}`);
-    await query(`ALTER TABLE ${table} DROP COLUMN IF EXISTS user_id`);
-  }
-  await query("DROP FUNCTION IF EXISTS enforce_account_id_link()");
 }
 
 async function apply021() {
-  await query(migrationSql);
+  return stage.runMigrations(21);
 }
 
 before(async () => {
-  await pre021Shape();
+  originalDatabaseUrl = config.databaseUrl;
+  stage = await createStageDatabase(20, { databaseUrl: config.databaseUrl, databaseSsl: config.databaseSsl });
+  config.databaseUrl = stage.url;
   await registerAttestRoutes(verifyApp);
   await verifyApp.ready();
 });
 
 after(async () => {
-  await query("TRUNCATE rotation_challenges, users RESTART IDENTITY CASCADE");
-  await apply021();
-  await query("INSERT INTO schema_migrations (version) VALUES (21) ON CONFLICT (version) DO NOTHING");
-  await verifyApp.close();
-  await getPool().end();
+  try {
+    await verifyApp.close();
+  } finally {
+    try {
+      await getPool().end();
+    } finally {
+      config.databaseUrl = originalDatabaseUrl;
+      await stage.drop();
+    }
+  }
+});
+
+test("pinned historical stages expose their claimed M1a schema boundaries", async () => {
+  const preM1a = await createStageDatabase(20, { databaseUrl: config.databaseUrl, databaseSsl: config.databaseSsl });
+  const m1a = await createStageDatabase(21, { databaseUrl: config.databaseUrl, databaseSsl: config.databaseSsl });
+  try {
+    const userIdColumns = async (pool) => (await pool.query(
+      "SELECT table_name FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'user_id' AND table_name = ANY($1::text[]) ORDER BY table_name",
+      [linkedTables]
+    )).rows.map(({ table_name }) => table_name);
+    const userPrimaryKey = async (pool) => (await pool.query(
+      "SELECT a.attname FROM pg_constraint c JOIN unnest(c.conkey) k(attnum) ON true JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum WHERE c.conrelid = 'users'::regclass AND c.contype = 'p' ORDER BY a.attnum"
+    )).rows.map(({ attname }) => attname);
+
+    assert.deepEqual(await userIdColumns(preM1a.pool), []);
+    assert.deepEqual(await userPrimaryKey(preM1a.pool), ["phone_number"]);
+
+    assert.deepEqual(await userIdColumns(m1a.pool), [...linkedTables].sort());
+    assert.deepEqual(await userPrimaryKey(m1a.pool), ["phone_number"]);
+    assert.equal((await m1a.pool.query("SELECT to_regprocedure('enforce_account_id_link()') AS link_function")).rows[0].link_function, "enforce_account_id_link()");
+    assert.deepEqual((await m1a.pool.query(
+      "SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgname LIKE '%\\_account\\_id\\_link' ESCAPE '\\' ORDER BY tgname"
+    )).rows.map(({ tgname }) => tgname), linkedTables.map((table) => `${table}_account_id_link`).sort());
+  } finally {
+    await Promise.all([preM1a.drop(), m1a.drop()]);
+  }
 });
 
 test("M1a migration refuses an unresolvable historical row without changing it", async () => {
@@ -58,7 +80,6 @@ test("M1a migration refuses an unresolvable historical row without changing it",
       "INSERT INTO rotation_challenges (phone_number, old_device_identity, challenge_nonce, expires_at) VALUES ('+15559990001', 'orphan-device', 'orphan-before-021', NOW())"
     );
 
-    const linkedTables = ["device_identities", "key_rotation_events", "attestations", "payments", "rotation_challenges"];
     const snapshotTables = ["users", ...linkedTables];
     const snapshots = Object.fromEntries(await Promise.all(snapshotTables.map(async (table) => [
       table,
@@ -66,10 +87,7 @@ test("M1a migration refuses an unresolvable historical row without changing it",
     ])));
     await query("DELETE FROM schema_migrations WHERE version = 21");
 
-    const runnerError = await runFile(process.execPath, ["migrate.js"], {
-      cwd: serverDir,
-      env: { ...process.env, DATABASE_URL: config.databaseUrl }
-    }).then(() => null, (error) => error);
+    const runnerError = await apply021().then(() => null, (error) => error);
     assert.ok(runnerError, "migrate.js must fail for an unresolvable historical owner");
     assert.notEqual(runnerError.code, 0);
     assert.match(`${runnerError.stdout || ""}\n${runnerError.stderr || ""}`, /unresolvable phone owner/);

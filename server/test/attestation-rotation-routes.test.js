@@ -90,9 +90,9 @@ async function seedAccount() {
     [phone, email]
   )).rows[0];
   await query(
-    `INSERT INTO device_identities (device_identity, public_key, phone_number, status)
-     VALUES ($1, 'test-device-public-key', $2, 'ACTIVE')`,
-    [deviceIdentity, phone]
+    `INSERT INTO device_identities (device_identity, public_key, phone_number, user_id, status)
+     VALUES ($1, 'test-device-public-key', $2, $3, 'ACTIVE')`,
+    [deviceIdentity, phone, user.id]
   );
   const confirmedAt = new Date(Date.now() - 60_000);
   await query(
@@ -110,6 +110,7 @@ async function seedAccount() {
   );
   const token = issueAuthToken(phone, deviceIdentity, { sid: sessionId });
   return {
+    userId: user.id,
     phone,
     deviceIdentity,
     headers: {
@@ -154,10 +155,10 @@ function makeFields(account, { vtId = `rotation-${crypto.randomUUID()}`, issuedA
 async function insertEnvelope(account, envelope, signingKid = envelope.signing_kid) {
   await query(
     `INSERT INTO attestations
-       (vt_id, device_identity, phone_number, ledger_root_hash, window_start, window_end,
+       (vt_id, device_identity, phone_number, user_id, ledger_root_hash, window_start, window_end,
         entry_count, server_signature, status, issued_at, attestation_scope, scope_description, signing_kid)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-    [envelope.vt_id, account.deviceIdentity, account.phone, envelope.ledger_root_hash,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    [envelope.vt_id, account.deviceIdentity, account.phone, account.userId, envelope.ledger_root_hash,
       envelope.window_start, envelope.window_end, envelope.entry_count, envelope.server_signature,
       envelope.status, envelope.issued_at, envelope.attestation_scope, envelope.scope_description, signingKid]
   );
@@ -226,17 +227,17 @@ test("R7: migration 018 follows 017, reruns safely, and does not rewrite histori
   const account = await seedAccount();
   await query(
     `INSERT INTO attestations
-       (vt_id, device_identity, phone_number, ledger_root_hash, window_start, window_end,
+       (vt_id, device_identity, phone_number, user_id, ledger_root_hash, window_start, window_end,
         entry_count, server_signature, status, issued_at, attestation_scope, scope_description)
-     VALUES ('migration-history-vt', $1, $2, 'history-root', NOW() - INTERVAL '1 day', NOW(),
-       1, 'history-signature', 'VALID', NOW(), $3, $4)`,
-    [account.deviceIdentity, account.phone, ATTESTATION_SCOPE, ATTESTATION_SCOPE_DESCRIPTION]
+     VALUES ('migration-history-vt', $1, $2, $3, 'history-root', NOW() - INTERVAL '1 day', NOW(),
+       1, 'history-signature', 'VALID', NOW(), $4, $5)`,
+    [account.deviceIdentity, account.phone, account.userId, ATTESTATION_SCOPE, ATTESTATION_SCOPE_DESCRIPTION]
   );
   await query(
     `INSERT INTO payments
-       (phone_number, device_identity, reference, amount_kobo, tier, window_days, paystack_status, vt_id)
-     VALUES ($1, $2, 'migration-history-payment', 1000, 'free', 0, 'success', 'migration-history-vt')`,
-    [account.phone, account.deviceIdentity]
+       (phone_number, user_id, device_identity, reference, amount_kobo, tier, window_days, paystack_status, vt_id)
+     VALUES ($1, $2, $3, 'migration-history-payment', 1000, 'free', 0, 'success', 'migration-history-vt')`,
+    [account.phone, account.userId, account.deviceIdentity]
   );
   const beforeFingerprint = await historyFingerprint();
   const migrationSql = await readFile(new URL("../migrations/018_attestation_signing_kid.sql", import.meta.url), "utf8");
