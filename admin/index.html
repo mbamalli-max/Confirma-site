@@ -77,8 +77,8 @@
         </div>
         <div class="kpis">
           <div class="card kpi" id="kpi-external">
-            <div class="kpi-label">External accounts
-              <details class="info"><summary aria-label="About External accounts">i</summary><p id="kpi-external-def">All app accounts except those you have excluded as internal test, demo or administrator accounts. Payment or activity is not required.</p></details>
+            <div class="kpi-label">Registered users
+              <details class="info"><summary aria-label="About Registered users">i</summary><p id="kpi-external-def">Accounts registered on the server, excluding those you have marked as internal, test, demo or administrator accounts. New accounts must confirm their email address with a code; some older accounts were created before that. Counts accounts, not independently verified unique people. Payment, records or activity are not required.</p></details>
             </div>
             <div class="kpi-value" id="kpi-external-value">—</div>
             <div class="kpi-sub" id="kpi-external-sub"></div>
@@ -88,14 +88,14 @@
               <details class="info"><summary aria-label="About accounts submitting records">i</summary><p id="kpi-submitting-def"></p></details>
             </div>
             <div class="kpi-value" id="kpi-submitting-value">—</div>
-            <div class="kpi-sub">External accounts, in the period</div>
+            <div class="kpi-sub">Registered users, in the period</div>
           </div>
           <div class="card kpi" id="kpi-records">
             <div class="kpi-label">Records received
               <details class="info"><summary aria-label="About records received">i</summary><p id="kpi-records-def"></p></details>
             </div>
             <div class="kpi-value" id="kpi-records-value">—</div>
-            <div class="kpi-sub">From External accounts, in the period</div>
+            <div class="kpi-sub">From registered users, in the period</div>
           </div>
         </div>
       </section>
@@ -113,11 +113,11 @@
         </div>
         <div class="grid2">
           <div class="card chart" id="growth-accounts_registered">
-            <h3>New External accounts</h3>
+            <h3>New registered users</h3>
             <div class="chart-body"></div>
           </div>
           <div class="card chart" id="growth-records_received">
-            <h3>Records received from External accounts</h3>
+            <h3>Records received from registered users</h3>
             <div class="chart-body"></div>
           </div>
         </div>
@@ -126,8 +126,8 @@
 
       <section aria-labelledby="audience-title">
         <div class="head">
-          <h2 id="audience-title">Audience — current profiles of External accounts</h2>
-          <p class="fresh">All External accounts as of the update time; not affected by the period.</p>
+          <h2 id="audience-title">Audience — current profiles of registered users</h2>
+          <p class="fresh">All registered users as of the update time; not affected by the period.</p>
         </div>
         <div class="grid2">
           <div class="card breakdown" id="aud-country" data-dimension="country">
@@ -164,11 +164,11 @@
       <section id="settings-exclusions" class="subpanel" aria-labelledby="exclusions-title">
         <h2 id="exclusions-title">Exclusions</h2>
         <p class="tool-note">Owner tool — changes are audited.</p>
-        <p>External means every app account except those you exclude here. Payment, records or activity are not required.</p>
+        <p>Registered users are accounts registered on the server, except those you exclude here as internal, test, demo or administrator accounts. Payment, records or activity are not required.</p>
         <dl id="exclusion-counts" class="progress">
           <div><dt>All app accounts</dt><dd id="count-total">—</dd></div>
           <div><dt>Excluded</dt><dd id="count-excluded">—</dd></div>
-          <div><dt>External</dt><dd id="count-external">—</dd></div>
+          <div><dt>Registered users</dt><dd id="count-external">—</dd></div>
           <div><dt>Created since the last change</dt><dd id="count-created-since">—</dd></div>
         </dl>
         <p id="exclusions-changed-note" class="muted"></p>
@@ -183,7 +183,7 @@
             <option value="EXCLUDE_TEST">Exclude — internal test account</option>
             <option value="EXCLUDE_DEMO">Exclude — demo account</option>
             <option value="EXCLUDE_ADMIN">Exclude — administrator's own app account</option>
-            <option value="RESTORE">Restore — count as External</option>
+            <option value="RESTORE">Restore — count as a registered user</option>
           </select>
           <button id="exclude-preview" type="submit">Preview</button>
         </form>
@@ -199,7 +199,7 @@
             <div><dt>New status</dt><dd id="preview-target"></dd></div>
             <div><dt>Reason</dt><dd id="preview-reason"></dd></div>
           </dl>
-          <p class="muted">Records do not affect whether an account is External.</p>
+          <p class="muted">Records do not affect whether an account is a registered user.</p>
           <p id="preview-expiry">Confirm within <span id="preview-countdown"></span>.</p>
           <div class="button-row">
             <button id="exclude-confirm-button" type="button">Confirm</button>
@@ -217,10 +217,10 @@
           <div><dt>Last rebuild attempt</dt><dd id="q-last-attempt">—</dd></div>
           <div><dt>Last rebuild failure</dt><dd id="q-last-failure">—</dd></div>
           <div><dt>Source rows outside the rollup date range</dt><dd id="q-out-of-range">—</dd></div>
-          <div><dt>External business profiles: sector from the business-type catalog</dt><dd id="q-sector-catalog">—</dd></div>
-          <div><dt>External business profiles: sector chosen by the account holder</dt><dd id="q-sector-user">—</dd></div>
-          <div><dt>External business profiles: sector from a reviewed rule</dt><dd id="q-sector-rule">—</dd></div>
-          <div><dt>External business profiles: Other business by default (not confirmed)</dt><dd id="q-sector-fallback">—</dd></div>
+          <div><dt>Registered-user business profiles: sector from the business-type catalog</dt><dd id="q-sector-catalog">—</dd></div>
+          <div><dt>Registered-user business profiles: sector chosen by the account holder</dt><dd id="q-sector-user">—</dd></div>
+          <div><dt>Registered-user business profiles: sector from a reviewed rule</dt><dd id="q-sector-rule">—</dd></div>
+          <div><dt>Registered-user business profiles: Other business by default (not confirmed)</dt><dd id="q-sector-fallback">—</dd></div>
           <div><dt>Listed business profiles whose stored sector differs from the catalog (expected 0)</dt><dd id="q-sector-mismatch">—</dd></div>
         </dl>
         <p class="muted">Source rows outside the rollup date range counts dated rows of three kinds — account registrations, records received and valid attestations issued — whose date is before 1 January 2000 or after the day after the figures were built. These rows are left out of the figures. It is a count of rows, not of accounts or records.</p>
@@ -252,7 +252,7 @@
         <p id="detail-unavailable" class="notice-error" role="alert" hidden>Figures are unavailable right now. None are shown.</p>
         <div class="table-wrap">
           <table id="detail-table" class="op">
-            <thead><tr><th scope="col">Measure</th><th scope="col">External</th><th scope="col">Excluded</th><th scope="col">All</th></tr></thead>
+            <thead><tr><th scope="col">Measure</th><th scope="col">Registered users</th><th scope="col">Excluded</th><th scope="col">All</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -260,12 +260,12 @@
 
       <section id="settings-methodology" class="subpanel" aria-labelledby="method-title" hidden>
         <h2 id="method-title">Methodology</h2>
-        <h3>External accounts</h3>
-        <p>External accounts are all app accounts except those the owner has excluded as internal test, demo or administrator accounts. Payment, records or activity are not required. Exclusion is the owner's own entry; it is not an independent confirmation, and the time of the last change is not a review of every account.</p>
+        <h3>Registered users</h3>
+        <p>Accounts registered on the server, excluding those you have marked as internal, test, demo or administrator accounts. New accounts must confirm their email address with a code; some older accounts were created before that. Counts accounts, not independently verified unique people. Payment, records or activity are not required. Exclusion is the owner's own entry; it is not an independent confirmation, and the time of the last change is not a review of every account.</p>
         <h3>Timing</h3>
         <p>Records are counted by the time the server received them, not the time recorded on the phone. Activity on a phone that has not synced is not seen until it syncs. The current week or month in a chart is in progress and not complete.</p>
         <h3>Audience figures</h3>
-        <p>Country, sector and business type describe the current profiles of External accounts. Business type categories too small to show safely are withheld or combined as "Other". Countries and sectors are shown with their exact counts, however small. Withheld figures are never shown as zero.</p>
+        <p>Country, sector and business type describe the current profiles of registered users. Business type categories too small to show safely are withheld or combined as "Other". Countries and sectors are shown with their exact counts, however small. Withheld figures are never shown as zero.</p>
         <h3>Business sectors</h3>
         <p>Sectors are Konfirmata's own categories for organising businesses; they are not an official industry classification or a certification. Every business profile is in exactly one sector, chosen by its main activity. For a business type in the catalog the sector comes from the catalog. For a business that is not listed it is the sector the account holder chose, or "Other business" when no sector could be determined; those default assignments are not confirmed information, and their number is shown in Data quality. Accounts without a business profile are counted separately. A category is corrected when the account holder picks a more suitable business type, describes the business and picks its sector, or asks for a catalog correction.</p>
         <ul id="method-statements"></ul>

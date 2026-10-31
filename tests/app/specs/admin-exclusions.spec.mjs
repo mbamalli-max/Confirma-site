@@ -116,7 +116,7 @@ test("C1. the action list offers the three exclusions and restore; an incomplete
       ["EXCLUDE_TEST", "Exclude — internal test account"],
       ["EXCLUDE_DEMO", "Exclude — demo account"],
       ["EXCLUDE_ADMIN", "Exclude — administrator's own app account"],
-      ["RESTORE", "Restore — count as External"]
+      ["RESTORE", "Restore — count as a registered user"]
     ]);
     await page.fill("#exclude-phone", "+15550000000");
     await page.click("#exclude-preview");
@@ -158,7 +158,7 @@ test("C2. the typed number is cleared and kept nowhere; it is sent only to the p
   }
 });
 
-test("C3. an account with no row and no records is External; excluding it moves it, restoring brings it back", async ({ browser }) => {
+test("C3. an account with no row and no records is a registered user; excluding it moves it, restoring brings it back", async ({ browser }) => {
   const account = await seedAccount();
   const { ctx, page } = await ownerPage(browser);
   try {
@@ -174,7 +174,7 @@ test("C3. an account with no row and no records is External; excluding it moves 
     const start = await progress(page);
     await preview(page, account.phone, "EXCLUDE_TEST");
     await expect(page.locator("#preview-records")).toHaveText("0");
-    await expect(page.locator("#preview-current")).toHaveText("External");
+    await expect(page.locator("#preview-current")).toHaveText("Registered user");
     await expect(page.locator("#preview-target")).toHaveText("Excluded — internal test");
     await expect(page.locator("#preview-reason")).toHaveText("Internal test account");
     await page.click("#exclude-confirm-button");
@@ -188,9 +188,9 @@ test("C3. an account with no row and no records is External; excluding it moves 
     expect(figure(after, "accounts_registered").total).toBe(figure(before, "accounts_registered").total);
     expect(figure(after, "accounts_with_records").external, "records are not involved").toBe(figure(before, "accounts_with_records").external);
     await preview(page, account.phone, "RESTORE");
-    await expect(page.locator("#preview-target")).toHaveText("External");
+    await expect(page.locator("#preview-target")).toHaveText("Registered user");
     await page.click("#exclude-confirm-button");
-    await expect(page.locator("#exclude-message")).toHaveText("Saved: External. Figures update when they are next rebuilt.");
+    await expect(page.locator("#exclude-message")).toHaveText("Saved: Registered user. Figures update when they are next rebuilt.");
     expect(await savedClass(account.id)).toBeNull();
     await expect.poll(() => progress(page)).toEqual(start);
   } finally {
@@ -535,7 +535,7 @@ test("C12. wording guard for the classify tool", async () => {
     for (const pattern of banned) expect(text, `${name} ${pattern}`).not.toMatch(pattern);
   }
   const html = await readFile(ADMIN_DIR + "index.html", "utf8");
-  expect(html).toContain("External means every app account except those you exclude here. Payment, records or activity are not required.");
+  expect(html).toContain("Registered users are accounts registered on the server, except those you exclude here as internal, test, demo or administrator accounts. Payment, records or activity are not required.");
   expect(html).toContain("Exclusion is the owner's own entry; it is not an independent confirmation");
   expect(html).not.toMatch(/unclassified|provisional/i);
 });

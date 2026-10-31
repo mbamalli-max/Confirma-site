@@ -69,7 +69,7 @@ const CORS = { "access-control-allow-origin": APP_URL, "content-type": "applicat
 
 test.beforeAll(async ({ browser }) => {
   owner = await seedOwner();
-  // Two accounts with no exclusion row: External under the exclusion model.
+  // Two accounts with no exclusion row: registered users under the exclusion model.
   await withDb((db) => db.query(
     `INSERT INTO users (phone_number, email)
      SELECT '+1555010' || lpad(g::text, 4, '0') || floor(random() * 1000)::int, 'admin-overview-' || g || '-' || md5(random()::text) || '@example.test'
@@ -125,7 +125,7 @@ test("2. after sign-in nothing is kept in browser storage", async () => {
   expect(await context.cookies()).toEqual([]);
 });
 
-test("3. the headline figures show the External column of the API, with labels and footer", async () => {
+test("3. the headline figures show the registered-users column of the API, with labels and footer", async () => {
   const { all, period } = firstReading;
   expect(all.api_version).toBe(2);
   expect(period.range).toBe("90d");
@@ -215,7 +215,7 @@ test("8b. Operator detail shows every metric in three columns matching the API",
   const body = await (await detail).json();
   await expect(page.locator("#settings-detail")).toBeVisible();
   await expect(page.locator("#settings-detail")).not.toContainText("Never for sharing");
-  await expect(page.locator("#detail-table thead th")).toHaveText(["Measure", "External", "Excluded", "All"]);
+  await expect(page.locator("#detail-table thead th")).toHaveText(["Measure", "Registered users", "Excluded", "All"]);
   await expect(page.locator("#detail-table tbody tr")).toHaveCount(body.metrics.length);
   for (const metric of body.metrics) {
     const row = page.locator(`#detail-table tbody tr[data-metric-key="${metric.key}"]`);
@@ -859,8 +859,8 @@ test("D3. audience bars show labelled categories; withheld reasons are distinct 
   const withheld = await servedPage(browser, async ({ url, send }) => (url.pathname === "/admin/v2/breakdown" ? send(200, results[url.searchParams.get("dimension")]) : undefined));
   try {
     await servedSignIn(withheld.target);
-    await expect(withheld.target.locator("#aud-country .withheld")).toHaveText("Withheld — fewer than 10 External accounts in total.");
-    await expect(withheld.target.locator("#aud-sector .withheld")).toHaveText("Withheld — fewer than half of External accounts have a valid profile sector code.");
+    await expect(withheld.target.locator("#aud-country .withheld")).toHaveText("Withheld — fewer than 10 registered users in total.");
+    await expect(withheld.target.locator("#aud-sector .withheld")).toHaveText("Withheld — fewer than half of registered users have a valid profile sector code.");
     await expect(withheld.target.locator("#aud-business_type .withheld")).toHaveText("Withheld — the categories are too small to show or group safely.");
     for (const dimension of ["country", "sector", "business_type"]) {
       await expect(withheld.target.locator(`#aud-${dimension} .bar-row`)).toHaveCount(0);
@@ -878,8 +878,8 @@ test("D3. audience bars show labelled categories; withheld reasons are distinct 
     await expect(t.locator("#aud-business_type .bar-row .bar-label")).toHaveText(["Market Trader (NG)", "Other (combined)"]);
     await expect(t.locator("#aud-country .bar-row .bar-count")).toHaveText(["7"]);
     await expect(t.locator("#aud-country")).not.toContainText("Other combines two or more categories");
-    await expect(t.locator("#aud-country")).toContainText("Total External accounts: 7");
-    await expect(t.locator("#audience-title")).toHaveText("Audience — current profiles of External accounts");
+    await expect(t.locator("#aud-country")).toContainText("Total registered users: 7");
+    await expect(t.locator("#audience-title")).toHaveText("Audience — current profiles of registered users");
     await expect(t.locator("#dashboard-screen")).toContainText("not affected by the period");
     const widths = await t.locator("#aud-country .fill").evaluateAll((els) => els.map((e) => e.style.width));
     expect(widths).toEqual(["100%"]);
@@ -991,7 +991,7 @@ test("D7. headline info tips open to one short definition", async ({ browser }) 
     await expect(target.locator("#kpi-submitting-def")).toBeHidden();
     await target.locator("#kpi-submitting details.info > summary").click();
     await expect(target.locator("#kpi-submitting-def")).toHaveText("Accounts submitting records definition.");
-    await expect(target.locator("#kpi-external-def")).toContainText("Payment or activity is not required.");
+    await expect(target.locator("#kpi-external-def")).toContainText("Payment, records or activity are not required.");
   } finally {
     await ctx.close();
   }
@@ -1088,14 +1088,14 @@ test("D11. sector categories: every business in a sector, no business profile ap
     await expect(target.locator("#aud-sector .bar-row .bar-label")).toHaveText(["Trade & Retail", "Agriculture, Livestock & Fishing", "Transport & Logistics", "No business profile"]);
     await expect(target.locator("#aud-sector")).not.toContainText("Other combines");
     await expect(target.locator("#aud-business_type .bar-row .bar-label")).toHaveText(["No business profile", "No business type", "Not listed in the catalog"]);
-    await expect(target.locator("#aud-country .withheld")).toHaveText("Withheld — fewer than half of External accounts have a business profile.");
+    await expect(target.locator("#aud-country .withheld")).toHaveText("Withheld — fewer than half of registered users have a business profile.");
     await expect(target.locator("#dashboard-screen")).not.toContainText(/not yet categori[sz]ed|by default/i);
 
     await target.evaluate(() => { location.hash = "#settings/quality"; });
     for (const [id, value] of [["q-sector-catalog", "9"], ["q-sector-user", "3"], ["q-sector-rule", "0"], ["q-sector-fallback", "4"], ["q-sector-mismatch", "0"]]) {
       await expect(target.locator(`#${id}`)).toHaveText(value);
     }
-    await expect(target.locator("div:has(> #q-sector-fallback) > dt")).toHaveText("External business profiles: Other business by default (not confirmed)");
+    await expect(target.locator("div:has(> #q-sector-fallback) > dt")).toHaveText("Registered-user business profiles: Other business by default (not confirmed)");
 
     // The "not an official classification" explanation appears once, in Methodology.
     const mentions = await target.evaluate(() => document.body.textContent.split("not an official industry classification").length - 1);

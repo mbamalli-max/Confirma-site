@@ -314,7 +314,7 @@ function renderSeries(container, metric, data) {
   const max = Math.max(1, ...periods.map((p) => Number(p.external) || 0));
   const slot = width / Math.max(1, periods.length);
   const barWidth = Math.max(4, slot * 0.6);
-  const title = metric === "accounts_registered" ? "New External accounts" : "Records received from External accounts";
+  const title = metric === "accounts_registered" ? "New registered users" : "Records received from registered users";
   const chart = svg("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-labelledby": `chart-title-${metric}` });
   const titleNode = svg("title", { id: `chart-title-${metric}` });
   titleNode.textContent = `${title}, ${bucket === "month" ? "monthly" : "weekly"}. Figures are in the table below the chart.`;
@@ -345,7 +345,7 @@ function renderSeries(container, metric, data) {
   });
   const table = el("table", "series-table");
   const head = el("tr");
-  head.append(el("th", "", bucket === "month" ? "Month starting" : "Week starting"), el("th", "", "External"));
+  head.append(el("th", "", bucket === "month" ? "Month starting" : "Week starting"), el("th", "", "Registered users"));
   table.append(el("thead"));
   table.tHead.append(head);
   const body = el("tbody");
@@ -393,9 +393,9 @@ async function loadGrowth() {
 
 function withheldText(result, k, dimension) {
   const noun = { country: "profile country", sector: "profile sector", business_type: "profile business type" }[dimension];
-  if (result.reason === "total_below_minimum") return `Withheld — fewer than ${k} External accounts in total.`;
-  if (result.reason === "business_profiles_below_half") return "Withheld — fewer than half of External accounts have a business profile.";
-  if (result.reason === "valid_codes_below_half") return `Withheld — fewer than half of External accounts have a valid ${noun} code.`;
+  if (result.reason === "total_below_minimum") return `Withheld — fewer than ${k} registered users in total.`;
+  if (result.reason === "business_profiles_below_half") return "Withheld — fewer than half of registered users have a business profile.";
+  if (result.reason === "valid_codes_below_half") return `Withheld — fewer than half of registered users have a valid ${noun} code.`;
   if (result.reason === "residual_unsafe") return "Withheld — the categories are too small to show or group safely.";
   return "Withheld.";
 }
@@ -429,7 +429,7 @@ function renderBreakdown(panel, dimension, data) {
   }
   const notes = [];
   if (result.cells.some((c) => c.category === "other")) notes.push(el("p", "muted", "Other combines two or more categories that are too small to show separately."));
-  body.replaceChildren(list, ...notes, el("p", "muted", `Total External accounts: ${result.total}`));
+  body.replaceChildren(list, ...notes, el("p", "muted", `Total registered users: ${result.total}`));
 }
 
 let audienceRequest = 0;
@@ -483,8 +483,8 @@ async function loadExclusionState() {
   $("exclusions-changed-note").textContent = !ok
     ? "The exclusion counts could not be loaded."
     : r.data.exclusions_last_changed
-      ? `Exclusions last changed ${changed}. Accounts are External unless you exclude them.`
-      : "No exclusions have been made yet. Accounts are External unless you exclude them.";
+      ? `Exclusions last changed ${changed}. Accounts are registered users unless you exclude them.`
+      : "No exclusions have been made yet. Accounts are registered users unless you exclude them.";
   return ok ? r.data : null;
 }
 
@@ -638,14 +638,14 @@ const REASON_TEXT = {
   OPERATOR_TEST_ACCOUNT: "Internal test account",
   OPERATOR_DEMO_ACCOUNT: "Demo account",
   OPERATOR_ADMIN_ACCOUNT: "Administrator's own app account",
-  OWNER_CLASSIFIED_EXTERNAL: "Marked External",
+  OWNER_CLASSIFIED_EXTERNAL: "Marked registered user",
   CORRECTION: "Correction",
 };
 
 function statusText(classification) {
   if (classification === "INTERNAL_TEST") return "Excluded — internal test";
   if (classification === "DEMO") return "Excluded — demo";
-  return "External";
+  return "Registered user";
 }
 
 // Bumped by every new preview, cancel, expiry and session change: a response for
@@ -784,7 +784,7 @@ async function onConfirm() {
   if (r.status === 200 && r.data && r.data.applied === true) {
     msg.textContent = r.data.classification
       ? `Saved: ${statusText(r.data.classification)}. Figures update when they are next rebuilt.`
-      : "Saved: External. Figures update when they are next rebuilt.";
+      : "Saved: Registered user. Figures update when they are next rebuilt.";
     loadExclusionState();
     return;
   }
