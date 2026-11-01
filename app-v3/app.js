@@ -440,6 +440,11 @@ function wireEvents() {
   document.getElementById("amount-input-v2").addEventListener("change", () => {
     void maybeLearnVoiceCorrection();
   });
+  document.getElementById("amount-input-v2").addEventListener("input", () => {
+    // Clearing the entry is the user's explicit acknowledgement that a later
+    // identical entry is new, not a retry of the held attempt.
+    if (!els["amount-input-v2"].value.trim()) state.candidateRecord = null;
+  });
   ["onboarding-name", "onboarding-phone", "onboarding-email", "onboarding-state", "onboarding-birth-year", "onboarding-gender"]
     .forEach((id) => {
       const element = document.getElementById(id);
@@ -4683,6 +4688,19 @@ function prepareConfirmation() {
     operating_region: getOperatingRegionId()
   };
 
+  // A pause returns the user to this still-filled form.  Keep one identity
+  // for that attempt so a retry (or a second rapid press) cannot manufacture
+  // another held draft.  Resetting the form intentionally clears this state,
+  // making a later identical entry a new attempt.
+  const fingerprint = JSON.stringify(record);
+  if (state.candidateRecord?.draft_attempt_fingerprint === fingerprint) {
+    record.draft_attempt_id = state.candidateRecord.draft_attempt_id;
+    record.confirmation_attempted_at = state.candidateRecord.confirmation_attempted_at;
+  } else {
+    record.draft_attempt_id = crypto.randomUUID();
+  }
+  record.draft_attempt_fingerprint = fingerprint;
+
   state.candidateRecord = record;
   els["confirm-copy-v2"].textContent = confirmationCopy(record);
   els["confirm-meta-v2"].innerHTML = `
@@ -4705,12 +4723,21 @@ async function confirmAppend() {
   const writeGuard = captureRecordWriteGuard();
 
   try {
+    const confirmationAttemptedAt = state.candidateRecord.confirmation_attempted_at || Date.now();
+    state.candidateRecord.confirmation_attempted_at = confirmationAttemptedAt;
     const record = {
       ...state.candidateRecord,
-      confirmation_state: "confirmed"
+      confirmation_state: "confirmed",
+      confirmation_attempted_at: confirmationAttemptedAt
     };
     // The record and its sync-queue entry are saved together (both or neither).
     const appendedRecord = await appendLedgerRecord(record, writeGuard);
+    if (appendedRecord?.heldDraft) {
+      els["capture-error"].hidden = false;
+      els["capture-error"].textContent = "Confirming records is temporarily paused on this device while it is repaired. Your entry has been saved as a draft.";
+      showScreen("screen-capture");
+      return;
+    }
     await noteRecordQueued();
     // Everything below is secondary: the record is already saved and queued.
     void checkForAnomalies(appendedRecord);
@@ -4728,7 +4755,12 @@ async function confirmAppend() {
     showScreen("screen-dashboard");
     void flushSyncQueue();
   } catch (error) {
+    // The capture inputs and candidate remain intact.  Never describe an
+    // aborted IndexedDB transaction as a saved draft.
     window.alert(error.message || "Unable to confirm this record on this device.");
+    els["capture-error"].hidden = false;
+    els["capture-error"].textContent = "Your entry was not saved. Please try confirming it again.";
+    showScreen("screen-capture");
   } finally {
     state.isConfirming = false;
     document.getElementById("confirm-append").disabled = false;
@@ -7087,12 +7119,24 @@ function readRemovalCountFromStores(recordsStore, queueStore) {
 }
 
 function getRecordsNotConfirmedBackedUpCount() {
-  const tx = state.db.transaction(["records", "syncQueue"], "readonly");
-  return readRemovalCountFromStores(tx.objectStore("records"), tx.objectStore("syncQueue"));
+  const tx = state.db.transaction(["settings", "records", "syncQueue"], "readonly");
+  return Promise.all([
+    readRemovalCountFromStores(tx.objectStore("records"), tx.objectStore("syncQueue")),
+    new Promise((resolve) => {
+      const request = tx.objectStore("settings").get("held_drafts");
+      request.onsuccess = () => resolve(Array.isArray(request.result?.value) ? request.result.value.length : 0);
+      request.onerror = () => resolve(0);
+    })
+  ]).then(([records, drafts]) => {
+    state.removalHeldDrafts = drafts;
+    return records + drafts;
+  });
 }
 
 function removalDataLossWarning(count) {
-  return `${count} record${count === 1 ? "" : "s"} on this device ${count === 1 ? "is" : "are"} not confirmed as backed up. Removing will delete ${count === 1 ? "it" : "them"} permanently.`;
+  const drafts = Number(state.removalHeldDrafts) || 0;
+  const including = drafts > 0 ? ` (including ${drafts} held draft${drafts === 1 ? "" : "s"})` : "";
+  return `${count} record${count === 1 ? "" : "s"}${including} on this device ${count === 1 ? "is" : "are"} not confirmed as backed up. Removing will delete ${count === 1 ? "it" : "them"} permanently.`;
 }
 
 async function showSignedOutScreen({ onlyIfActive = false } = {}) {
@@ -7313,7 +7357,17 @@ async function wipeAllLocalData(confirmedRemovalCount) {
     const settings = tx.objectStore("settings");
     let countIncreasedTo = null;
     const epochRequest = settings.get("wipe_epoch");
-    const countPromise = readRemovalCountFromStores(tx.objectStore("records"), tx.objectStore("syncQueue"));
+    // Match the warning count exactly.  A draft is not a ledger row, but it
+    // is still user data which must be included in the compare-and-wipe
+    // transaction so a concurrent draft cannot be deleted unnoticed.
+    const countPromise = Promise.all([
+      readRemovalCountFromStores(tx.objectStore("records"), tx.objectStore("syncQueue")),
+      new Promise((done, fail) => {
+        const request = settings.get("held_drafts");
+        request.onsuccess = () => done(Array.isArray(request.result?.value) ? request.result.value.length : 0);
+        request.onerror = () => fail(request.error);
+      })
+    ]).then(([records, drafts]) => records + drafts);
     Promise.all([
       countPromise,
       new Promise((done, fail) => {
@@ -7663,22 +7717,73 @@ function getRecordMergeKey(record) {
   return `local:${record?.id || ""}:${record?.confirmed_at || ""}:${record?.amount_minor || ""}:${record?.label || ""}`;
 }
 
+async function verifyOwnImportedRecordForRestore(record) {
+  try {
+    const canonical = buildLedgerHashCanonicalString(record, record.server_entry_id, record.confirmed_at, record.prev_entry_hash);
+    if (await sha256(canonical) !== record.entry_hash) return false;
+
+    const signature = String(record.signature || "");
+    let signatureBytes;
+    try {
+      signatureBytes = Uint8Array.from(atob(signature), (character) => character.charCodeAt(0));
+    } catch {
+      return false;
+    }
+    // Entries are signed as the raw, 64-byte P-256 (P1363) output from
+    // signEntryHash().  Requiring the canonical base64 form prevents a loose
+    // decoder from accepting malformed transport values.
+    if (signatureBytes.length !== 64 || btoa(String.fromCharCode(...signatureBytes)) !== signature) return false;
+
+    const storedPublicKey = state.devicePublicKey || await getSetting("device_public_key");
+    if (!storedPublicKey) return false;
+    const publicKey = typeof CryptoKey !== "undefined" && storedPublicKey instanceof CryptoKey
+      ? storedPublicKey
+      : await crypto.subtle.importKey(
+        "jwk",
+        JSON.parse(storedPublicKey),
+        { name: "ECDSA", namedCurve: "P-256" },
+        true,
+        ["verify"]
+      );
+    return await crypto.subtle.verify(
+      { name: "ECDSA", hash: { name: "SHA-256" } },
+      publicKey,
+      signatureBytes,
+      new TextEncoder().encode(record.entry_hash)
+    );
+  } catch {
+    // A server response is never authority to repair the local chain.  Key
+    // and encoding failures follow the existing recovery/deferral path.
+    return false;
+  }
+}
+
 async function mergeLocalRecordsWithImported(records, { token, generation } = {}) {
   const importedRecords = records.map((record, index) => normalizeImportedRecord(record, index));
   if (!importedRecords.length) return 0;
 
+  // /records is a transport representation, not authority to alter this
+  // device's chain.  Verify a possible own-row restoration before it reaches
+  // IndexedDB; the transaction below still checks every collision at write
+  // time.  A missing field therefore fails closed rather than being guessed.
+  await Promise.all(importedRecords.filter((record) => record.device_identity === state.deviceIdentity)
+    .map(async (record) => {
+      record.restoreVerified = await verifyOwnImportedRecordForRestore(record);
+    }));
+
   const merged = await new Promise((resolve, reject) => {
-    const tx = state.db.transaction(["settings", "records"], "readwrite");
+    const tx = state.db.transaction(["settings", "records", "syncQueue"], "readwrite");
     const settingsStore = tx.objectStore("settings");
     const recordsStore = tx.objectStore("records");
-    const settingKeys = ["auth_token", "session_generation", "signed_out", "wipe_pending", "bound_account"];
+    const settingKeys = ["auth_token", "session_generation", "signed_out", "wipe_pending", "bound_account", "fork_recovery_pending"];
     const settings = new Map();
     let localRecords = null;
     let stale = false;
+    let queueEntries = null;
     let writesQueued = false;
 
     const queueMergeWrites = () => {
-      if (writesQueued || localRecords == null || settings.size !== settingKeys.length) return;
+      if (writesQueued || localRecords == null || queueEntries == null || settings.size !== settingKeys.length) return;
       const sessionMatches = settings.get("auth_token") === token
         && Number(settings.get("session_generation") || 0) === Number(generation);
       if (!sessionMatches || settings.get("signed_out") === true || settings.get("wipe_pending") === true
@@ -7689,26 +7794,68 @@ async function mergeLocalRecordsWithImported(records, { token, generation } = {}
       }
 
       writesQueued = true;
-      const byKey = new Map();
-      [...localRecords, ...importedRecords].forEach((record) => {
-        const key = getRecordMergeKey(record);
-        if (!key) return;
-        const existing = byKey.get(key);
-        byKey.set(key, {
-          ...(existing || {}),
-          ...record,
-          evidence_level: record.evidence_level || existing?.evidence_level || null
-        });
+      // Never use clear-and-reinsert here.  In particular, an import is only
+      // a view of another device's history and must never replace this
+      // device's signed ledger row (or an unsynced row).
+      const ownIdentity = String(state.deviceIdentity || "");
+      const hashes = new Set(localRecords.map((record) => record.entry_hash).filter(Boolean));
+      // Imported display copies need stable local primary keys, but /records
+      // is ordered by server time and can later insert an older row ahead of
+      // one we already retained.  Allocate above every existing local id in
+      // this write transaction instead of reusing response-position ids.
+      let nextImportedLocalId = Math.max(1000000000, ...localRecords
+        .map((record) => Number(record.id))
+        .filter((id) => Number.isFinite(id))) + 1;
+      const localOwnByHash = new Map(localRecords.filter((record) => !record.importedFromServer
+        && record.device_identity === ownIdentity).map((record) => [record.entry_hash, record]));
+      const pendingCases = [];
+      const setRecovery = (candidate, source, reason, conflict) => pendingCases.push({
+        source, reason, entry_id: candidate.server_entry_id, entry_hash: candidate.entry_hash,
+        conflict: conflict ? { id: conflict.id ?? conflict.entry_id, entry_hash: conflict.entry_hash || "" } : null
       });
-      const mergedRecords = [...byKey.values()].sort((a, b) => {
-        const timeDiff = getRecordConfirmedAtMs(a) - getRecordConfirmedAtMs(b);
-        if (timeDiff) return timeDiff;
-        return Number(a.server_entry_id || a.id || 0) - Number(b.server_entry_id || b.id || 0);
+      importedRecords.forEach((incoming) => {
+        if (incoming.device_identity === ownIdentity && localOwnByHash.has(incoming.entry_hash)) return;
+        if (incoming.device_identity === ownIdentity) {
+          const oldCopy = localRecords.find((record) => record.importedFromServer && record.device_identity === ownIdentity
+            && record.entry_hash === incoming.entry_hash);
+          const idConflict = localRecords.find((record) => record !== oldCopy && Number(record.id) === Number(incoming.server_entry_id)
+            && record.entry_hash !== incoming.entry_hash)
+            || queueEntries.find((entry) => Number(entry.entry_id) === Number(incoming.server_entry_id) && entry.entry_hash !== incoming.entry_hash);
+          const hashConflict = localRecords.find((record) => record !== oldCopy && record.entry_hash === incoming.entry_hash
+            && Number(record.id) !== Number(incoming.server_entry_id));
+          if (!incoming.restoreVerified || idConflict || hashConflict) {
+            setRecovery(incoming, oldCopy ? "imported_copy" : "server_missing", !incoming.restoreVerified ? "hash_or_signature_unverified" : "collision", idConflict || hashConflict);
+            return;
+          }
+          const restored = { ...incoming, id: incoming.server_entry_id, importedFromServer: false, restoredOwn: true };
+          delete restored.restoreVerified;
+          if (oldCopy) recordsStore.delete(oldCopy.id);
+          recordsStore.add(restored);
+          hashes.add(restored.entry_hash);
+          return;
+        }
+        if (hashes.has(incoming.entry_hash)) return;
+        incoming.id = nextImportedLocalId;
+        nextImportedLocalId += 1;
+        recordsStore.add(incoming);
+        hashes.add(incoming.entry_hash);
       });
-      recordsStore.clear();
-      mergedRecords.forEach((record) => {
-        recordsStore.add(record);
+      // Also repair an old imported own-copy when the server response is
+      // temporarily unavailable.  It is subject to exactly the same checks.
+      localRecords.filter((record) => record.importedFromServer && record.device_identity === ownIdentity).forEach((copy) => {
+        if (localOwnByHash.has(copy.entry_hash)) return;
+        const alreadyRestored = importedRecords.some((record) => record.entry_hash === copy.entry_hash && record.device_identity === ownIdentity);
+        if (alreadyRestored) return;
+        setRecovery(copy, "imported_copy", "server_payload_unavailable", null);
       });
+      if (pendingCases.length) {
+        const current = settings.get("fork_recovery_pending");
+        settingsStore.put({ key: "fork_recovery_pending", value: {
+          cases: [...(Array.isArray(current?.cases) ? current.cases : []), ...pendingCases].slice(-50),
+          updated_at: Date.now()
+        } });
+        settingsStore.put({ key: "fork_recovery_skips", value: pendingCases });
+      }
     };
 
     settingKeys.forEach((key) => {
@@ -7723,6 +7870,8 @@ async function mergeLocalRecordsWithImported(records, { token, generation } = {}
       localRecords = localRequest.result || [];
       queueMergeWrites();
     };
+    const queueRequest = tx.objectStore("syncQueue").getAll();
+    queueRequest.onsuccess = () => { queueEntries = queueRequest.result || []; queueMergeWrites(); };
 
     tx.oncomplete = () => resolve(true);
     tx.onerror = () => reject(tx.error);
@@ -7741,17 +7890,43 @@ async function restoreServerRecordsIntoLocal({ quiet = false } = {}) {
   if (!(state.db && isAuthSessionValid() && state.syncApiBaseUrl)) return 0;
   const token = state.authSessionKey;
   const generation = state.sessionGeneration;
+  const diagnostic = {
+    requested_generation: generation,
+    requested_auth_token_present: Boolean(token)
+  };
 
   try {
     await flushSyncQueue();
     const records = await pullRecordsFromServer({ token, generation });
+    diagnostic.response = {
+      record_count: records.length,
+      records: records.map((record) => ({
+        entry_id: record.entry_id ?? record.id,
+        entry_hash: record.entry_hash,
+        device_identity: record.device_identity
+      }))
+    };
     const importedCount = await mergeLocalRecordsWithImported(records, { token, generation });
+    diagnostic.merge_return = importedCount;
+    diagnostic.session_settings = {
+      auth_token_present: Boolean(await getSetting("auth_token")),
+      session_generation: await getSetting("session_generation"),
+      bound_account: await getSetting("bound_account"),
+      signed_out: await getSetting("signed_out"),
+      wipe_pending: await getSetting("wipe_pending")
+    };
+    // Kept as a test-facing diagnostic only; it contains no token value.  It
+    // makes a skipped import distinguishable from a missing /records row.
+    window.__confirmaRestoreDiagnostics = diagnostic;
     if (importedCount && !quiet) {
       state.syncStatus = `Restored ${importedCount} server record${importedCount === 1 ? "" : "s"} to this device.`;
       await updateSyncBadge();
     }
     return importedCount;
   } catch (error) {
+    diagnostic.merge_return = "error";
+    diagnostic.error = error?.message || String(error);
+    window.__confirmaRestoreDiagnostics = diagnostic;
     console.warn("Server record restore skipped.", error);
     return 0;
   }
@@ -9137,7 +9312,11 @@ async function appendLedgerRecordAndQueue(record, guard) {
   for (let attempt = 1; attempt <= LEDGER_APPEND_MAX_ATTEMPTS; attempt += 1) {
     const last = await getLastRecord();
     const payload = await buildLedgerPayload(record, last);
-    const written = await writeLedgerRecordAndQueue(payload, last, guard);
+    // The signed payload intentionally excludes draft-only fields.  Pass the
+    // original candidate separately so the paused branch can persist those
+    // fields without ever putting them on a ledger record.
+    const written = await writeLedgerRecordAndQueue(payload, last, guard, record);
+    if (written === "held") return { heldDraft: true };
     if (written) return payload;
   }
   throw new Error("Unable to save this record.");
@@ -9149,8 +9328,9 @@ async function buildLedgerPayload(record, last) {
   const prevHash = last ? last.entry_hash : "0".repeat(64);
   const entryHash = await sha256(buildLedgerHashCanonicalString(record, id, confirmedAt, prevHash));
   const signature = await signEntryHash(entryHash);
+  const { draft_attempt_id, draft_attempt_fingerprint, confirmation_attempted_at, ...ledgerRecord } = record;
   return {
-    ...record,
+    ...ledgerRecord,
     id,
     confirmed_at: confirmedAt,
     prev_entry_hash: prevHash,
@@ -9176,15 +9356,19 @@ function buildSyncQueueItem(record) {
 
 // Resolves true when the record and its queue entry were both written, false
 // when the chain head moved after the hash was computed (the caller recomputes).
-function writeLedgerRecordAndQueue(payload, expectedHead, guard) {
+function writeLedgerRecordAndQueue(payload, expectedHead, guard, draftCandidate) {
   return new Promise((resolve, reject) => {
     const tx = state.db.transaction(["settings", "records", "syncQueue"], "readwrite");
     const recordsStore = tx.objectStore("records");
     let writeBlocked = false;
     let headMoved = false;
+    let held = false;
     queueWriteAfterInstallGuard(tx.objectStore("settings"), guard, tx, () => {
-      const cursorRequest = recordsStore.openCursor(null, "prev");
-      cursorRequest.onsuccess = () => {
+      const settingsStore = tx.objectStore("settings");
+      const markerRequest = settingsStore.get("fork_recovery_pending");
+      markerRequest.onsuccess = () => {
+        const cursorRequest = recordsStore.openCursor(null, "prev");
+        cursorRequest.onsuccess = () => {
         const cursor = cursorRequest.result;
         if (cursor && cursor.value?.importedFromServer) {
           cursor.continue();
@@ -9193,16 +9377,53 @@ function writeLedgerRecordAndQueue(payload, expectedHead, guard) {
         const head = cursor ? cursor.value : null;
         const sameHead = (head?.id ?? null) === (expectedHead?.id ?? null)
           && (head?.entry_hash ?? null) === (expectedHead?.entry_hash ?? null);
-        if (!sameHead) {
-          headMoved = true;
-          tx.abort();
-          return;
-        }
-        recordsStore.add(payload);
-        tx.objectStore("syncQueue").add(buildSyncQueueItem(payload));
+        const allRecordsRequest = recordsStore.getAll();
+        allRecordsRequest.onsuccess = () => {
+          const rows = allRecordsRequest.result || [];
+          const ownImports = rows.filter((row) => row.importedFromServer && row.device_identity === state.deviceIdentity);
+          const highestImportedOwnId = Math.max(0, ...ownImports.map((row) => Number(row.server_entry_id || 0)));
+          const nextId = Number(head?.id || 0) + 1;
+          const idCollision = rows.some((row) => Number(row.id) === nextId && row.entry_hash !== payload.entry_hash);
+          const queueRequest = tx.objectStore("syncQueue").getAll();
+          queueRequest.onsuccess = () => {
+            const queueCollision = (queueRequest.result || []).some((entry) => Number(entry.entry_id) === nextId && entry.entry_hash !== payload.entry_hash);
+            const unsafe = Boolean(markerRequest.result?.value) || (!head && ownImports.length > 0)
+              || nextId <= highestImportedOwnId || idCollision || queueCollision;
+            if (unsafe) {
+              const previous = settingsStore.get("held_drafts");
+              previous.onsuccess = () => {
+                const drafts = Array.isArray(previous.result?.value) ? previous.result.value : [];
+                // A draft intentionally contains no ledger identifiers, hash,
+                // signature or confirmed_at and is scoped to its account.
+                const draft = { ...payload };
+                ["id", "entry_hash", "signature", "confirmed_at", "prev_entry_hash", "evidence_level"].forEach((key) => delete draft[key]);
+                draft.confirmation_state = "held_draft";
+                draft.bound_account = String(state.boundAccount || "");
+                draft.draft_attempt_id = draftCandidate?.draft_attempt_id || crypto.randomUUID();
+                draft.confirmation_attempted_at = Number(draftCandidate?.confirmation_attempted_at) || Date.now();
+                // A safety pause must not turn into data loss.  Drafts stay
+                // local-only until the recovery flow can turn them into
+                // records, so retaining every draft is safer than silently
+                // dropping an older entry at an arbitrary limit.
+                const alreadyHeld = drafts.some((existing) => existing?.bound_account === draft.bound_account
+                  && existing?.draft_attempt_id === draft.draft_attempt_id);
+                if (!alreadyHeld) settingsStore.put({ key: "held_drafts", value: [...drafts, draft] });
+                held = true;
+              };
+              return;
+            }
+            if (!sameHead) {
+              headMoved = true;
+              tx.abort();
+              return;
+            }
+            recordsStore.add(payload);
+            tx.objectStore("syncQueue").add(buildSyncQueueItem(payload));
+          };
+        };
+        };
       };
     }, () => { writeBlocked = true; });
-    tx.oncomplete = () => resolve(true);
     tx.onabort = () => {
       if (headMoved) {
         resolve(false);
@@ -9210,6 +9431,7 @@ function writeLedgerRecordAndQueue(payload, expectedHead, guard) {
       }
       reject(writeBlocked ? recordWriteBlockedError() : (tx.error || new Error("Record write was interrupted.")));
     };
+    tx.oncomplete = () => resolve(held ? "held" : true);
   });
 }
 
@@ -9676,7 +9898,8 @@ async function flushSyncQueue() {
     if (syncGeneration !== state.sessionGeneration || syncToken !== state.authSessionKey) return;
     if (error.statusCode === 401) {
       state.syncStatus = `Sync auth expired. Re-open ${getVerificationChannelLabel().toLowerCase()}.`;
-    } else if (error.statusCode === 409) {
+    } else if (error.payload?.code === "ledger_fork_conflict") {
+      await recordForkRecoveryPending(error.payload, queuedEntries, syncGuard);
       state.syncStatus = "Server reported a fork. Sync paused until remediation.";
     } else {
       state.syncStatus = error.message || "Sync failed. Entries remain queued.";
@@ -9689,6 +9912,31 @@ async function flushSyncQueue() {
       void flushSyncQueue();
     }
   }
+}
+
+// A server fork rejection is the only network condition that pauses local
+// confirmation.  Deliberately do not mutate the queue: package C needs its
+// original bytes to resolve the conflict.
+function recordForkRecoveryPending(response, queueEntries, guard) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction("settings", "readwrite");
+    const store = tx.objectStore("settings");
+    let blocked = false;
+    queueWriteAfterInstallGuard(store, guard, tx, () => {
+      const request = store.get("fork_recovery_pending");
+      request.onsuccess = () => {
+        const queue = (queueEntries || []).map((entry) => ({ entry_id: entry.entry_id, entry_hash: entry.entry_hash }));
+        const current = request.result?.value;
+        store.put({ key: "fork_recovery_pending", value: {
+          cases: [...(Array.isArray(current?.cases) ? current.cases : []), {
+            source: "sync_rejection", integrity_kind: response.integrity_kind || "", queue, received_at: Date.now()
+          }].slice(-50), updated_at: Date.now()
+        } });
+      };
+    }, () => { blocked = true; });
+    tx.oncomplete = () => resolve(true);
+    tx.onabort = () => blocked ? resolve(false) : reject(tx.error || new Error("Could not record the fork pause."));
+  });
 }
 
 function getUsageMap() {

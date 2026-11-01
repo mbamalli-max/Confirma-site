@@ -105,9 +105,13 @@ export async function installIdbFault(page) {
       window.__signoutTestFault.next = "";
       window.__signoutTestFault.fired = {
         settingKey: key,
+        mode: fault?.mode || "write-failure",
         storeNames: transactionStoreNames.get(store.transaction) || [...store.transaction.objectStoreNames],
         keys: [...(transactionKeys.get(store.transaction) || [])]
       };
+      // A test page remains open for its assertions; pagehide followed by an
+      // abort is the IndexedDB lifecycle outcome of a tab closing mid-write.
+      if (fault?.mode === "tab-close") window.dispatchEvent(new Event("pagehide"));
       queueMicrotask(() => store.transaction.abort());
     };
     const abortAfterWipeDeletes = (store, key) => {
@@ -220,6 +224,42 @@ export async function readLocalState(page) {
     db.close();
     const settings = Object.fromEntries((result.settings || []).map(({ key, value }) => [key, value]));
     return { settings, stores: result };
+  });
+}
+
+// Mirrors app-v3's getLastRecord(): IndexedDB primary-key descending, while
+// skipping server imports.  Keeping this as a browser-side cursor is important
+// for restore-chain diagnostics because Array#getAll has no equivalent order
+// guarantee.
+export async function nextLedgerAppendInput(page) {
+  return page.evaluate(async () => {
+    const request = indexedDB.open("confirma-v3-db", 5);
+    const db = await new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const head = await new Promise((resolve, reject) => {
+      const tx = db.transaction("records", "readonly");
+      const cursor = tx.objectStore("records").openCursor(null, "prev");
+      cursor.onsuccess = () => {
+        const current = cursor.result;
+        if (!current) {
+          resolve(null);
+          return;
+        }
+        if (current.value?.importedFromServer) {
+          current.continue();
+          return;
+        }
+        resolve(current.value);
+      };
+      cursor.onerror = () => reject(cursor.error);
+    });
+    db.close();
+    return {
+      id: Number(head?.id || 0) + 1,
+      prev_entry_hash: head?.entry_hash || "0".repeat(64)
+    };
   });
 }
 
@@ -341,8 +381,25 @@ export function sessionState(tokenOrSessionId) {
 export function ledgerEntriesForDevice(deviceIdentity) {
   const id = String(deviceIdentity || "");
   if (!/^[0-9a-f]{16,128}$/i.test(id)) throw new Error("expected a hex device identity");
-  const json = databaseCommand(`SELECT coalesce(json_agg(row_to_json(entry)), '[]'::json) FROM (SELECT entry_hash, confirmed_at, payload FROM ledger_entries WHERE device_identity = '${id}' ORDER BY entry_id) entry;`);
+  const json = databaseCommand(`SELECT coalesce(json_agg(row_to_json(entry)), '[]'::json) FROM (SELECT entry_id, entry_hash, prev_entry_hash, signature, confirmed_at, payload FROM ledger_entries WHERE device_identity = '${id}' ORDER BY entry_id) entry;`);
   return JSON.parse(json || "[]");
+}
+
+// Read-only diagnostics for ledger-chain tests. The application reaches this
+// state solely through its normal UI and sync routes.
+export function ledgerIntegrityEventsForDevice(deviceIdentity) {
+  const id = String(deviceIdentity || "");
+  if (!/^[0-9a-f]{16,128}$/i.test(id)) throw new Error("expected a hex device identity");
+  const json = databaseCommand(`SELECT coalesce(json_agg(row_to_json(event)), '[]'::json) FROM (SELECT entry_id, kind, detail, created_at FROM ledger_integrity_events WHERE device_identity = '${id}' ORDER BY id) event;`);
+  return JSON.parse(json || "[]");
+}
+
+// Read-only: status is the server's authoritative device state.
+export function deviceStatusForIdentity(deviceIdentity) {
+  const id = String(deviceIdentity || "");
+  if (!/^[0-9a-f]{16,128}$/i.test(id)) throw new Error("expected a hex device identity");
+  const json = databaseCommand(`SELECT row_to_json(device) FROM (SELECT status, revoked_at FROM device_identities WHERE device_identity = '${id}') device;`);
+  return json ? JSON.parse(json) : null;
 }
 
 // Test fixture write (throwaway test database only): give a test account's unlisted profile a sector
@@ -385,7 +442,7 @@ export function userCountForEmail(email) {
 }
 
 // Restore an existing account on a fresh device through the "Restore your account" link.
-export async function restoreThroughUi(page, account) {
+export async function restoreThroughUi(page, account, { onRestoreClick } = {}) {
   await page.locator("#restore-account-link").click();
   await page.locator("#restore-email-input").fill(account.email);
   await paceOtp("request", 4);
@@ -395,6 +452,7 @@ export async function restoreThroughUi(page, account) {
   if (!code) throw new Error("local API did not expose its development restore code");
   await paceOtp("verify", 8);
   await page.locator("#restore-code-input").fill(code);
+  if (onRestoreClick) await onRestoreClick();
   await page.locator("#restore-verify-code").click();
 }
 
