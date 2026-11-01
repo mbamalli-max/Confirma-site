@@ -11,6 +11,16 @@ const SCRYPT_P = 1;
 const SCRYPT_KEY_LENGTH = 64;
 const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024;
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+export const ADMIN_PASSWORD_MIN_LENGTH = 8;
+export const ADMIN_PASSWORD_MAX_LENGTH = 256;
+
+export function validateAdminPassword(password) {
+  if (typeof password !== "string") return false;
+  const length = Array.from(password).length;
+  return length >= ADMIN_PASSWORD_MIN_LENGTH
+    && length <= ADMIN_PASSWORD_MAX_LENGTH
+    && /\S/.test(password);
+}
 
 function getTotpEncryptionKey() {
   if (Buffer.isBuffer(config.adminTotpEncKeyBytes) && config.adminTotpEncKeyBytes.length === 32) {

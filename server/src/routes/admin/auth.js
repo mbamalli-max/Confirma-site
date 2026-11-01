@@ -161,17 +161,37 @@ export async function registerAdminAuthRoutes(app) {
     }
 
     const jti = crypto.randomUUID();
-    const token = issueAdminToken(adminUser, jti);
-    const decoded = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
-    const expiresAt = new Date(Number(decoded.exp) * 1000);
+    let token = null;
+    let expiresAt = null;
+    const sessionCreated = await withTransaction(async (client) => {
+      // Password verification is intentionally outside the lock. Re-check the
+      // verified hash while holding the admin row so a reset cannot be followed
+      // by a session created from the old password.
+      const lockedResult = await client.query(
+        `
+          SELECT id, password_hash, role, status,
+                 (locked_until IS NOT NULL AND locked_until > clock_timestamp()) AS is_locked
+          FROM admin_users
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [adminUser.id]
+      );
+      const lockedAdmin = lockedResult.rows[0] || null;
+      if (!lockedAdmin || lockedAdmin.password_hash !== adminUser.password_hash
+          || lockedAdmin.status !== "ACTIVE" || lockedAdmin.is_locked) {
+        return false;
+      }
 
-    await withTransaction(async (client) => {
+      token = issueAdminToken(lockedAdmin, jti);
+      const decoded = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
+      expiresAt = new Date(Number(decoded.exp) * 1000);
       await client.query(
         `
           INSERT INTO admin_sessions (jti, admin_user_id, expires_at, ip, user_agent)
           VALUES ($1, $2, $3, $4, $5)
         `,
-        [jti, adminUser.id, expiresAt, request.ip || null, request.headers["user-agent"] || null]
+        [jti, lockedAdmin.id, expiresAt, request.ip || null, request.headers["user-agent"] || null]
       );
       await client.query(
         `
@@ -180,17 +200,20 @@ export async function registerAdminAuthRoutes(app) {
               last_login_at = NOW(), updated_at = NOW()
           WHERE id = $1
         `,
-        [adminUser.id]
+        [lockedAdmin.id]
       );
       await writeAuditRow({
-        adminUserId: adminUser.id,
+        adminUserId: lockedAdmin.id,
         action: "admin.login.success",
         subjectType: "admin_user",
-        subjectId: adminUser.id,
+        subjectId: lockedAdmin.id,
         request,
         responseStatus: 200
       }, client);
+      return true;
     });
+
+    if (!sessionCreated) return reply.code(401).send({ error: "Invalid admin credentials." });
 
     return reply.send({ token, expires_at: expiresAt.toISOString() });
   });
