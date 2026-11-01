@@ -297,6 +297,8 @@ test("H5: an identical resend is idempotent; the same id with another hash is a 
   const response = await sync(device, [conflicting]);
   assert.equal(response.statusCode, 409, response.body);
   assert.match(response.json().error, /Fork detected for an existing entry id/);
+  assert.equal(response.json().code, "ledger_fork_conflict");
+  assert.equal(response.json().integrity_kind, "fork_id_conflict");
   const recorded = await events(device.deviceIdentity);
   assert.equal(recorded.length, 1);
   assert.equal(recorded[0].kind, "fork_id_conflict");
@@ -319,6 +321,8 @@ test("H6: a continuity break is recorded and FORKED survives the rejected batch;
   const response = await sync(device, [broken]);
   assert.equal(response.statusCode, 409, response.body);
   assert.match(response.json().error, /Hash chain continuity failed/);
+  assert.equal(response.json().code, "ledger_fork_conflict");
+  assert.equal(response.json().integrity_kind, "fork_continuity");
   assert.equal((await storedEntries(device.deviceIdentity)).length, 1, "nothing from the rejected batch is stored");
   const recorded = await events(device.deviceIdentity);
   assert.equal(recorded.length, 1);

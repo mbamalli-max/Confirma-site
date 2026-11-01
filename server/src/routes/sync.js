@@ -251,9 +251,14 @@ export async function registerSyncRoutes(app) {
           return reply.code(503).send({ error: "integrity_record_unavailable" });
         }
       }
-      return reply.code(error.statusCode || 500).send({
-        error: error.message || "Sync failed."
-      });
+      // Keep the old status and error text for existing clients.  Newer
+      // clients must distinguish a ledger fork from an unrelated 409.
+      const body = { error: error.message || "Sync failed." };
+      if (error.integrity?.kind === "fork_id_conflict" || error.integrity?.kind === "fork_continuity") {
+        body.code = "ledger_fork_conflict";
+        body.integrity_kind = error.integrity.kind;
+      }
+      return reply.code(error.statusCode || 500).send(body);
     }
   });
 }
