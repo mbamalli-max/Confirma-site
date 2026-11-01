@@ -113,11 +113,23 @@ function showOutOfStep() {
   $("version-mismatch").hidden = false;
 }
 
-// "2026-10-27T04:10:00.000Z" -> "2026-10-27 04:10 UTC"; anything unexpected is shown as sent.
-function formatUtc(value) {
+const newYorkDateTime = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  timeZoneName: "short"
+});
+
+// ISO timestamps are displayed as New York moments; anything unexpected is shown as sent.
+function formatNewYork(value) {
   if (!value) return "—";
   const text = String(value);
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text) ? `${text.slice(0, 10)} ${text.slice(11, 16)} UTC` : text;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text)) return text;
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+  const parts = Object.fromEntries(newYorkDateTime.formatToParts(date)
+    .filter(({ type }) => type !== "literal").map(({ type, value: part }) => [type, part]));
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} ${parts.timeZoneName}`;
 }
 
 const regionNames = (() => {
@@ -279,7 +291,7 @@ async function loadActivity() {
     return;
   }
   $("dash-unavailable").hidden = true;
-  $("dash-as-of").textContent = formatUtc(inPeriod.data.as_of);
+  $("dash-as-of").textContent = formatNewYork(inPeriod.data.as_of);
   $("dash-stale").hidden = !inPeriod.data.stale;
   const allAccounts = figure(all.data, "accounts_registered");
   const newAccounts = figure(inPeriod.data, "accounts_registered");
@@ -411,10 +423,7 @@ function renderBreakdown(panel, dimension, data) {
     body.replaceChildren(p);
     return;
   }
-  const cells = ["country", "sector"].includes(dimension)
-    ? [...result.cells].sort((left, right) => right.count - left.count
-      || categoryLabel(dimension, left.category).localeCompare(categoryLabel(dimension, right.category), "en"))
-    : result.cells;
+  const cells = result.cells;
   const max = Math.max(1, ...cells.map((c) => c.count));
   const list = el("div", "bars");
   for (const cell of cells) {
@@ -427,8 +436,7 @@ function renderBreakdown(panel, dimension, data) {
     row.append(el("span", "bar-label", categoryLabel(dimension, cell.category)), track, el("span", "bar-count", String(cell.count)));
     list.append(row);
   }
-  const notes = [];
-  if (result.cells.some((c) => c.category === "other")) notes.push(el("p", "muted", "Other combines two or more categories that are too small to show separately."));
+  const notes = [el("p", "muted", "Showing the 10 largest categories that have 2 or more users. Smaller categories and everything beyond the top 10 are combined in Other.")];
   body.replaceChildren(list, ...notes, el("p", "muted", `Total registered users: ${result.total}`));
 }
 
@@ -472,7 +480,7 @@ async function loadExclusionState() {
   }
   if (requestId !== exclusionStateRequest) return null;
   const ok = r && r.status === 200 && r.data && r.data.accounts;
-  const changed = ok ? (r.data.exclusions_last_changed ? formatUtc(r.data.exclusions_last_changed) : "never") : "—";
+  const changed = ok ? (r.data.exclusions_last_changed ? formatNewYork(r.data.exclusions_last_changed) : "never") : "—";
   $("dash-exclusions-changed").textContent = changed;
   for (const [id, value] of [
     ["count-total", ok ? r.data.accounts.total : null],
@@ -510,10 +518,10 @@ async function loadStatus() {
   }
   if (requestId !== statusRequest) return;
   const ok = r && r.status === 200;
-  $("q-built-at").textContent = ok ? formatUtc(r.data.built_at) : "—";
+  $("q-built-at").textContent = ok ? formatNewYork(r.data.built_at) : "—";
   $("q-stale").textContent = ok ? (r.data.stale ? "Yes" : "No") : "—";
-  $("q-last-attempt").textContent = ok ? formatUtc(r.data.last_attempt_at) : "—";
-  $("q-last-failure").textContent = ok ? (r.data.last_failure_at ? formatUtc(r.data.last_failure_at) : "None") : "—";
+  $("q-last-attempt").textContent = ok ? formatNewYork(r.data.last_attempt_at) : "—";
+  $("q-last-failure").textContent = ok ? (r.data.last_failure_at ? formatNewYork(r.data.last_failure_at) : "None") : "—";
   $("q-out-of-range").textContent = ok && Number.isInteger(r.data.out_of_range) ? String(r.data.out_of_range) : "—";
   const sectors = ok && r.data.sector_assignment && typeof r.data.sector_assignment === "object" ? r.data.sector_assignment : {};
   for (const [id, key] of [
@@ -549,7 +557,7 @@ async function onRefreshGo() {
   refreshBusy = false;
   $("refresh-button").disabled = false;
   if (r.status === 200 && r.data && r.data.rebuilt === true) {
-    msg.textContent = `Rebuilt. Figures as of ${formatUtc(r.data.as_of || r.data.built_at)}.`;
+    msg.textContent = `Rebuilt. Figures as of ${formatNewYork(r.data.as_of || r.data.built_at)}.`;
     loadStatus();
     loadDashboard();
   } else if (r.status === 200 && r.data && r.data.reason === "in_progress") {
@@ -882,7 +890,7 @@ async function onSubmit(ev) {
   $("signin-screen").hidden = true;
   $("app-shell").hidden = false;
   $("admin-email").textContent = shown;
-  $("session-expiry").textContent = expiresAt ? new Date(expiresAt).toLocaleString() : "";
+  $("session-expiry").textContent = expiresAt ? formatNewYork(expiresAt) : "";
   showRoute();
   loadDashboard();
 }
@@ -919,7 +927,7 @@ function dropUnconfirmed() {
 }
 
 function untilText(endsAt) {
-  return endsAt ? ` It stops working by ${new Date(endsAt).toLocaleString()}.` : "";
+  return endsAt ? ` It stops working by ${formatNewYork(endsAt)}.` : "";
 }
 
 async function sendLogout(bearer) {

@@ -5,7 +5,8 @@ import {
   discloseAllCells,
   discloseBreakdown,
   discloseCount,
-  discloseSubset
+  discloseSubset,
+  discloseTopCells
 } from "../src/admin-disclosure.js";
 import { COUNTRY_CODES, SECTOR_IDS } from "../src/admin-dimensions.js";
 import { config, validateRuntimeConfig } from "../src/config.js";
@@ -199,6 +200,45 @@ test("all-cell disclosure validates like breakdowns, drops zeroes, and orders ev
     [null]
   ]) assert.throws(() => discloseAllCells(cells, 5));
   assert.throws(() => discloseAllCells([], 4));
+});
+
+test("owner top-cell disclosure groups small and beyond-top categories without changing totals", () => {
+  const cells = [
+    { category: "zero", count: 0 },
+    { category: "one", count: 1 },
+    ...Array.from({ length: 11 }, (_, index) => ({ category: `category_${String(index).padStart(2, "0")}`, count: 12 - index })),
+    { category: "no_valid_code", count: 1 },
+    { category: "no_business_profile", count: 4 }
+  ];
+  const original = structuredClone(cells);
+  const result = discloseTopCells(cells, {
+    top: 10,
+    minCount: 2,
+    residualCategories: ["no_valid_code", "no_business_profile"]
+  });
+  assert.deepEqual(result.cells.slice(0, 10).map(({ category }) => category), Array.from({ length: 10 }, (_, index) => `category_${String(index).padStart(2, "0")}`));
+  assert.deepEqual(result.cells.slice(10), [
+    { category: "other", count: 3 },
+    { category: "no_business_profile", count: 4 },
+    { category: "no_valid_code", count: 1 }
+  ]);
+  assert.equal(result.cells.reduce((sum, { count }) => sum + count, 0), result.total);
+  assert.equal(result.total, 83);
+  assert.deepEqual(cells, original);
+});
+
+test("owner top-cell disclosure keeps ties deterministic, residuals outside top ten, and omits Other when unused", () => {
+  const result = discloseTopCells([
+    { category: "z", count: 2 }, { category: "a", count: 2 },
+    { category: "no_valid_code", count: 1 }, { category: "zero", count: 0 }
+  ], { top: 10, minCount: 2, residualCategories: ["no_valid_code"] });
+  assert.deepEqual(result, {
+    cells: [{ category: "a", count: 2 }, { category: "z", count: 2 }, { category: "no_valid_code", count: 1 }],
+    total: 5,
+    top_n: 10,
+    min_shown_count: 2
+  });
+  assert.throws(() => discloseTopCells([{ category: "other", count: 2 }]));
 });
 
 test("P1 and P2: exhaustive k=5 breakdown properties and no pinned hidden category", () => {

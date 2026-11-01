@@ -246,8 +246,8 @@ test("suppressed routes admit only owners and reject unsupported queries", async
       const response = await app.inject({ method: "GET", url, headers: auth(ownerSession) });
       assert.equal(response.statusCode, 200);
       assert.equal(response.json().audience, "owner_only");
-      assert.equal(response.json().suppression, "none");
-      assert.match(response.body, /Every country is shown with its exact count, including small counts\./);
+      assert.equal(response.json().suppression, "owner_view_top_10");
+      assert.match(response.body, /The 10 largest categories with 2 or more users are shown/);
     }
     for (const url of [
       "/admin/v2/suppressed/overview?range=all",
@@ -328,7 +328,9 @@ test("dimension rebuild normalizes unknown values and country coverage is a gate
     assert.deepEqual(response.json().result, {
       status: "withheld",
       reason: "valid_codes_below_half",
-      total: { status: "published", value: 10 }
+      total: { status: "published", value: 10 },
+      top_n: 10,
+      min_shown_count: 2
     });
     assert.equal(response.body.includes("ZZ"), false);
   } finally {
@@ -336,7 +338,7 @@ test("dimension rebuild normalizes unknown values and country coverage is a gate
   }
 });
 
-test("country breakdown publishes every non-zero country individually", async () => {
+test("country breakdown reports the owner top-ten contract", async () => {
   for (const [country, count] of [["US", 12], ["GB", 7], ["NG", 3], ["GH", 2]]) {
     for (let index = 0; index < count; index += 1) await seedAccount({ country });
   }
@@ -354,7 +356,9 @@ test("country breakdown publishes every non-zero country individually", async ()
         { category: "NG", count: 3 },
         { category: "GH", count: 2 }
       ],
-      total: 24
+      total: 24,
+      top_n: 10,
+      min_shown_count: 2
     });
     assert.equal(response.body.includes('"other"'), false);
   } finally {
@@ -370,11 +374,12 @@ test("2: suppression labels match each dimension's disclosure policy and make no
     for (const [index, response] of (await suppressedResponses(app)).entries()) {
       assert.equal(response.statusCode, 200);
       assert.equal(response.json().audience, "owner_only");
-      if ([1, 2].includes(index)) {
-        assert.equal(response.json().suppression, "none");
-        assert.match(response.body, new RegExp(`Every ${response.json().dimension} is shown with its exact count, including small counts\\.`));
-        assert.doesNotMatch(response.body, /Figures based on fewer than/);
-        assert.doesNotMatch(response.body, /Single reading\. Not cleared for repeated release/);
+      if ([1, 2, 3].includes(index)) {
+        assert.equal(response.json().suppression, "owner_view_top_10");
+        assert.equal(response.json().result.top_n, 10);
+        assert.equal(response.json().result.min_shown_count, 2);
+        assert.match(response.body, /The 10 largest categories with 2 or more users are shown/);
+        assert.match(response.body, /Single reading\. Not cleared for repeated release/);
       } else {
         assert.equal(response.json().release_status, "single_reading");
         assert.match(response.body, /Single reading\. Not cleared for repeated release/);
@@ -597,8 +602,8 @@ test("9c: accounts with no classification row are External in every suppressed r
   try {
     const [overview, country, sector] = (await suppressedResponses(app)).map((response) => response.json());
     assert.deepEqual(metric(overview, "accounts_registered"), { status: "published", value: 6 });
-    assert.deepEqual(country.result, { status: "published", cells: [{ category: "NG", count: 6 }], total: 6 });
-    assert.deepEqual(sector.result, { status: "published", cells: [{ category: "trade_retail", count: 6 }], total: 6 });
+    assert.deepEqual(country.result, { status: "published", cells: [{ category: "NG", count: 6 }], total: 6, top_n: 10, min_shown_count: 2 });
+    assert.deepEqual(sector.result, { status: "published", cells: [{ category: "trade_retail", count: 6 }], total: 6, top_n: 10, min_shown_count: 2 });
   } finally { await app.close(); }
 });
 
@@ -610,7 +615,7 @@ test("9a: response keys explicitly exclude internal, demo, unclassified, and tot
     "api_version", "audience", "release_status", "suppression", "minimum_cell_size", "scope", "range",
     "as_of", "stale", "statements", "metrics", "key", "definition",
     "disclosure", "status", "value", "dimension", "dimension_label", "result", "reason",
-    "total", "cells", "category", "count"
+    "total", "cells", "category", "count", "top_n", "min_shown_count"
   ]);
   try {
     for (const response of await suppressedResponses(app)) {
@@ -837,8 +842,8 @@ test("11a: suppressed overview exports the literal pre-slice metric list", () =>
   ]);
 });
 
-test("15: a lone small country is published with its exact count", async () => {
-  for (const [country, count] of [["US", 12], ["GB", 7], ["NG", 3]]) {
+test("15: country categories with two users are shown and no Other is added when none are combined", async () => {
+  for (const [country, count] of [["US", 12], ["GB", 7], ["NG", 3], ["GH", 2]]) {
     for (let index = 0; index < count; index += 1) await seedAccount({ country });
   }
   await rebuildRollups();
@@ -846,14 +851,17 @@ test("15: a lone small country is published with its exact count", async () => {
   try {
     assert.deepEqual((await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result, {
       status: "published",
-      cells: [{ category: "US", count: 12 }, { category: "GB", count: 7 }, { category: "NG", count: 3 }],
-      total: 22
+      cells: [{ category: "US", count: 12 }, { category: "GB", count: 7 }, { category: "NG", count: 3 }, { category: "GH", count: 2 }],
+      total: 24,
+      top_n: 10,
+      min_shown_count: 2
     });
+    assert.equal((await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result.cells.some(({ category }) => category === "other"), false);
   } finally { await app.close(); }
 });
 
-test("16: small country cells are published without a residual", async () => {
-  for (const [country, count] of [["US", 6], ["GB", 3]]) {
+test("16: country categories with counts below two are combined in Other", async () => {
+  for (const [country, count] of [["US", 6], ["GB", 2], ["NG", 1]]) {
     for (let index = 0; index < count; index += 1) await seedAccount({ country });
   }
   await rebuildRollups();
@@ -861,13 +869,15 @@ test("16: small country cells are published without a residual", async () => {
   try {
     assert.deepEqual((await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result, {
       status: "published",
-      cells: [{ category: "US", count: 6 }, { category: "GB", count: 3 }],
-      total: 9
+      cells: [{ category: "US", count: 6 }, { category: "GB", count: 2 }, { category: "other", count: 1 }],
+      total: 9,
+      top_n: 10,
+      min_shown_count: 2
     });
   } finally { await app.close(); }
 });
 
-test("16a: the sector route publishes every non-zero sector, including small cells", async () => {
+test("16a: the sector route uses the owner top-ten contract and keeps residual cells separate", async () => {
   const sectors = [
     "trade_retail", "food_hospitality", "agriculture", "transport_logistics",
     "skilled_construction", "personal_professional", "digital_online"
@@ -890,18 +900,20 @@ test("16a: the sector route publishes every non-zero sector, including small cel
         { category: "agriculture", count: 4 },
         { category: "digital_online", count: 4 },
         { category: "food_hospitality", count: 4 },
-        { category: "no_business_profile", count: 4 },
         { category: "other_activity", count: 4 },
         { category: "personal_professional", count: 4 },
         { category: "skilled_construction", count: 4 },
-        { category: "transport_logistics", count: 4 }
+        { category: "transport_logistics", count: 4 },
+        { category: "no_business_profile", count: 4 }
       ],
-      total: 41
+      total: 41,
+      top_n: 10,
+      min_shown_count: 2
     });
   } finally { await app.close(); }
 });
 
-test("16aa: small country and sector cells publish individually while business type still suppresses them", async () => {
+test("16aa: small country and sector categories combine while business type coverage still gates publication", async () => {
   for (const [sector, country, count] of [["trade_retail", "US", 3], ["agriculture", "GB", 2], ["transport_logistics", "NG", 1], [null, "ZZ", 1]]) {
     for (let index = 0; index < count; index += 1) await seedAccount({ sector, country });
   }
@@ -914,34 +926,38 @@ test("16aa: small country and sector cells publish individually while business t
       cells: [
         { category: "trade_retail", count: 3 },
         { category: "agriculture", count: 2 },
-        { category: "no_business_profile", count: 1 },
-        { category: "transport_logistics", count: 1 }
+        { category: "other", count: 1 },
+        { category: "no_business_profile", count: 1 }
       ],
-      total: 7
+      total: 7,
+      top_n: 10,
+      min_shown_count: 2
     });
-    assert.equal(sector.cells.some(({ category }) => category === "other"), false);
+    assert.equal(sector.cells.some(({ category }) => category === "other"), true);
     const country = (await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result;
     assert.deepEqual(country, {
       status: "published",
       cells: [
         { category: "US", count: 3 },
         { category: "GB", count: 2 },
-        { category: "NG", count: 1 },
+        { category: "other", count: 1 },
         { category: "no_valid_code", count: 1 }
       ],
-      total: 7
+      total: 7,
+      top_n: 10,
+      min_shown_count: 2
     });
-    assert.equal(country.cells.some(({ category }) => category === "other"), false);
+    assert.equal(country.cells.some(({ category }) => category === "other"), true);
     const businessType = (await ownerRequest(app, "/admin/v2/breakdown?dimension=business_type")).json().result;
     assert.equal(businessType.status, "withheld");
     assert.equal(businessType.reason, "valid_codes_below_half");
   } finally { await app.close(); }
 });
 
-test("16b: country publishes every code in a 9 and six 4s shape", async () => {
-  const countries = ["US", "GB", "NG", "GH", "CA", "DE", "FR"];
+test("16b: country shows at most ten categories and combines the eleventh and count-one categories", async () => {
+  const countries = ["US", "GB", "NG", "GH", "CA", "DE", "FR", "AU", "BR", "IN", "JP", "KE"];
   for (let countryIndex = 0; countryIndex < countries.length; countryIndex += 1) {
-    const count = countryIndex === 0 ? 9 : 4;
+    const count = countryIndex === 0 ? 9 : countryIndex === countries.length - 1 ? 1 : 2;
     for (let index = 0; index < count; index += 1) await seedAccount({ country: countries[countryIndex] });
   }
   await rebuildRollups();
@@ -951,14 +967,14 @@ test("16b: country publishes every code in a 9 and six 4s shape", async () => {
       status: "published",
       cells: [
         { category: "US", count: 9 },
-        { category: "CA", count: 4 },
-        { category: "DE", count: 4 },
-        { category: "FR", count: 4 },
-        { category: "GB", count: 4 },
-        { category: "GH", count: 4 },
-        { category: "NG", count: 4 }
+        { category: "AU", count: 2 }, { category: "BR", count: 2 }, { category: "CA", count: 2 },
+        { category: "DE", count: 2 }, { category: "FR", count: 2 }, { category: "GB", count: 2 },
+        { category: "GH", count: 2 }, { category: "IN", count: 2 }, { category: "JP", count: 2 },
+        { category: "other", count: 3 }
       ],
-      total: 33
+      total: 30,
+      top_n: 10,
+      min_shown_count: 2
     });
   } finally { await app.close(); }
 });
@@ -989,7 +1005,9 @@ test("18: country coverage failure reveals no count of accounts with or without 
     assert.deepEqual(result, {
       status: "withheld",
       reason: "valid_codes_below_half",
-      total: { status: "published", value: 10 }
+      total: { status: "published", value: 10 },
+      top_n: 10,
+      min_shown_count: 2
     });
     assert.equal(Object.hasOwn(result, "cells"), false);
     assert.equal(Object.hasOwn(result, "valid_codes"), false);
@@ -1006,10 +1024,11 @@ test("18a: a profile country code is counted normally and carries the exact prov
     const body = response.json();
     assert.equal(body.dimension_label, "Profile country code");
     assert.deepEqual(body.result.cells, [{ category: "NG", count: 5 }]);
-    assert.equal(body.suppression, "none");
-    assert.ok(body.statements.includes("Every country is shown with its exact count, including small counts."));
-    assert.equal(body.statements.some((statement) => statement.includes("Figures based on fewer than")), false);
-    assert.equal(body.statements.some((statement) => statement.startsWith("Single reading.")), false);
+    assert.equal(body.suppression, "owner_view_top_10");
+    assert.equal(body.result.top_n, 10);
+    assert.equal(body.result.min_shown_count, 2);
+    assert.ok(body.statements.includes("The 10 largest categories with 2 or more users are shown. Smaller categories and all remaining categories are combined in 'Other'."));
+    assert.ok(body.statements.some((statement) => statement.startsWith("Single reading.")));
     assert.ok(body.statements.includes("Country is the two-letter code stored on the account profile. It may have been chosen by the account holder or filled in from the country of the account's phone number. It is not checked."));
     for (const wording of ["location", "based in", "operates in", "stated"]) assert.equal(response.body.toLowerCase().includes(wording), false);
   } finally { await app.close(); }
@@ -1065,7 +1084,9 @@ test("20: reclassification marks rollups stale and rebuilt breakdowns reflect th
     assert.deepEqual((await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result, {
       status: "published",
       cells: [{ category: "GB", count: 6 }, { category: "US", count: 5 }],
-      total: 11
+      total: 11,
+      top_n: 10,
+      min_shown_count: 2
     });
   } finally { await app.close(); }
 });
@@ -1120,7 +1141,7 @@ test("22: suppressed route statements return only explicitly allowed aggregate f
   }
 });
 
-test("23: threshold 10 still publishes every country cell after the total gate", async () => {
+test("23: threshold 10 gates the total while the top-ten minimum remains two", async () => {
   config.adminKAnonThreshold = 10;
   for (let index = 0; index < 7; index += 1) await seedAccount({ country: "US" });
   for (let index = 0; index < 13; index += 1) await seedAccount({ country: "GB" });
@@ -1131,12 +1152,14 @@ test("23: threshold 10 still publishes every country cell after the total gate",
     assert.deepEqual(response.json().result, {
       status: "published",
       cells: [{ category: "GB", count: 13 }, { category: "US", count: 7 }],
-      total: 20
+      total: 20,
+      top_n: 10,
+      min_shown_count: 2
     });
   } finally { await app.close(); }
 });
 
-test("23a: threshold wording follows 10 and the default except for all-cell countries and sectors", async () => {
+test("23a: breakdown wording and owner top-ten labels are independent of the total threshold", async () => {
   for (let index = 0; index < 10; index += 1) await seedAccount();
   await rebuildRollups();
   config.adminKAnonThreshold = 10;
@@ -1144,9 +1167,9 @@ test("23a: threshold wording follows 10 and the default except for all-cell coun
   try {
     for (const [index, response] of (await suppressedResponses(app)).entries()) {
       const body = response.json();
-      if ([1, 2].includes(index)) {
-        assert.equal(body.suppression, "none");
-        assert.ok(body.statements.includes(`Every ${body.dimension} is shown with its exact count, including small counts.`));
+      if ([1, 2, 3].includes(index)) {
+        assert.equal(body.suppression, "owner_view_top_10");
+        assert.ok(body.statements.includes("The 10 largest categories with 2 or more users are shown. Smaller categories and all remaining categories are combined in 'Other'."));
       } else {
         assert.equal(body.minimum_cell_size, 10);
         assert.ok(body.statements.some((statement) => statement.includes("fewer than 10")));
@@ -1158,7 +1181,7 @@ test("23a: threshold wording follows 10 and the default except for all-cell coun
   app = await buildApp();
   try {
     for (const [index, response] of (await suppressedResponses(app)).entries()) {
-      if ([1, 2].includes(index)) assert.ok(response.json().statements.includes(`Every ${response.json().dimension} is shown with its exact count, including small counts.`));
+      if ([1, 2, 3].includes(index)) assert.equal(response.json().suppression, "owner_view_top_10");
       else assert.ok(response.json().statements.some((statement) => statement.includes("fewer than 5")));
     }
   } finally { await app.close(); }
@@ -1208,9 +1231,10 @@ test("25: business type breakdown counts catalog types and unlisted, never the f
     assert.equal(body.dimension_label, "Profile business type");
     assert.deepEqual(body.result, {
       status: "published",
-      // The lone invalid code cannot stand alone, so the smallest shown type joins it in "other".
-      cells: [{ category: "unlisted", count: 6 }, { category: "other", count: 7 }],
-      total: 13
+      cells: [{ category: "ng_market_trader", count: 6 }, { category: "unlisted", count: 6 }, { category: "no_valid_code", count: 1 }],
+      total: 13,
+      top_n: 10,
+      min_shown_count: 2
     });
     assert.equal(response.body.includes(description), false);
     assert.equal(response.body.includes("not_a_catalog_type"), false);
@@ -1218,7 +1242,7 @@ test("25: business type breakdown counts catalog types and unlisted, never the f
   } finally { await app.close(); }
 });
 
-test("26: business type is withheld when categories are too small, as for country and sector", async () => {
+test("26: business type combines small categories in Other rather than withholding", async () => {
   for (const type of ["ng_market_trader", "global_device_repair", "global_document_services", "global_digital_online", "ng_market_trader", "global_device_repair"]) {
     await seedAccount({ businessType: type });
   }
@@ -1226,8 +1250,13 @@ test("26: business type is withheld when categories are too small, as for countr
   const app = await buildApp();
   try {
     const result = (await ownerRequest(app, "/admin/v2/breakdown?dimension=business_type")).json().result;
-    assert.equal(result.status, "withheld");
-    assert.equal(Object.hasOwn(result, "cells"), false);
+    assert.deepEqual(result, {
+      status: "published",
+      cells: [{ category: "global_device_repair", count: 2 }, { category: "ng_market_trader", count: 2 }, { category: "other", count: 2 }],
+      total: 6,
+      top_n: 10,
+      min_shown_count: 2
+    });
   } finally { await app.close(); }
 });
 
@@ -1238,10 +1267,9 @@ test("27: the sector statement explains how the sector is set and that the busin
   try {
     const body = (await ownerRequest(app, "/admin/v2/breakdown?dimension=sector")).json();
     assert.ok(body.statements.includes("Sector is Konfirmata's category for the business. For a business type in the catalog it comes from the catalog; otherwise it is the sector the account holder chose, or 'Other business' when no sector could be determined. Accounts without a business profile are shown separately. The server does not verify the account's actual business."));
-    assert.equal(body.suppression, "none");
-    assert.ok(body.statements.includes("Every sector is shown with its exact count, including small counts."));
-    assert.equal(body.statements.some((statement) => statement.includes("Figures based on fewer than")), false);
-    assert.equal(body.statements.some((statement) => statement.startsWith("Single reading.")), false);
+    assert.equal(body.suppression, "owner_view_top_10");
+    assert.ok(body.statements.includes("The 10 largest categories with 2 or more users are shown. Smaller categories and all remaining categories are combined in 'Other'."));
+    assert.ok(body.statements.some((statement) => statement.startsWith("Single reading.")));
     assert.equal(body.statements.some((statement) => statement.includes("It is not checked.")), false);
   } finally { await app.close(); }
 });
@@ -1257,7 +1285,9 @@ test("28 (T-S11): fewer than half with a business profile withholds sector and b
       assert.deepEqual(result, {
         status: "withheld",
         reason: "business_profiles_below_half",
-        total: { status: "published", value: 10 }
+        total: { status: "published", value: 10 },
+        top_n: 10,
+        min_shown_count: 2
       }, dimension);
     }
     const country = (await ownerRequest(app, "/admin/v2/breakdown?dimension=country")).json().result;
@@ -1273,8 +1303,10 @@ test("29 (T-S10, T-S11): exactly half with a business profile publishes, and 'No
   try {
     assert.deepEqual((await ownerRequest(app, "/admin/v2/breakdown?dimension=sector")).json().result, {
       status: "published",
-      cells: [{ category: "no_business_profile", count: 5 }, { category: "trade_retail", count: 5 }],
-      total: 10
+      cells: [{ category: "trade_retail", count: 5 }, { category: "no_business_profile", count: 5 }],
+      total: 10,
+      top_n: 10,
+      min_shown_count: 2
     });
   } finally { await app.close(); }
 });
@@ -1289,7 +1321,9 @@ test("30 (T-S4, U2): profiles with no determinable sector count as Other busines
     assert.deepEqual(body.result, {
       status: "published",
       cells: [{ category: "food_hospitality", count: 6 }, { category: "other_activity", count: 6 }],
-      total: 12
+      total: 12,
+      top_n: 10,
+      min_shown_count: 2
     });
     assert.equal(JSON.stringify(body).includes("uncategorised"), false, "no 'not categorised' category exists");
   } finally { await app.close(); }

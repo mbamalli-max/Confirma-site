@@ -33,7 +33,7 @@ export function discloseSubset(subset, parent, k) {
 
 function validateCells(cells, k) {
   if (!Array.isArray(cells)) throw new TypeError("cells must be an array.");
-  requireThreshold(k);
+  if (k !== undefined) requireThreshold(k);
 
   const categories = new Set();
   return cells.map((cell) => {
@@ -77,6 +77,36 @@ export function discloseAllCells(cells, k) {
       || left.category.localeCompare(right.category)),
     total
   };
+}
+
+// Owner-only presentation policy. The general k-anonymity helpers above remain
+// available for every other route.
+export function discloseTopCells(cells, {
+  top = 10,
+  minCount = 2,
+  residualCategories = []
+} = {}) {
+  if (!Number.isSafeInteger(top) || top < 1) throw new TypeError("top must be a positive integer.");
+  if (!Number.isSafeInteger(minCount) || minCount < 1) throw new TypeError("minCount must be a positive integer.");
+  if (!Array.isArray(residualCategories) || residualCategories.some((category) => typeof category !== "string" || !category)) {
+    throw new TypeError("residualCategories must be an array of non-empty strings.");
+  }
+  const residuals = new Set(residualCategories);
+  if (residuals.has("other")) throw new RangeError("other is a reserved category.");
+  const nonZero = validateCells(cells);
+  const total = cellTotal(nonZero);
+  const real = nonZero.filter(({ category }) => !residuals.has(category));
+  const residual = nonZero.filter(({ category }) => residuals.has(category));
+  const qualifying = real.filter(({ count }) => count >= minCount)
+    .sort((left, right) => right.count - left.count || left.category.localeCompare(right.category));
+  const shown = qualifying.slice(0, top);
+  const shownCategories = new Set(shown.map(({ category }) => category));
+  const otherCount = real.reduce((sum, cell) => sum + (shownCategories.has(cell.category) ? 0 : cell.count), 0);
+  const output = [...shown];
+  if (otherCount > 0) output.push({ category: "other", count: otherCount });
+  residual.sort((left, right) => right.count - left.count || left.category.localeCompare(right.category));
+  output.push(...residual);
+  return { cells: output, total, top_n: top, min_shown_count: minCount };
 }
 
 export function discloseBreakdown(cells, k, universeSize) {

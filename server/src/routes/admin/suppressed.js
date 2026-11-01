@@ -1,6 +1,6 @@
 import { requireAdmin } from "../../admin-auth-utils.js";
 import { config } from "../../config.js";
-import { discloseAllCells, discloseBreakdown, discloseCount, discloseSubset } from "../../admin-disclosure.js";
+import { discloseCount, discloseSubset, discloseTopCells } from "../../admin-disclosure.js";
 import { BUSINESS_TYPE_IDS, COUNTRY_CODES, NO_BUSINESS_PROFILE, NO_VALID_CODE, SECTOR_IDS } from "../../admin-dimensions.js";
 import {
   METRIC_DEFINITIONS,
@@ -26,21 +26,18 @@ export const SUPPRESSED_OVERVIEW_METRIC_KEYS = Object.freeze([
 const DIMENSIONS = Object.freeze({
   // residuals: the non-category cells this dimension can report; they count in the universe size.
   country: {
-    smallCells: "shown",
     label: "Profile country code",
     categories: COUNTRY_CODES,
     residuals: [NO_VALID_CODE],
     statement: "Country is the two-letter code stored on the account profile. It may have been chosen by the account holder or filled in from the country of the account's phone number. It is not checked."
   },
   sector: {
-    smallCells: "shown",
     label: "Business sector",
     categories: SECTOR_IDS,
     residuals: [NO_BUSINESS_PROFILE],
     statement: "Sector is Konfirmata's category for the business. For a business type in the catalog it comes from the catalog; otherwise it is the sector the account holder chose, or 'Other business' when no sector could be determined. Accounts without a business profile are shown separately. The server does not verify the account's actual business."
   },
   business_type: {
-    smallCells: "combined",
     label: "Profile business type",
     categories: BUSINESS_TYPE_IDS,
     residuals: [NO_VALID_CODE, NO_BUSINESS_PROFILE],
@@ -57,17 +54,19 @@ function responseStatements({ k, dimension, residual }) {
     "Counts all accounts except those the owner has identified as internal test, demonstration or administrator accounts.",
     "Identification is the owner's own entry. It is not an independent confirmation."
   ];
-  if (dimension && DIMENSIONS[dimension].smallCells === "shown") {
-    statements.push(`Every ${dimension} is shown with its exact count, including small counts.`);
-  } else {
+  if (!dimension) {
     statements.push(
       `Figures based on fewer than ${k} accounts are reported as 'fewer than ${k}' or withheld.`,
       `Single reading. Not cleared for repeated release: comparing two readings taken at different times can reveal a change affecting fewer than ${k} accounts.`
     );
+  } else {
+    statements.push(
+      "Single reading. Not cleared for repeated release: comparing two readings taken at different times can reveal a change affecting small groups of accounts.",
+      "The 10 largest categories with 2 or more users are shown. Smaller categories and all remaining categories are combined in 'Other'."
+    );
   }
   statements.push("All time, as of the time shown. Records and attestations with a server timestamp before 1 January 2000 or later than the day after the figures were built are not counted.");
   if (dimension) statements.push(DIMENSIONS[dimension].statement);
-  if (residual) statements.push("'Other' combines two or more categories that are not shown separately.");
   return statements;
 }
 
@@ -77,7 +76,7 @@ function labels(state, options = {}) {
     api_version: API_VERSION,
     audience: "owner_only",
     release_status: "single_reading",
-    suppression: options.dimension && DIMENSIONS[options.dimension].smallCells === "shown" ? "none" : "minimum_cell_size",
+    suppression: options.dimension ? "owner_view_top_10" : "minimum_cell_size",
     minimum_cell_size: k,
     scope: "external_only",
     range: "all_time",
@@ -193,28 +192,39 @@ export async function registerAdminSuppressedRoutes(app) {
     const countOf = (category) => cells.find((cell) => cell.category === category)?.count || 0;
     const noBusinessProfile = countOf(NO_BUSINESS_PROFILE);
     const withCode = total - noBusinessProfile - countOf(NO_VALID_CODE);
+    const disclosed = discloseTopCells(cells, {
+      top: 10,
+      minCount: 2,
+      residualCategories: DIMENSIONS[dimension].residuals
+    });
     let result;
-    if (DIMENSIONS[dimension].residuals.includes(NO_BUSINESS_PROFILE)
+    if (disclosed.total < config.adminKAnonThreshold) {
+      result = {
+        status: "withheld",
+        reason: "total_below_minimum",
+        total: discloseCount(disclosed.total, disclosed.total, config.adminKAnonThreshold),
+        top_n: disclosed.top_n,
+        min_shown_count: disclosed.min_shown_count
+      };
+    } else if (DIMENSIONS[dimension].residuals.includes(NO_BUSINESS_PROFILE)
         && (total - noBusinessProfile) * 2 < total) {
       result = {
         status: "withheld",
         reason: "business_profiles_below_half",
-        total: discloseCount(total, total, config.adminKAnonThreshold)
+        total: discloseCount(total, total, config.adminKAnonThreshold),
+        top_n: disclosed.top_n,
+        min_shown_count: disclosed.min_shown_count
       };
     } else if (withCode * 2 < total) {
       result = {
         status: "withheld",
         reason: "valid_codes_below_half",
-        total: discloseCount(total, total, config.adminKAnonThreshold)
+        total: discloseCount(total, total, config.adminKAnonThreshold),
+        top_n: disclosed.top_n,
+        min_shown_count: disclosed.min_shown_count
       };
     } else {
-      result = DIMENSIONS[dimension].smallCells === "shown"
-        ? discloseAllCells(cells, config.adminKAnonThreshold)
-        : discloseBreakdown(
-          cells,
-          config.adminKAnonThreshold,
-          DIMENSIONS[dimension].categories.length + DIMENSIONS[dimension].residuals.length
-        );
+      result = { status: "published", ...disclosed };
     }
     const residual = result.status === "published"
       && result.cells.some(({ category }) => category === "other");

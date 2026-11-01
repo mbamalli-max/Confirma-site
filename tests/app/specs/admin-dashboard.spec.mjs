@@ -149,7 +149,7 @@ test("5. the exclusions line and the Settings counts come from the exclusions su
   const { exclusions } = firstReading;
   expect(exclusions.api_version).toBe(2);
   const changed = exclusions.exclusions_last_changed;
-  await expect(page.locator("#dash-exclusions-changed")).toHaveText(changed ? `${changed.slice(0, 10)} ${changed.slice(11, 16)} UTC` : "never");
+  await expect(page.locator("#dash-exclusions-changed")).toHaveText(changed ? "2026-10-26 23:03 EDT" : "never");
   await page.click('#tabs a[data-tab="settings"]');
   await expect(page.locator("#settings-exclusions")).toBeVisible();
   await expect(page.locator("#count-total")).toHaveText(String(exclusions.accounts.total));
@@ -181,12 +181,37 @@ test("7. the as-of time and the stale flag are shown", async () => {
     await route.fulfill({ response, body: JSON.stringify({ ...body, stale: true, as_of: asOf }) });
   });
   await page.selectOption("#period-select", "12m");
-  await expect(page.locator("#dash-as-of")).toHaveText("2026-10-27 03:00 UTC");
+  await expect(page.locator("#dash-as-of")).toHaveText("2026-10-26 23:00 EDT");
   await expect(page.locator("#dash-stale")).toBeVisible();
   await page.unroute(`${API_BASE}/admin/v2/overview?range=12m`);
   const fresh = await choosePeriod(page, "90d");
-  await expect(page.locator("#dash-as-of")).toHaveText(`${fresh.as_of.slice(0, 10)} ${fresh.as_of.slice(11, 16)} UTC`);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short"
+  }).formatToParts(new Date(fresh.as_of)).map((part) => [part.type, part.value]));
+  await expect(page.locator("#dash-as-of")).toHaveText(`${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} ${parts.timeZoneName}`);
   await expect(page.locator("#dash-stale")).toBeVisible({ visible: Boolean(fresh.stale) });
+});
+
+test("7a. displayed timestamps use New York EST/EDT, including both DST fallback offsets", async () => {
+  for (const [range, asOf, expected] of [
+    ["30d", "2026-01-15T17:30:00.000Z", "2026-01-15 12:30 EST"],
+    ["12m", "2026-07-15T16:30:00.000Z", "2026-07-15 12:30 EDT"],
+    ["all", "2026-11-01T04:30:00.000Z", "2026-11-01 00:30 EDT"],
+    ["90d", "2026-11-01T06:30:00.000Z", "2026-11-01 01:30 EST"]
+  ]) {
+    const path = `${API_BASE}/admin/v2/overview?range=${range}`;
+    await page.route(path, async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      await route.fulfill({ response, body: JSON.stringify({ ...body, as_of: asOf }) });
+    });
+    await page.selectOption("#period-select", range);
+    await expect(page.locator("#dash-as-of")).toHaveText(expected);
+    await expect(page.locator("#dash-as-of")).not.toContainText("UTC");
+    await expect(page.locator("#dashboard-screen")).not.toContainText("UTC");
+    await page.unroute(path);
+  }
 });
 
 test("8. a revoked session returns to sign-in and removes every figure", async () => {
@@ -319,9 +344,9 @@ function sampleBreakdown(dimension, result = { status: "published", cells: dimen
     ? [{ category: "NG", count: 7 }]
     : [{ category: "ng_market_trader", count: 7 }, { category: "other", count: 5 }], total: ["country", "sector"].includes(dimension) ? 7 : 12 }, k = 5) {
   return {
-    api_version: 2, audience: "owner_only", release_status: "single_reading", suppression: ["country", "sector"].includes(dimension) ? "none" : "minimum_cell_size", minimum_cell_size: k,
+    api_version: 2, audience: "owner_only", release_status: "single_reading", suppression: "owner_view_top_10", minimum_cell_size: k,
     scope: "external_only", range: "all_time", as_of: SERVED_AS_OF, stale: false, dimension, dimension_label: dimension,
-    statements: ["Counts all accounts except those the owner has identified as internal test, demonstration or administrator accounts.", `${dimension === "country" ? "Country" : dimension === "sector" ? "Sector" : "Business type"} is the stored code. Provenance statement.`, ...(["country", "sector"].includes(dimension) ? [`Every ${dimension} is shown with its exact count, including small counts.`] : [])],
+    statements: ["Counts all accounts except those the owner has identified as internal test, demonstration or administrator accounts.", "The 10 largest categories with 2 or more users are shown. Smaller categories and all remaining categories are combined in 'Other'.", `${dimension === "country" ? "Country" : dimension === "sector" ? "Sector" : "Business type"} is the stored code. Provenance statement.`],
     result
   };
 }
@@ -398,7 +423,7 @@ test("14. a late response for an ended session changes nothing in the new sessio
     await expect(target.locator("#dashboard-screen")).toBeVisible();
     await expect(target.locator("#signin-screen")).toBeHidden();
     await expect(target.locator("#kpi-external-value")).toHaveText("1");
-    await expect(target.locator("#dash-exclusions-changed")).toHaveText("2026-10-27 03:03 UTC");
+    await expect(target.locator("#dash-exclusions-changed")).toHaveText("2026-10-26 23:03 EDT");
   } finally {
     await ctx.close();
   }
@@ -420,7 +445,7 @@ test("14b. a late network failure for an ended session changes nothing in the ne
     await expect(target.locator("#signin-screen")).toBeVisible();
     await servedSignIn(target);
     await expect(target.locator("#kpi-external-value")).toHaveText("1");
-    await expect(target.locator("#dash-exclusions-changed")).toHaveText("2026-10-27 03:03 UTC");
+    await expect(target.locator("#dash-exclusions-changed")).toHaveText("2026-10-26 23:03 EDT");
     let failed = 0;
     const late = new Promise((resolve) => {
       target.on("requestfailed", (r) => {
@@ -430,7 +455,7 @@ test("14b. a late network failure for an ended session changes nothing in the ne
     release.open();
     await late;
     await target.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
-    await expect(target.locator("#dash-exclusions-changed")).toHaveText("2026-10-27 03:03 UTC");
+    await expect(target.locator("#dash-exclusions-changed")).toHaveText("2026-10-26 23:03 EDT");
     await expect(target.locator("#dash-unavailable")).toBeHidden();
     await expect(target.locator("#kpi-external-value")).toHaveText("1");
   } finally {
@@ -846,14 +871,14 @@ test("D3. audience bars show labelled categories; withheld reasons are distinct 
   const results = {
     country: sampleBreakdown("country", { status: "withheld", reason: "total_below_minimum", total: { status: "fewer_than_k" } }, 10),
     sector: sampleBreakdown("sector", { status: "withheld", reason: "valid_codes_below_half", total: { status: "published", value: 12 } }, 10),
-    business_type: sampleBreakdown("business_type", { status: "withheld", reason: "residual_unsafe", total: { status: "published", value: 12 } }, 10)
+    business_type: sampleBreakdown("business_type", { status: "withheld", reason: "business_profiles_below_half", total: { status: "published", value: 12 } }, 10)
   };
   const withheld = await servedPage(browser, async ({ url, send }) => (url.pathname === "/admin/v2/breakdown" ? send(200, results[url.searchParams.get("dimension")]) : undefined));
   try {
     await servedSignIn(withheld.target);
     await expect(withheld.target.locator("#aud-country .withheld")).toHaveText("Withheld — fewer than 10 registered users in total.");
     await expect(withheld.target.locator("#aud-sector .withheld")).toHaveText("Withheld — fewer than half of registered users have a valid profile sector code.");
-    await expect(withheld.target.locator("#aud-business_type .withheld")).toHaveText("Withheld — the categories are too small to show or group safely.");
+    await expect(withheld.target.locator("#aud-business_type .withheld")).toHaveText("Withheld — fewer than half of registered users have a business profile.");
     for (const dimension of ["country", "sector", "business_type"]) {
       await expect(withheld.target.locator(`#aud-${dimension} .bar-row`)).toHaveCount(0);
       await expect(withheld.target.locator(`#aud-${dimension} .breakdown-body`)).not.toContainText(/\b0\b/);
@@ -869,7 +894,8 @@ test("D3. audience bars show labelled categories; withheld reasons are distinct 
     await expect(t.locator("#aud-sector .bar-row .bar-label")).toHaveText(["Trade & Retail"]);
     await expect(t.locator("#aud-business_type .bar-row .bar-label")).toHaveText(["Market Trader (NG)", "Other (combined)"]);
     await expect(t.locator("#aud-country .bar-row .bar-count")).toHaveText(["7"]);
-    await expect(t.locator("#aud-country")).not.toContainText("Other combines two or more categories");
+    await expect(t.locator("#aud-country")).toContainText("Showing the 10 largest categories that have 2 or more users.");
+    await expect(t.locator("#aud-country")).toContainText("Owner view only. These counts include small groups and are not for external publication or sharing.");
     await expect(t.locator("#aud-country")).toContainText("Total registered users: 7");
     await expect(t.locator("#audience-title")).toHaveText("Audience — current profiles of registered users");
     await expect(t.locator("#dashboard-screen")).toContainText("not affected by the period");
@@ -882,11 +908,11 @@ test("D3. audience bars show labelled categories; withheld reasons are distinct 
   }
 });
 
-test("D3a. country bars show every country in count order and label missing or invalid codes", async ({ browser }) => {
+test("D3a. country bars show top-policy categories in count order and label missing or invalid codes", async ({ browser }) => {
   const results = {
     country: sampleBreakdown("country", { status: "published", cells: [
-      { category: "NG", count: 2 }, { category: "GB", count: 2 },
-      { category: "US", count: 3 }, { category: "no_valid_code", count: 1 }
+      { category: "US", count: 3 }, { category: "GB", count: 2 },
+      { category: "NG", count: 2 }, { category: "no_valid_code", count: 1 }
     ], total: 8 }),
     sector: sampleBreakdown("sector"),
     business_type: sampleBreakdown("business_type")
@@ -897,9 +923,9 @@ test("D3a. country bars show every country in count order and label missing or i
   try {
     await servedSignIn(target);
     await expect(target.locator("#aud-country .bar-row .bar-label")).toHaveText([
-      "United States (US)", "Nigeria (NG)", "United Kingdom (GB)", "No country"
+      "United States (US)", "United Kingdom (GB)", "Nigeria (NG)", "No country"
     ]);
-    await expect(target.locator("#aud-country")).not.toContainText("Other combines");
+    await expect(target.locator("#aud-country")).toContainText("Showing the 10 largest categories that have 2 or more users.");
   } finally {
     await ctx.close();
   }
@@ -923,7 +949,7 @@ test("D4. the period changes only the activity figures; audience and growth are 
 
 test("D5. rebuild asks first and reports rebuilt, already rebuilding, limit, failure and unconfirmed distinctly", async ({ browser }) => {
   const outcomes = [
-    [(send) => send(200, { ...SAMPLE_STATUS, rebuilt: true, built_at: "2026-10-28T01:02:00.000Z", as_of: "2026-10-28T01:02:00.000Z" }), "Rebuilt. Figures as of 2026-10-28 01:02 UTC."],
+    [(send) => send(200, { ...SAMPLE_STATUS, rebuilt: true, built_at: "2026-10-28T01:02:00.000Z", as_of: "2026-10-28T01:02:00.000Z" }), "Rebuilt. Figures as of 2026-10-27 21:02 EDT."],
     [(send) => send(200, { ...SAMPLE_STATUS, rebuilt: false, reason: "in_progress" }), "Already rebuilding. Check again shortly."],
     [(send) => send(429, { error: "Too Many Requests" }), "Refresh limit reached (6 per hour)."],
     [(send) => send(200, { ...SAMPLE_STATUS, rebuilt: false, reason: "failed" }), "Rebuild failed."],
@@ -1045,19 +1071,19 @@ test("D10. an older exclusions or status answer never replaces a newer one in th
     await target.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
     await expect(target.locator("#count-external")).toHaveText("11");
     await expect(target.locator("#count-excluded")).toHaveText("4");
-    await expect(target.locator("#dash-exclusions-changed")).toHaveText("2026-10-28 02:10 UTC");
+    await expect(target.locator("#dash-exclusions-changed")).toHaveText("2026-10-27 22:10 EDT");
 
     // The Quality tab's status request is held; a completed rebuild asks again and gets the newer answer.
     await target.evaluate(() => { location.hash = "#settings/quality"; });
     await expect.poll(() => statusCalls).toBe(1);
     await target.click("#refresh-button");
     await target.click("#refresh-go");
-    await expect(target.locator("#q-built-at")).toHaveText("2026-10-28 02:10 UTC");
+    await expect(target.locator("#q-built-at")).toHaveText("2026-10-27 22:10 EDT");
     const oldStatus = target.waitForResponse((r) => r.url().includes("/v2/status") && statusCalls === 2);
     firstStatus.open();
     await oldStatus;
     await target.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
-    await expect(target.locator("#q-built-at")).toHaveText("2026-10-28 02:10 UTC");
+    await expect(target.locator("#q-built-at")).toHaveText("2026-10-27 22:10 EDT");
   } finally {
     await ctx.close();
   }
@@ -1066,8 +1092,8 @@ test("D10. an older exclusions or status answer never replaces a newer one in th
 test("D11. sector categories: every business in a sector, no business profile apart, defaults counted only in Data quality", async ({ browser }) => {
   const results = {
     sector: sampleBreakdown("sector", { status: "published", cells: [
-      { category: "transport_logistics", count: 2 }, { category: "agriculture", count: 2 },
-      { category: "trade_retail", count: 3 }, { category: "no_business_profile", count: 1 }
+      { category: "trade_retail", count: 3 }, { category: "agriculture", count: 2 },
+      { category: "transport_logistics", count: 2 }, { category: "no_business_profile", count: 1 }
     ], total: 8 }),
     business_type: sampleBreakdown("business_type", { status: "published", cells: [
       { category: "no_business_profile", count: 6 }, { category: "no_valid_code", count: 5 }, { category: "unlisted", count: 5 }
@@ -1078,7 +1104,7 @@ test("D11. sector categories: every business in a sector, no business profile ap
   try {
     await servedSignIn(target);
     await expect(target.locator("#aud-sector .bar-row .bar-label")).toHaveText(["Trade & Retail", "Agriculture, Livestock & Fishing", "Transport & Logistics", "No business profile"]);
-    await expect(target.locator("#aud-sector")).not.toContainText("Other combines");
+    await expect(target.locator("#aud-sector")).toContainText("Showing the 10 largest categories that have 2 or more users.");
     await expect(target.locator("#aud-business_type .bar-row .bar-label")).toHaveText(["No business profile", "No business type", "Not listed in the catalog"]);
     await expect(target.locator("#aud-country .withheld")).toHaveText("Withheld — fewer than half of registered users have a business profile.");
     await expect(target.locator("#dashboard-screen")).not.toContainText(/not yet categori[sz]ed|by default/i);
@@ -1093,7 +1119,7 @@ test("D11. sector categories: every business in a sector, no business profile ap
     const mentions = await target.evaluate(() => document.body.textContent.split("not an official industry classification").length - 1);
     expect(mentions).toBe(1);
     await expect(target.locator("#settings-methodology")).toContainText("not an official industry classification");
-    await expect(target.locator("#settings-methodology")).toContainText("Business type categories too small to show safely are withheld or combined as \"Other\". Countries and sectors are shown with their exact counts, however small. Withheld figures are never shown as zero.");
+    await expect(target.locator("#settings-methodology")).toContainText("Country, sector and business type use the same owner-view policy: the 10 largest categories with 2 or more users are shown, and smaller or remaining categories are combined as \"Other\". Withheld figures are never shown as zero.");
   } finally {
     await ctx.close();
   }
