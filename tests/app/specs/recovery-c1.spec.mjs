@@ -315,9 +315,18 @@ test("RC6 refuses each missing precondition without changing records", async ({ 
         request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
       });
     };
+    const sessionGuard = {
+      sessionGeneration: 7, wipeEpoch: 3, boundAccount: "account-a",
+      authToken: "fixture-session-token", authTokenExpiresAt: "2999-01-01T00:00:00.000Z"
+    };
     const seed = async (db, durableState, snapshot) => new Promise((resolve, reject) => {
       const tx = db.transaction(["settings", "records", "syncQueue", "recoverySnapshots", "recoveryWork"], "readwrite");
       ["records", "syncQueue", "recoverySnapshots", "recoveryWork"].forEach((name) => tx.objectStore(name).clear());
+      Object.entries({
+        session_generation: sessionGuard.sessionGeneration, wipe_epoch: sessionGuard.wipeEpoch,
+        signed_out: false, wipe_pending: false, bound_account: sessionGuard.boundAccount,
+        auth_token: sessionGuard.authToken, auth_token_expires_at: sessionGuard.authTokenExpiresAt
+      }).forEach(([key, value]) => tx.objectStore("settings").put({ key, value }));
       tx.objectStore("settings").put({ key: "held_drafts", value: [{ confirmation_state: "held_draft", fixture: 1 }] });
       if (durableState) tx.objectStore("settings").put({ key: "recovery_state", value: durableState });
       else tx.objectStore("settings").delete("recovery_state");
@@ -357,7 +366,7 @@ test("RC6 refuses each missing precondition without changing records", async ({ 
       await seed(db, durableState, snapshot);
       const before = await dump(db);
       let errorName = "";
-      try { await recovery.applyRebuild(db, plan); } catch (error) { errorName = error.name; }
+      try { await recovery.applyRebuild(db, plan, {}, { sessionGuard }); } catch (error) { errorName = error.name; }
       const after = await dump(db);
       const held = JSON.parse(after).settings.find((row) => row.key === "held_drafts")?.value;
       outcomes.push({ errorName, unchanged: before === after, held });
@@ -381,9 +390,18 @@ test("rebuild is atomic, records outcomes before removal, restores R, and leaves
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
     const stores = ["settings", "records", "syncQueue", "recoverySnapshots", "recoveryWork"];
+    const sessionGuard = {
+      sessionGeneration: 7, wipeEpoch: 3, boundAccount: "account-a",
+      authToken: "fixture-session-token", authTokenExpiresAt: "2999-01-01T00:00:00.000Z"
+    };
     const seed = () => new Promise((resolve, reject) => {
       const tx = db.transaction(stores, "readwrite");
       ["records", "syncQueue", "recoverySnapshots", "recoveryWork"].forEach((name) => tx.objectStore(name).clear());
+      Object.entries({
+        session_generation: sessionGuard.sessionGeneration, wipe_epoch: sessionGuard.wipeEpoch,
+        signed_out: false, wipe_pending: false, bound_account: sessionGuard.boundAccount,
+        auth_token: sessionGuard.authToken, auth_token_expires_at: sessionGuard.authTokenExpiresAt
+      }).forEach(([key, value]) => tx.objectStore("settings").put({ key, value }));
       tx.objectStore("settings").put({ key: "recovery_state", value: {
         recovery_id: "apply-test", state: "uploaded", remote_ack: true
       } });
@@ -421,9 +439,9 @@ test("rebuild is atomic, records outcomes before removal, restores R, and leaves
       }]
     };
     await seed();
-    await recovery.applyRebuild(db, plan);
+    await recovery.applyRebuild(db, plan, {}, { sessionGuard });
     const applied = await dump();
-    await recovery.applyRebuild(db, plan);
+    await recovery.applyRebuild(db, plan, {}, { sessionGuard });
     const appliedAgain = await dump();
 
     await seed();
@@ -446,7 +464,7 @@ test("rebuild is atomic, records outcomes before removal, restores R, and leaves
       return abortRecoveryWorkWrite.call(this, originalAdd, value, key);
     };
     let aborted = false;
-    try { await recovery.applyRebuild(db, plan); } catch { aborted = true; }
+    try { await recovery.applyRebuild(db, plan, {}, { sessionGuard }); } catch { aborted = true; }
     finally {
       IDBObjectStore.prototype.put = originalPut;
       IDBObjectStore.prototype.add = originalAdd;
@@ -482,6 +500,10 @@ test("rebuild collisions abort atomically for occupied destinations and changed 
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
     const stores = ["settings", "records", "syncQueue", "recoverySnapshots", "recoveryWork"];
+    const sessionGuard = {
+      sessionGeneration: 7, wipeEpoch: 3, boundAccount: "account-a",
+      authToken: "fixture-session-token", authTokenExpiresAt: "2999-01-01T00:00:00.000Z"
+    };
     const original = { id: 1, entry_hash: "original", device_identity: "device-a" };
     const imported = {
       id: 1_000_000_003, server_entry_id: 3, entry_hash: "restored", device_identity: "device-a", importedFromServer: true
@@ -506,6 +528,11 @@ test("rebuild collisions abort atomically for occupied destinations and changed 
     const seed = (mutation) => new Promise((resolve, reject) => {
       const tx = db.transaction(stores, "readwrite");
       for (const name of ["records", "syncQueue", "recoverySnapshots", "recoveryWork"]) tx.objectStore(name).clear();
+      Object.entries({
+        session_generation: sessionGuard.sessionGeneration, wipe_epoch: sessionGuard.wipeEpoch,
+        signed_out: false, wipe_pending: false, bound_account: sessionGuard.boundAccount,
+        auth_token: sessionGuard.authToken, auth_token_expires_at: sessionGuard.authTokenExpiresAt
+      }).forEach(([key, value]) => tx.objectStore("settings").put({ key, value }));
       tx.objectStore("settings").put({ key: "recovery_state", value: {
         recovery_id: plan.recovery_id, state: "uploaded", remote_ack: true
       } });
@@ -530,7 +557,7 @@ test("rebuild collisions abort atomically for occupied destinations and changed 
       await seed(mutation);
       const before = await dump();
       let errorName = "";
-      try { await recovery.applyRebuild(db, plan); } catch (error) { errorName = error.name; }
+      try { await recovery.applyRebuild(db, plan, {}, { sessionGuard }); } catch (error) { errorName = error.name; }
       const after = await dump();
       outcomes.push({ errorName, unchanged: before === after });
     }
@@ -549,10 +576,19 @@ test("snapshots are create-once across retries, rebuilds, interrupted verificati
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
     const stores = ["settings", "records", "syncQueue", "recoverySnapshots", "recoveryWork"];
+    const sessionGuard = {
+      sessionGeneration: 7, wipeEpoch: 3, boundAccount: "account-a",
+      authToken: "fixture-session-token", authTokenExpiresAt: "2999-01-01T00:00:00.000Z"
+    };
     const original = { id: 1, entry_hash: "snapshot-original", device_identity: "device-a" };
     const reset = (recoveryId) => new Promise((resolve, reject) => {
       const tx = db.transaction(stores, "readwrite");
       for (const name of ["records", "syncQueue", "recoverySnapshots", "recoveryWork"]) tx.objectStore(name).clear();
+      Object.entries({
+        session_generation: sessionGuard.sessionGeneration, wipe_epoch: sessionGuard.wipeEpoch,
+        signed_out: false, wipe_pending: false, bound_account: sessionGuard.boundAccount,
+        auth_token: sessionGuard.authToken, auth_token_expires_at: sessionGuard.authTokenExpiresAt
+      }).forEach(([key, value]) => tx.objectStore("settings").put({ key, value }));
       tx.objectStore("settings").put({ key: "recovery_state", value: {
         recovery_id: recoveryId, state: "suspect", remote_ack: false
       } });
@@ -579,7 +615,7 @@ test("snapshots are create-once across retries, rebuilds, interrupted verificati
         queueEntry: { entry_id: 2, entry_hash: "snapshot-replacement", device_identity: "device-a" }
       }]
     };
-    await recovery.applyRebuild(db, plan);
+    await recovery.applyRebuild(db, plan, {}, { sessionGuard });
     const afterRebuild = await recovery.takeSnapshot(db, options);
 
     await reset("interrupted-verification");
@@ -638,6 +674,10 @@ test("overlapping replacement ids replay as a no-op and preserve first work byte
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
     const stores = ["settings", "records", "syncQueue", "recoverySnapshots", "recoveryWork"];
+    const sessionGuard = {
+      sessionGeneration: 7, wipeEpoch: 3, boundAccount: "account-a",
+      authToken: "fixture-session-token", authTokenExpiresAt: "2999-01-01T00:00:00.000Z"
+    };
     const original1 = { id: 1, entry_hash: "rejected-one", device_identity: "device-a" };
     const original2 = { id: 2, entry_hash: "rejected-two", device_identity: "device-a" };
     const acceptedCopy = {
@@ -657,6 +697,11 @@ test("overlapping replacement ids replay as a no-op and preserve first work byte
     const seed = () => new Promise((resolve, reject) => {
       const tx = db.transaction(stores, "readwrite");
       for (const name of ["records", "syncQueue", "recoverySnapshots", "recoveryWork"]) tx.objectStore(name).clear();
+      Object.entries({
+        session_generation: sessionGuard.sessionGeneration, wipe_epoch: sessionGuard.wipeEpoch,
+        signed_out: false, wipe_pending: false, bound_account: sessionGuard.boundAccount,
+        auth_token: sessionGuard.authToken, auth_token_expires_at: sessionGuard.authTokenExpiresAt
+      }).forEach(([key, value]) => tx.objectStore("settings").put({ key, value }));
       tx.objectStore("settings").put({ key: "recovery_state", value: {
         recovery_id: plan.recovery_id, state: "uploaded", remote_ack: true
       } });
@@ -679,9 +724,9 @@ test("overlapping replacement ids replay as a no-op and preserve first work byte
       tx.oncomplete = () => resolve(output); tx.onerror = () => reject(tx.error);
     });
     await seed();
-    await recovery.applyRebuild(db, plan);
+    await recovery.applyRebuild(db, plan, {}, { sessionGuard });
     const first = await dump();
-    await recovery.applyRebuild(db, plan);
+    await recovery.applyRebuild(db, plan, {}, { sessionGuard });
     const second = await dump();
 
     const different = structuredClone(plan);
@@ -689,7 +734,7 @@ test("overlapping replacement ids replay as a no-op and preserve first work byte
     different.items[0].queueEntry.entry_hash = "different-replacement";
     const beforeDifferent = JSON.stringify(await dump());
     let differentError = "";
-    try { await recovery.applyRebuild(db, different); } catch (error) { differentError = error.name; }
+    try { await recovery.applyRebuild(db, different, {}, { sessionGuard }); } catch (error) { differentError = error.name; }
     const afterDifferent = JSON.stringify(await dump());
 
     await seed();
@@ -705,10 +750,10 @@ test("overlapping replacement ids replay as a no-op and preserve first work byte
       return added;
     };
     let aborted = false;
-    try { await recovery.applyRebuild(db, plan); } catch { aborted = true; }
+    try { await recovery.applyRebuild(db, plan, {}, { sessionGuard }); } catch { aborted = true; }
     finally { IDBObjectStore.prototype.add = originalAdd; }
     const afterAbort = JSON.stringify(await dump());
-    await recovery.applyRebuild(db, plan);
+    await recovery.applyRebuild(db, plan, {}, { sessionGuard });
     const retried = await dump();
     db.close();
     return {
@@ -725,6 +770,208 @@ test("overlapping replacement ids replay as a no-op and preserve first work byte
     differentError: "RecoveryCollisionError", differentUnchanged: true,
     aborted: true, abortUnchanged: true, retryQueueHashes: ["replacement-one", "replacement-two"]
   });
+});
+
+test("rebuild session guard refuses sign-out, wipe, session, account, token, and expiry changes atomically", async ({ page }) => {
+  await openApp(page);
+  const result = await page.evaluate(async () => {
+    const recovery = await import("/app/recovery-core.js");
+    const request = indexedDB.open("confirma-v3-db", 6);
+    const db = await new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    const stores = ["settings", "records", "syncQueue", "recoverySnapshots", "recoveryWork"];
+    const sessionGuard = {
+      sessionGeneration: 7, wipeEpoch: 3, boundAccount: "account-a",
+      authToken: "fixture-session-token", authTokenExpiresAt: "2999-01-01T00:00:00.000Z"
+    };
+    const plan = {
+      recovery_id: "guard-test", server_head: { entry_id: 0, entry_hash: "head" }, r_copies: [],
+      replacement_hashes: { "fixture-original": "fixture-replacement" }, items: [{
+        original: { id: 1, entry_hash: "fixture-original", device_identity: "device-a" },
+        replacement: { id: 2, entry_hash: "fixture-replacement", device_identity: "device-a" },
+        queueEntry: { entry_id: 2, entry_hash: "fixture-replacement", device_identity: "device-a" }
+      }]
+    };
+    const baselineSettings = {
+      session_generation: sessionGuard.sessionGeneration, wipe_epoch: sessionGuard.wipeEpoch,
+      signed_out: false, wipe_pending: false, bound_account: sessionGuard.boundAccount,
+      auth_token: sessionGuard.authToken, auth_token_expires_at: sessionGuard.authTokenExpiresAt,
+      recovery_state: { recovery_id: plan.recovery_id, state: "uploaded", remote_ack: true }
+    };
+    const seed = (overrides = {}) => new Promise((resolve, reject) => {
+      const tx = db.transaction(stores, "readwrite");
+      for (const name of stores) tx.objectStore(name).clear();
+      Object.entries({ ...baselineSettings, ...overrides })
+        .forEach(([key, value]) => tx.objectStore("settings").put({ key, value }));
+      tx.objectStore("records").put(plan.items[0].original);
+      tx.objectStore("syncQueue").add({
+        entry_id: 1, entry_hash: plan.items[0].original.entry_hash, device_identity: "device-a"
+      });
+      tx.objectStore("recoverySnapshots").put({
+        recovery_id: plan.recovery_id, device_identity: "device-a", read_back_verified: true,
+        records: [plan.items[0].original], queue: [], outcomes: {}
+      });
+      tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+    });
+    const dump = () => new Promise((resolve, reject) => {
+      const output = {};
+      const tx = db.transaction(stores, "readonly");
+      for (const name of stores) {
+        const get = tx.objectStore(name).getAll(); get.onsuccess = () => { output[name] = get.result; };
+      }
+      tx.oncomplete = () => resolve(JSON.stringify(output)); tx.onerror = () => reject(tx.error);
+    });
+    const captureGuard = () => new Promise((resolve, reject) => {
+      const keys = ["session_generation", "wipe_epoch", "bound_account", "auth_token", "auth_token_expires_at"];
+      const values = {};
+      const tx = db.transaction("settings", "readonly");
+      for (const key of keys) {
+        const get = tx.objectStore("settings").get(key);
+        get.onsuccess = () => { values[key] = get.result?.value; };
+      }
+      tx.oncomplete = () => resolve({
+        sessionGeneration: values.session_generation, wipeEpoch: values.wipe_epoch,
+        boundAccount: values.bound_account, authToken: values.auth_token,
+        authTokenExpiresAt: values.auth_token_expires_at
+      });
+      tx.onerror = () => reject(tx.error);
+    });
+    const refuse = async (label, guard = sessionGuard) => {
+      const before = await dump();
+      let errorName = "";
+      let safeMessage = false;
+      try { await recovery.applyRebuild(db, plan, {}, { sessionGuard: guard }); }
+      catch (error) {
+        errorName = error.name;
+        const message = String(error.message || "");
+        safeMessage = ![sessionGuard.authToken, "replacement-session-token", "fixture-original"]
+          .some((value) => message.includes(value));
+      }
+      const after = await dump();
+      return { label, errorName, unchanged: before === after, safeMessage };
+    };
+    const outcomes = [];
+    const cases = [
+      ["signed_out_before_call", { signed_out: true }],
+      ["wipe_pending", { wipe_pending: true }],
+      ["session_generation_bump", { session_generation: sessionGuard.sessionGeneration + 1 }],
+      ["wipe_epoch_change", { wipe_epoch: sessionGuard.wipeEpoch + 1 }],
+      ["account_switch", { bound_account: "account-b" }],
+      ["token_replaced", { auth_token: "replacement-session-token" }],
+      ["token_expired", { auth_token_expires_at: "2000-01-01T00:00:00.000Z" }]
+    ];
+    for (const [label, overrides] of cases) {
+      await seed(overrides);
+      outcomes.push(await refuse(label));
+    }
+
+    await seed();
+    const capturedBeforeSignOut = await captureGuard();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("settings", "readwrite");
+      Object.entries({
+        signed_out: true, auth_token: "", auth_token_expires_at: "",
+        session_generation: capturedBeforeSignOut.sessionGeneration + 1
+      }).forEach(([key, value]) => tx.objectStore("settings").put({ key, value }));
+      tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+    });
+    outcomes.push(await refuse("sign_out_after_guard_capture", capturedBeforeSignOut));
+    db.close();
+    return outcomes;
+  });
+  expect(result).toHaveLength(8);
+  for (const outcome of result) {
+    expect(outcome.errorName).toBe("RecoverySessionChangedError");
+    expect(outcome.unchanged).toBe(true);
+    expect(outcome.safeMessage).toBe(true);
+  }
+});
+
+test("rebuild session guard fails closed when missing or malformed and a matching guard rebuilds", async ({ page }) => {
+  await openApp(page);
+  const result = await page.evaluate(async () => {
+    const recovery = await import("/app/recovery-core.js");
+    const request = indexedDB.open("confirma-v3-db", 6);
+    const db = await new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    const stores = ["settings", "records", "syncQueue", "recoverySnapshots", "recoveryWork"];
+    const sessionGuard = {
+      sessionGeneration: 7, wipeEpoch: 3, boundAccount: "account-a",
+      authToken: "fixture-session-token", authTokenExpiresAt: "2999-01-01T00:00:00.000Z"
+    };
+    const original = { id: 1, entry_hash: "fixture-original", device_identity: "device-a" };
+    const replacement = { id: 2, entry_hash: "fixture-replacement", device_identity: "device-a" };
+    const plan = {
+      recovery_id: "guard-shape-test", server_head: { entry_id: 0, entry_hash: "head" }, r_copies: [],
+      replacement_hashes: { "fixture-original": "fixture-replacement" }, items: [{
+        original, replacement,
+        queueEntry: { entry_id: 2, entry_hash: replacement.entry_hash, device_identity: "device-a" }
+      }]
+    };
+    const seed = () => new Promise((resolve, reject) => {
+      const tx = db.transaction(stores, "readwrite");
+      for (const name of stores) tx.objectStore(name).clear();
+      Object.entries({
+        session_generation: sessionGuard.sessionGeneration, wipe_epoch: sessionGuard.wipeEpoch,
+        signed_out: false, wipe_pending: false, bound_account: sessionGuard.boundAccount,
+        auth_token: sessionGuard.authToken, auth_token_expires_at: sessionGuard.authTokenExpiresAt,
+        recovery_state: { recovery_id: plan.recovery_id, state: "uploaded", remote_ack: true }
+      }).forEach(([key, value]) => tx.objectStore("settings").put({ key, value }));
+      tx.objectStore("records").put(original);
+      tx.objectStore("syncQueue").add({ entry_id: 1, entry_hash: original.entry_hash, device_identity: "device-a" });
+      tx.objectStore("recoverySnapshots").put({
+        recovery_id: plan.recovery_id, device_identity: "device-a", read_back_verified: true,
+        records: [original], queue: [], outcomes: {}
+      });
+      tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+    });
+    const dump = () => new Promise((resolve, reject) => {
+      const output = {};
+      const tx = db.transaction(stores, "readonly");
+      for (const name of stores) {
+        const get = tx.objectStore(name).getAll(); get.onsuccess = () => { output[name] = get.result; };
+      }
+      tx.oncomplete = () => resolve(output); tx.onerror = () => reject(tx.error);
+    });
+    const refuse = async (deps) => {
+      await seed();
+      const before = JSON.stringify(await dump());
+      let errorName = "";
+      let safeMessage = false;
+      try { await recovery.applyRebuild(db, plan, {}, deps); }
+      catch (error) {
+        errorName = error.name;
+        const message = String(error.message || "");
+        safeMessage = !message.includes(sessionGuard.authToken) && !message.includes(original.entry_hash);
+      }
+      const after = JSON.stringify(await dump());
+      return { errorName, unchanged: before === after, safeMessage };
+    };
+    const missing = await refuse(undefined);
+    const malformed = await refuse({ sessionGuard: { ...sessionGuard, authToken: "" } });
+    await seed();
+    await recovery.applyRebuild(db, plan, {}, { sessionGuard });
+    const applied = await dump();
+    db.close();
+    return {
+      missing, malformed,
+      matchingApplied: applied.records.some((row) => row.entry_hash === replacement.entry_hash)
+        && applied.recoveryWork.length === 1,
+      matchingSettingsUnchanged: applied.settings.some((row) => (
+        row.key === "session_generation" && row.value === sessionGuard.sessionGeneration
+      ))
+    };
+  });
+  expect(result.missing).toEqual({
+    errorName: "RecoverySessionChangedError", unchanged: true, safeMessage: true
+  });
+  expect(result.malformed).toEqual({
+    errorName: "RecoverySessionChangedError", unchanged: true, safeMessage: true
+  });
+  expect(result.matchingApplied).toBe(true);
+  expect(result.matchingSettingsUnchanged).toBe(true);
 });
 
 test("opening the app upgrades a populated v5 database to v6 without changing existing rows", async ({ page }) => {

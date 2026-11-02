@@ -23,6 +23,13 @@ export class RecoveryCollisionError extends Error {
   }
 }
 
+export class RecoverySessionChangedError extends Error {
+  constructor(message = "Recovery stopped because the signed-in session changed.") {
+    super(message);
+    this.name = "RecoverySessionChangedError";
+  }
+}
+
 export function buildCanonical(record, id, confirmedAt, prevHash) {
   return [
     id,
@@ -443,7 +450,46 @@ function recordMatches(row, expected) {
     && String(row.device_identity || "") === String(expected.device_identity || ""));
 }
 
+function isValidSessionGuard(guard) {
+  const owns = (key) => Object.prototype.hasOwnProperty.call(guard, key);
+  return Boolean(guard && typeof guard === "object" && !Array.isArray(guard)
+    && owns("sessionGeneration") && owns("wipeEpoch") && owns("boundAccount") && owns("authToken")
+    && Number.isSafeInteger(guard.sessionGeneration) && guard.sessionGeneration >= 0
+    && Number.isSafeInteger(guard.wipeEpoch) && guard.wipeEpoch >= 0
+    && typeof guard.boundAccount === "string" && guard.boundAccount.length > 0
+    && typeof guard.authToken === "string" && guard.authToken.length > 0
+    && (!Object.prototype.hasOwnProperty.call(guard, "authTokenExpiresAt")
+      || typeof guard.authTokenExpiresAt === "string"));
+}
+
+function storedSessionMatchesGuard(values, guard) {
+  const expiresAtMs = new Date(values.get("auth_token_expires_at")).getTime();
+  return Number(values.get("session_generation") || 0) === Number(guard.sessionGeneration || 0)
+    && Number(values.get("wipe_epoch") || 0) === Number(guard.wipeEpoch || 0)
+    && values.get("signed_out") !== true
+    && values.get("wipe_pending") !== true
+    && String(values.get("bound_account") || "") === String(guard.boundAccount || "")
+    && String(values.get("auth_token") || "") === String(guard.authToken || "")
+    && Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
+}
+
+// The caller must capture one sessionGuard before starting asynchronous work
+// and carry it unchanged. Never capture a fresh guard after an await to
+// authorize a response produced for an older session.
 export function applyRebuild(db, plan, state = {}, deps = {}) {
+  const suppliedSessionGuard = deps?.sessionGuard;
+  if (!isValidSessionGuard(suppliedSessionGuard)) {
+    return Promise.reject(new RecoverySessionChangedError());
+  }
+  const sessionGuard = {
+    sessionGeneration: suppliedSessionGuard.sessionGeneration,
+    wipeEpoch: suppliedSessionGuard.wipeEpoch,
+    boundAccount: suppliedSessionGuard.boundAccount,
+    authToken: suppliedSessionGuard.authToken,
+    ...(Object.prototype.hasOwnProperty.call(suppliedSessionGuard, "authTokenExpiresAt")
+      ? { authTokenExpiresAt: suppliedSessionGuard.authTokenExpiresAt }
+      : {})
+  };
   return new Promise((resolve, reject) => {
     const tx = db.transaction(["settings", "records", "syncQueue", "recoverySnapshots", "recoveryWork"], "readwrite");
     const settings = tx.objectStore("settings");
@@ -455,9 +501,10 @@ export function applyRebuild(db, plan, state = {}, deps = {}) {
       failure = error;
       try { tx.abort(); } catch { /* transaction already inactive */ }
     };
-    const stateRequest = settings.get("recovery_state");
-    stateRequest.onerror = () => fail(stateRequest.error || new RecoveryPreconditionError());
-    stateRequest.onsuccess = () => {
+    const inspectPreservationState = () => {
+      const stateRequest = settings.get("recovery_state");
+      stateRequest.onerror = () => fail(stateRequest.error || new RecoveryPreconditionError());
+      stateRequest.onsuccess = () => {
       const durableState = stateRequest.result?.value;
       if (!durableState || durableState.recovery_id !== recoveryId
         || !UPLOADED_OR_LATER.has(durableState.state) || durableState.remote_ack !== true) {
@@ -605,7 +652,26 @@ export function applyRebuild(db, plan, state = {}, deps = {}) {
           }
         };
       };
+      };
     };
+    const guardKeys = [
+      "session_generation", "wipe_epoch", "signed_out", "wipe_pending",
+      "bound_account", "auth_token", "auth_token_expires_at"
+    ];
+    const guardValues = new Map();
+    for (const key of guardKeys) {
+      const request = settings.get(key);
+      request.onerror = () => fail(request.error || new RecoverySessionChangedError());
+      request.onsuccess = () => {
+        guardValues.set(key, request.result?.value);
+        if (guardValues.size !== guardKeys.length) return;
+        if (!storedSessionMatchesGuard(guardValues, sessionGuard)) {
+          fail(new RecoverySessionChangedError());
+          return;
+        }
+        inspectPreservationState();
+      };
+    }
     tx.oncomplete = () => resolve({ applied: true, recovery_id: recoveryId });
     tx.onerror = () => { /* onabort supplies the stable error */ };
     tx.onabort = () => reject(failure || tx.error || (startedMutations
