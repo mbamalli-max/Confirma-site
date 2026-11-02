@@ -15,6 +15,7 @@ import {
   resetRecoveryDatabase,
   seedRecoveryDevice,
   setRecoveryAutoclear,
+  signLedgerEntry,
   syncEntries,
   uploadRecoveryParts
 } from "./helpers/recovery.js";
@@ -284,6 +285,66 @@ async function buildValidRecovery({
   return {
     device, accepted, rejected, rejectedHash, recoveryId, replacement, manifest, partSha, planned
   };
+}
+
+async function buildMissingConfirmedAtRecovery({ autoclear = true } = {}) {
+  setRecoveryAutoclear(autoclear);
+  const device = await seedRecoveryDevice();
+  const accepted = ledgerEntry(device, { confirmed_at: 1793000100 });
+  assert.equal((await syncEntries(app, device, [accepted])).statusCode, 200);
+  advanceHead(device, accepted);
+  const original = ledgerEntry({ ...device, head: { id: 0, hash: "0".repeat(64) } }, {
+    id: 1,
+    prev_entry_hash: "0".repeat(64),
+    normalized_label: `missing-confirmed-at-${crypto.randomUUID()}`
+  });
+  delete original.confirmed_at;
+  signLedgerEntry(device, original);
+  assert.equal(Object.hasOwn(original, "confirmed_at"), false);
+  await query(
+    `INSERT INTO ledger_integrity_events (device_identity, entry_id, kind, detail)
+     VALUES ($1, 1, 'fork_id_conflict', $2::jsonb)`,
+    [device.deviceIdentity, JSON.stringify({
+      received_entry_hash: original.entry_hash,
+      stored_entry_hash: accepted.entry_hash
+    })]
+  );
+  const { recoveryId, response } = await createRecovery(app, device);
+  assert.equal(response.statusCode, 200);
+  const payload = { records: [accepted, original], queue: [] };
+  const uploaded = await uploadRecoveryParts(app, device, recoveryId, [payload]);
+  assert.equal(uploaded.responses[0].statusCode, 200);
+  const storedBefore = (await query(
+    "SELECT payload::text AS payload_text FROM recovery_parts WHERE recovery_id = $1 AND part_no = 0",
+    [recoveryId]
+  )).rows[0].payload_text;
+  const manifest = {
+    parts: [{ part_no: 0, sha256: recoveryPartSha256(payload) }],
+    items: [
+      {
+        original_entry_hash: accepted.entry_hash,
+        original_local_id: accepted.id,
+        original_signed_id: accepted.id,
+        original_confirmed_at: accepted.confirmed_at,
+        disposition: "accepted",
+        date_check: null,
+        replacement_entry_id: null,
+        replacement_entry_hash: null
+      },
+      {
+        original_entry_hash: original.entry_hash,
+        original_local_id: original.id,
+        original_signed_id: original.id,
+        disposition: "unrepresentable",
+        date_check: "unrepresentable",
+        replacement_entry_id: null,
+        replacement_entry_hash: null
+      }
+    ],
+    rejected_entry_hashes: [original.entry_hash],
+    own_imported: [{ entry_id: accepted.id, entry_hash: accepted.entry_hash }]
+  };
+  return { device, accepted, original, recoveryId, manifest, storedBefore };
 }
 
 before(async () => {
@@ -604,6 +665,145 @@ test("empty uploaded backup ends unresolved and is never purge-eligible", async 
   };
   const response = await complete(device, recoveryId, manifest);
   await assertUnresolved({ device, recoveryId }, response, "empty_recovery_backup");
+});
+
+test("a truly missing confirmed_at round-trips without substitution and stays unresolved", async () => {
+  const fixture = await buildMissingConfirmedAtRecovery();
+  const serializedManifest = JSON.stringify(fixture.manifest);
+  const clientManifest = JSON.parse(serializedManifest);
+  const storedOriginal = JSON.parse(fixture.storedBefore).records.find(
+    (record) => record.entry_hash === fixture.original.entry_hash
+  );
+  assert.equal(Object.hasOwn(storedOriginal, "confirmed_at"), false);
+  assert.equal(Object.hasOwn(clientManifest.items[1], "original_confirmed_at"), false);
+  assert.equal(manifestHash(clientManifest), manifestHash(fixture.manifest));
+
+  const first = await complete(fixture.device, fixture.recoveryId, clientManifest);
+  assert.equal(first.statusCode, 200);
+  assert.deepEqual(first.json(), {
+    outcome: "not_cleared",
+    reasons: ["unrepresentable_items"],
+    accounted_for: false
+  });
+  const session = (await query(
+    `SELECT state, manifest_hash, manifest, reconciliation_result
+     FROM recovery_sessions WHERE recovery_id = $1`,
+    [fixture.recoveryId]
+  )).rows[0];
+  assert.equal(session.state, "escalated");
+  assert.equal(session.manifest_hash, manifestHash(clientManifest));
+  assert.equal(Object.hasOwn(session.manifest.items[1], "original_confirmed_at"), false);
+  assert.equal(session.manifest.items[1].disposition, "unrepresentable");
+  assert.equal(session.reconciliation_result.all_items_reported_by_device_accounted_for, false);
+  assert.equal(session.reconciliation_result.unrepresentable_items, 1);
+  assert.deepEqual(session.reconciliation_result.date_exceptions, {
+    before_2000: 0,
+    future: 0,
+    after_receipt_bound: 0
+  });
+  assert.doesNotMatch(
+    JSON.stringify(session.reconciliation_result),
+    /original_confirmed_at|received_bound_seconds/
+  );
+  const audits = (await query(
+    "SELECT kind, detail FROM recovery_audit_events WHERE recovery_id = $1 ORDER BY id",
+    [fixture.recoveryId]
+  )).rows;
+  const completionAudit = audits.find((row) => row.kind === "recovery_unresolved");
+  assert.equal(completionAudit.detail.unrepresentable_items, 1);
+  assert.deepEqual(completionAudit.detail.date_exceptions, session.reconciliation_result.date_exceptions);
+  assert.doesNotMatch(JSON.stringify(audits), /original_confirmed_at|received_bound_seconds/);
+  assert.equal((await query(
+    "SELECT COUNT(*)::int AS n FROM ledger_recoveries WHERE recovery_id = $1",
+    [fixture.recoveryId]
+  )).rows[0].n, 0);
+
+  const repeated = await complete(fixture.device, fixture.recoveryId, clientManifest);
+  assert.equal(repeated.statusCode, 200);
+  assert.deepEqual(repeated.json(), first.json());
+  assert.equal((await query(
+    "SELECT COUNT(*)::int AS n FROM recovery_audit_events WHERE recovery_id = $1 AND kind = 'recovery_unresolved'",
+    [fixture.recoveryId]
+  )).rows[0].n, 1);
+  const purge = await purgeRecoveryPayloads(getPool(), {
+    now: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000)
+  });
+  assert.ok(!purge.recovery_ids.includes(fixture.recoveryId));
+  const storedAfter = (await query(
+    "SELECT payload::text AS payload_text FROM recovery_parts WHERE recovery_id = $1 AND part_no = 0",
+    [fixture.recoveryId]
+  )).rows[0].payload_text;
+  assert.equal(storedAfter, fixture.storedBefore);
+});
+
+test("an absent manifest date mismatches an uploaded original with a date", async () => {
+  const fixture = await buildValidRecovery({ autoclear: true });
+  const item = fixture.manifest.items[1];
+  delete item.original_confirmed_at;
+  item.disposition = "unrepresentable";
+  item.date_check = "unrepresentable";
+  item.replacement_entry_id = null;
+  item.replacement_entry_hash = null;
+  const response = await complete(fixture.device, fixture.recoveryId, fixture.manifest);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().accounted_for, false);
+  assert.ok(response.json().reasons.includes("original_confirmed_at_mismatch"));
+});
+
+test("a manifest date mismatches an uploaded original with no date", async () => {
+  const fixture = await buildMissingConfirmedAtRecovery();
+  fixture.manifest.items[1].original_confirmed_at = null;
+  const response = await complete(fixture.device, fixture.recoveryId, fixture.manifest);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().accounted_for, false);
+  assert.ok(response.json().reasons.includes("original_confirmed_at_mismatch"));
+});
+
+test("the absent date exception preserves every other manifest schema boundary", async () => {
+  const invalidCases = [
+    {
+      name: "accepted",
+      mutate: (manifest) => {
+        manifest.items[1].disposition = "accepted";
+        manifest.items[1].date_check = null;
+        manifest.rejected_entry_hashes = [];
+      }
+    },
+    {
+      name: "replaced",
+      mutate: (manifest) => {
+        manifest.items[1].disposition = "replaced";
+        manifest.items[1].date_check = "ok";
+        manifest.items[1].replacement_entry_id = 2;
+        manifest.items[1].replacement_entry_hash = "e".repeat(64);
+      }
+    },
+    {
+      name: "unknown key",
+      mutate: (manifest) => { manifest.items[1].unexpected = true; }
+    },
+    {
+      name: "another required key missing",
+      mutate: (manifest) => { delete manifest.items[1].original_signed_id; }
+    }
+  ];
+  for (const invalidCase of invalidCases) {
+    await resetRecoveryDatabase();
+    const fixture = await buildMissingConfirmedAtRecovery();
+    invalidCase.mutate(fixture.manifest);
+    const response = await complete(fixture.device, fixture.recoveryId, fixture.manifest);
+    assert.equal(response.statusCode, 400, invalidCase.name);
+    assert.equal(response.json().code, "invalid_recovery_manifest", invalidCase.name);
+  }
+
+  await resetRecoveryDatabase();
+  const unexplained = await buildMissingConfirmedAtRecovery();
+  unexplained.manifest.items[1].disposition = "unexplained";
+  unexplained.manifest.items[1].date_check = null;
+  const response = await complete(unexplained.device, unexplained.recoveryId, unexplained.manifest);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().accounted_for, false);
+  assert.ok(response.json().reasons.includes("unexplained_items"));
 });
 
 test("stored part bytes are re-hashed before planning and completion", async () => {

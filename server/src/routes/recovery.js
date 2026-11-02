@@ -352,14 +352,15 @@ function validatePlanBody(body) {
 }
 
 /*
-Completion manifest schema (all fields required; unknown fields are rejected):
+Completion manifest schema (unknown fields are rejected; only
+original_confirmed_at may be omitted):
 {
   parts: [{ part_no: non-negative integer, sha256: 64-char lowercase hex }],
   items: [{
     original_entry_hash: 64-char lowercase hex,
     original_local_id: positive safe integer,
     original_signed_id: positive safe integer,
-    original_confirmed_at: any JSON scalar/object/array (preserved exactly),
+    original_confirmed_at?: any JSON scalar/object/array (preserved exactly),
     disposition: "accepted" | "replaced" | "unexplained" | "unrepresentable",
     date_check: null | "ok" | "before_2000" | "future" |
       "after_receipt_bound" | "unrepresentable",
@@ -372,6 +373,8 @@ Completion manifest schema (all fields required; unknown fields are rejected):
 For "replaced", both replacement fields and a representable date_check are
 required. For every other disposition both replacement fields must be null.
 "unrepresentable" requires its matching date_check; accepted items use null.
+An omitted original_confirmed_at is allowed only for "unrepresentable" with
+its matching date_check, or for "unexplained" under its existing rules.
 */
 export function validateRecoveryManifest(manifest) {
   if (!hasExactKeys(manifest, ["parts", "items", "rejected_entry_hashes", "own_imported"])
@@ -398,24 +401,31 @@ export function validateRecoveryManifest(manifest) {
 
   const originalHashes = new Set();
   for (const item of manifest.items) {
-    if (!hasExactKeys(item, [
+    const requiredItemKeys = [
       "original_entry_hash",
       "original_local_id",
       "original_signed_id",
-      "original_confirmed_at",
       "disposition",
       "date_check",
       "replacement_entry_id",
       "replacement_entry_hash"
-    ])
+    ];
+    const hasOriginalConfirmedAt = Object.hasOwn(item, "original_confirmed_at");
+    const itemKeys = hasOriginalConfirmedAt
+      ? [...requiredItemKeys, "original_confirmed_at"]
+      : requiredItemKeys;
+    if (!hasExactKeys(item, itemKeys)
         || !isHash(item.original_entry_hash)
         || !isSafePositiveInteger(item.original_local_id)
         || !isSafePositiveInteger(item.original_signed_id)
         || originalHashes.has(item.original_entry_hash)
-        || !["accepted", "replaced", "unexplained", "unrepresentable"].includes(item.disposition)) {
+        || !["accepted", "replaced", "unexplained", "unrepresentable"].includes(item.disposition)
+        || (!hasOriginalConfirmedAt
+          && item.disposition !== "unexplained"
+          && item.disposition !== "unrepresentable")) {
       throw routeError(400, "invalid_recovery_manifest");
     }
-    canonicalJson(item.original_confirmed_at);
+    if (hasOriginalConfirmedAt) canonicalJson(item.original_confirmed_at);
     originalHashes.add(item.original_entry_hash);
     if (item.disposition === "replaced") {
       if (!DATE_CHECKS.has(item.date_check)
@@ -752,7 +762,11 @@ async function completeRecovery(client, session, device, manifest, manifestHash)
       if (analysis?.verificationReason) itemReasons.push(analysis.verificationReason);
       if (!analysis?.rawLocalIds.has(item.original_local_id)) itemReasons.push("original_local_id_mismatch");
       if (analysis?.signedId !== item.original_signed_id) itemReasons.push("original_signed_id_mismatch");
-      if (!jsonExactlyEqual(original.confirmed_at, item.original_confirmed_at)) {
+      const originalHasConfirmedAt = Object.hasOwn(original, "confirmed_at");
+      const itemHasOriginalConfirmedAt = Object.hasOwn(item, "original_confirmed_at");
+      if (originalHasConfirmedAt !== itemHasOriginalConfirmedAt
+          || (originalHasConfirmedAt
+            && !jsonExactlyEqual(original.confirmed_at, item.original_confirmed_at))) {
         itemReasons.push("original_confirmed_at_mismatch");
       }
     }
