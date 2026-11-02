@@ -32,7 +32,7 @@ import {
 } from "./business-search.js";
 
 const DB_NAME = "confirma-v3-db";
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 const FEATURE_TRANSFER_PRIMARY = false;
 const ONBOARDING_TOTAL_STEPS = 6;
 const ONBOARDING_PROFILE_STEP = 6;
@@ -8902,6 +8902,14 @@ function openDb() {
       if (event.oldVersion < 5) {
         if (!db.objectStoreNames.contains("anomaly_log")) {
           db.createObjectStore("anomaly_log", { keyPath: "id", autoIncrement: true });
+        }
+      }
+      if (event.oldVersion < 6) {
+        if (!db.objectStoreNames.contains("recoverySnapshots")) {
+          db.createObjectStore("recoverySnapshots", { keyPath: "recovery_id" });
+        }
+        if (!db.objectStoreNames.contains("recoveryWork")) {
+          db.createObjectStore("recoveryWork", { keyPath: "recovery_id" });
         }
       }
     };

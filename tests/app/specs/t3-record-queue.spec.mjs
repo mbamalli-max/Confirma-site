@@ -119,7 +119,7 @@ async function confirmRecord(page, amount) {
 async function deleteQueueEntryFor(page, entryHash) {
   await page.evaluate(async (hash) => {
     const db = await new Promise((resolve, reject) => {
-      const request = indexedDB.open("confirma-v3-db", 5);
+      const request = indexedDB.open("confirma-v3-db");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -311,7 +311,7 @@ for (const legacy of ["descendant", "ancestor"]) {
     await deleteQueueEntryFor(page, missing.entry_hash);
     await page.evaluate(async (hash) => {
       const db = await new Promise((resolve, reject) => {
-        const request = indexedDB.open("confirma-v3-db", 5);
+        const request = indexedDB.open("confirma-v3-db");
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
@@ -345,7 +345,7 @@ test("Q4e a restored (imported) record is never queued by the repair", async ({ 
   await clearStore(page, "syncQueue");
   await page.evaluate(async (record) => {
     const db = await new Promise((resolve, reject) => {
-      const request = indexedDB.open("confirma-v3-db", 5);
+      const request = indexedDB.open("confirma-v3-db");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });

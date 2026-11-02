@@ -58,7 +58,7 @@ async function otpRequestDiagnostics(page, pacingMs) {
 
     let storedProfileHasPhoneNumber = null;
     try {
-      const request = indexedDB.open("confirma-v3-db", 5);
+      const request = indexedDB.open("confirma-v3-db");
       const db = await new Promise((resolve, reject) => {
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
@@ -201,7 +201,7 @@ export async function releaseRecordWrite(page) {
 
 export async function readLocalState(page) {
   return page.evaluate(async () => {
-    const request = indexedDB.open("confirma-v3-db", 5);
+    const request = indexedDB.open("confirma-v3-db");
     const db = await new Promise((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -233,7 +233,7 @@ export async function readLocalState(page) {
 // guarantee.
 export async function nextLedgerAppendInput(page) {
   return page.evaluate(async () => {
-    const request = indexedDB.open("confirma-v3-db", 5);
+    const request = indexedDB.open("confirma-v3-db");
     const db = await new Promise((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -270,7 +270,7 @@ export async function readStoredProfile(page) {
 
 export async function writeLocalState(page, entries) {
   await page.evaluate(async (values) => {
-    const request = indexedDB.open("confirma-v3-db", 5);
+    const request = indexedDB.open("confirma-v3-db");
     const db = await new Promise((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -289,7 +289,7 @@ export async function writeLocalState(page, entries) {
 
 export async function deleteLocalSettings(page, keys) {
   await page.evaluate(async (settingKeys) => {
-    const request = indexedDB.open("confirma-v3-db", 5);
+    const request = indexedDB.open("confirma-v3-db");
     const db = await new Promise((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -307,7 +307,7 @@ export async function deleteLocalSettings(page, keys) {
 
 export async function putStoreValue(page, storeName, value) {
   await page.evaluate(async ({ storeName, value }) => {
-    const request = indexedDB.open("confirma-v3-db", 5);
+    const request = indexedDB.open("confirma-v3-db");
     const db = await new Promise((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -324,7 +324,7 @@ export async function putStoreValue(page, storeName, value) {
 
 export async function clearStore(page, storeName) {
   await page.evaluate(async (name) => {
-    const request = indexedDB.open("confirma-v3-db", 5);
+    const request = indexedDB.open("confirma-v3-db");
     const db = await new Promise((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
