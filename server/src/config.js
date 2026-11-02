@@ -17,6 +17,11 @@ function normalizeOtpChannel(rawValue) {
   return String(rawValue || "").trim().toLowerCase() === "sms" ? "sms" : "email";
 }
 
+function positiveInteger(rawValue, fallback) {
+  const value = Number(rawValue);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+
 function normalizeMultilineSecret(rawValue) {
   return String(rawValue || "").replace(/\\n/g, "\n").trim();
 }
@@ -269,8 +274,25 @@ export const config = {
   resendApiKey: String(process.env.RESEND_API_KEY || "").trim(),
   resendFromEmail: String(process.env.RESEND_FROM_EMAIL || "Konfirmata <noreply@konfirmata.com>").trim(),
   verifyBaseUrl: normalizeBaseUrl(process.env.VERIFY_BASE_URL, "https://konfirmata.com"),
-  verificationKeyUrl: normalizeBaseUrl(process.env.VERIFICATION_KEY_URL, "")
+  verificationKeyUrl: normalizeBaseUrl(process.env.VERIFICATION_KEY_URL, ""),
+  // Recovery is deliberately inert unless an operator enables the exact value
+  // "true". Limits are server-side bounds, not client hints.
+  recoveryAutoclear: process.env.RECOVERY_AUTOCLEAR === "true",
+  recoveryLeaseSeconds: positiveInteger(process.env.RECOVERY_LEASE_SECONDS, 30 * 60),
+  recoveryPartBodyLimitBytes: positiveInteger(process.env.RECOVERY_PART_BODY_LIMIT_BYTES, 512 * 1024),
+  recoveryMaxParts: positiveInteger(process.env.RECOVERY_MAX_PARTS, 128),
+  recoveryMaxPlanReplacements: positiveInteger(process.env.RECOVERY_MAX_PLAN_REPLACEMENTS, 5000),
+  recoveryRetryAfterSeconds: positiveInteger(process.env.RECOVERY_RETRY_AFTER_SECONDS, 30)
 };
+
+export const SERVER_LOGGER_OPTIONS = Object.freeze({
+  // Fastify's standard request serializer does not include bodies. These
+  // redactions are defense in depth for any future structured log call.
+  redact: {
+    paths: ["req.body", "request.body", "body", "payload", "records", "queue"],
+    censor: "[Redacted]"
+  }
+});
 
 export function getAuthDeliverySummary() {
   return {

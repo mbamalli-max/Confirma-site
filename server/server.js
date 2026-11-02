@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import {
   config,
+  SERVER_LOGGER_OPTIONS,
   createCorsDelegator,
   getAuthDeliverySummary,
   getProxyTrustSummary,
@@ -10,6 +11,7 @@ import {
 } from "./src/config.js";
 import { registerAuthRoutes } from "./src/routes/auth.js";
 import { registerSyncRoutes } from "./src/routes/sync.js";
+import { registerRecoveryRoutes } from "./src/routes/recovery.js";
 import { registerIdentityRoutes } from "./src/routes/identity.js";
 import { registerAttestRoutes } from "./src/routes/attest.js";
 import { registerPaymentRoutes } from "./src/routes/payment.js";
@@ -63,7 +65,7 @@ async function main() {
   }
 
   const app = Fastify({
-    logger: true,
+    logger: SERVER_LOGGER_OPTIONS,
     ...(config.trustProxy === undefined ? {} : { trustProxy: config.trustProxy })
   });
 
@@ -90,6 +92,7 @@ async function main() {
   await registerRouteGroup(app, "auth", registerAuthRoutes);
   await registerRouteGroup(app, "account", registerAccountRoutes);
   await registerRouteGroup(app, "sync", registerSyncRoutes);
+  await registerRouteGroup(app, "recovery", registerRecoveryRoutes);
   await registerRouteGroup(app, "identity", registerIdentityRoutes);
   await registerRouteGroup(app, "attest", registerAttestRoutes);
   await registerRouteGroup(app, "payment", registerPaymentRoutes);

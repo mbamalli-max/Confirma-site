@@ -1,4 +1,5 @@
 import { authenticateRequest, buildReceiptSignature } from "../auth-utils.js";
+import { config } from "../config.js";
 import { verifyEntrySignature } from "../crypto-verify.js";
 import { withTransaction } from "../db.js";
 import { computeLedgerEntryHash } from "../ledger-canonical.js";
@@ -59,6 +60,14 @@ function entryIdOrNull(value) {
   return Number.isSafeInteger(id) ? id : null;
 }
 
+function recoveryInProgressError() {
+  return Object.assign(new Error("recovery_in_progress"), {
+    statusCode: 503,
+    code: "recovery_in_progress",
+    recoveryInProgress: true
+  });
+}
+
 export async function registerSyncRoutes(app) {
   app.post("/sync/entries", {
     config: { rateLimit: { max: 60, timeWindow: "1 minute" } }
@@ -111,6 +120,59 @@ export async function registerSyncRoutes(app) {
         }
 
         const pinnedPublicKey = device.public_key;
+
+        // RC1: this read happens only after the existing device-row lock. When a
+        // unsettled recovery fences the device even after its ownership lease
+        // expires. Preflight the whole batch before any
+        // ledger insert so an unplanned row cannot roll back an earlier request's
+        // accepted replacements or create an integrity event.
+        const activeRecovery = (await client.query(
+          `
+            SELECT recovery_id
+            FROM recovery_sessions
+            WHERE device_identity = $1
+              AND state IN ('open', 'uploaded', 'planned', 'syncing')
+            LIMIT 1
+            FOR UPDATE
+          `,
+          [deviceIdentity]
+        )).rows[0];
+        let recoveryReservations = null;
+        if (activeRecovery) {
+          const entryIds = entries.map((entry) => entryIdOrNull(entry.id));
+          if (entryIds.some((entryId) => entryId === null)) throw recoveryInProgressError();
+          const reservationRows = (await client.query(
+            `
+              SELECT original_entry_hash, planned_entry_id, planned_entry_hash, status
+              FROM recovery_reservations
+              WHERE recovery_id = $1
+                AND planned_entry_id = ANY($2::bigint[])
+              FOR UPDATE
+            `,
+            [activeRecovery.recovery_id, entryIds]
+          )).rows;
+          recoveryReservations = new Map(reservationRows.map((row) => [
+            `${Number(row.planned_entry_id)}:${row.planned_entry_hash}`,
+            row
+          ]));
+          for (const entry of entries) {
+            const reservation = recoveryReservations.get(`${Number(entry.id)}:${String(entry.entry_hash || "")}`);
+            if (!reservation || (reservation.status !== "reserved" && reservation.status !== "accepted")) {
+              throw recoveryInProgressError();
+            }
+            if (reservation.status === "accepted") {
+              const accepted = (await client.query(
+                `
+                  SELECT 1 FROM ledger_entries
+                  WHERE device_identity = $1 AND entry_id = $2 AND entry_hash = $3
+                  LIMIT 1
+                `,
+                [deviceIdentity, entry.id, entry.entry_hash]
+              )).rows[0];
+              if (!accepted) throw recoveryInProgressError();
+            }
+          }
+        }
 
         const lastEntryResult = await client.query(
           `
@@ -201,12 +263,39 @@ export async function registerSyncRoutes(app) {
             ]
           );
 
+          if (activeRecovery) {
+            const accepted = await client.query(
+              `
+                UPDATE recovery_reservations
+                SET status = 'accepted', accepted_at = clock_timestamp()
+                WHERE recovery_id = $1
+                  AND planned_entry_id = $2
+                  AND planned_entry_hash = $3
+                  AND status = 'reserved'
+              `,
+              [activeRecovery.recovery_id, entry.id, entry.entry_hash]
+            );
+            if (accepted.rowCount !== 1) throw recoveryInProgressError();
+          }
+
           expectedPrevHash = entry.entry_hash;
           syncedCount += 1;
           lastSyncedEntryId = Math.max(lastSyncedEntryId, Number(entry.id));
         }
 
         const receiptCounter = Number(device?.receipt_counter || 0) + 1;
+
+        if (activeRecovery) {
+          await client.query(
+            `
+              UPDATE recovery_sessions
+              SET state = 'syncing'
+              WHERE recovery_id = $1
+            `,
+            [activeRecovery.recovery_id]
+          );
+        }
+
         const receipt = buildReceiptSignature([
           deviceIdentity,
           String(lastSyncedEntryId),
@@ -241,6 +330,10 @@ export async function registerSyncRoutes(app) {
 
       return result;
     } catch (error) {
+      if (error.recoveryInProgress) {
+        reply.header("Retry-After", String(config.recoveryRetryAfterSeconds));
+        return reply.code(503).send({ error: "recovery_in_progress", code: "recovery_in_progress" });
+      }
       if (error.integrity) {
         try {
           await recordIntegrityEvent(deviceIdentity, error.integrity);
