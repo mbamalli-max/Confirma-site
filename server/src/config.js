@@ -422,9 +422,14 @@ export function validateRuntimeConfig() {
   }
 }
 
+const RECOVERY_PART_UPLOAD_PATH_PATTERN = /^\/recovery\/sessions\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/parts\/\d+$/i;
+
 export function createCorsDelegator(allowedOrigins) {
   return () => (request, callback) => {
-    const isAdmin = String(request.url || "").startsWith("/admin");
+    const requestUrl = String(request.url || "");
+    const requestPath = requestUrl.split("?", 1)[0];
+    const isAdmin = requestUrl.startsWith("/admin");
+    const isRecoveryPartUpload = RECOVERY_PART_UPLOAD_PATH_PATTERN.test(requestPath);
     const adminOrigins = String(config.adminCorsOrigins || "")
       .split(",")
       .map((origin) => origin.trim())
@@ -432,7 +437,9 @@ export function createCorsDelegator(allowedOrigins) {
 
     callback(null, {
       origin: isAdmin ? (adminOrigins.length ? adminOrigins : false) : allowedOrigins,
-      methods: ["GET", "POST", "OPTIONS"],
+      methods: isRecoveryPartUpload
+        ? ["GET", "POST", "OPTIONS", "PUT"]
+        : ["GET", "POST", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Device-Identity"],
       credentials: false
     });
