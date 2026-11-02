@@ -547,7 +547,7 @@ export function applyRebuild(db, plan, state = {}, deps = {}) {
                 const restored = effectiveRCopies.map((item) => {
                   const copy = item.record || item;
                   return { source: copy, destination: {
-                    ...copy, id: Number(item.trueId ?? copy.server_entry_id), importedFromServer: false
+                    ...copy, id: Number(item.trueId ?? copy.server_entry_id), importedFromServer: false, restoredOwn: true
                   } };
                 });
                 const destinations = [

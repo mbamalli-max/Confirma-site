@@ -491,6 +491,176 @@ test("rebuild is atomic, records outcomes before removal, restores R, and leaves
   expect(result.byteIdenticalAfterAbort).toBe(true);
 });
 
+test("restored R destinations match Package A provenance without mutating raw inputs and replay safely", async ({ page }) => {
+  await openApp(page);
+  const result = await page.evaluate(async () => {
+    const recovery = await import("/app/recovery-core.js");
+    const request = indexedDB.open("confirma-v3-db", 6);
+    const db = await new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    const stores = ["settings", "records", "syncQueue", "recoverySnapshots", "recoveryWork"];
+    const owns = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+    const stable = (value) => JSON.stringify(value, (_key, nested) => (
+      nested && typeof nested === "object" && !Array.isArray(nested)
+        ? Object.fromEntries(Object.entries(nested).sort(([left], [right]) => left.localeCompare(right)))
+        : nested
+    ));
+    const sessionGuard = {
+      sessionGeneration: 7, wipeEpoch: 3, boundAccount: "account-a",
+      authToken: "fixture-session-token", authTokenExpiresAt: "2999-01-01T00:00:00.000Z"
+    };
+    const imported = {
+      id: 1_000_000_011, server_entry_id: 11, transaction_type: "sale",
+      normalized_label: "fixture-restored", amount_minor: 1250, currency: "NGN",
+      counterparty: "fixture-counterparty", business_type_id: "fixture-business",
+      country: "NG", source_account: "fixture-source", destination_account: "fixture-destination",
+      reversed_entry_hash: null, reversed_transaction_type: null,
+      device_identity: "device-a", evidence_level: "server_attested",
+      signature: "fixture-signature", entry_hash: "restored-hash",
+      confirmed_at: 1_700_000_011, prev_entry_hash: "previous-hash",
+      restoreVerified: true, importedFromServer: true
+    };
+    const original = {
+      id: 12, entry_hash: "rejected-hash", prev_entry_hash: imported.entry_hash,
+      confirmed_at: 1_700_000_012, device_identity: "device-a"
+    };
+    const replacement = {
+      ...original, id: 13, entry_hash: "replacement-hash", prev_entry_hash: imported.entry_hash
+    };
+    const plan = {
+      recovery_id: "restore-provenance-test",
+      server_head: { entry_id: 11, entry_hash: imported.entry_hash },
+      r_copies: [{ record: imported, trueId: imported.server_entry_id }],
+      replacement_hashes: { [original.entry_hash]: replacement.entry_hash },
+      items: [{
+        original, replacement,
+        queueEntry: {
+          entry_id: replacement.id, entry_hash: replacement.entry_hash,
+          device_identity: replacement.device_identity, status: "queued"
+        }
+      }]
+    };
+    const seed = () => new Promise((resolve, reject) => {
+      const tx = db.transaction(stores, "readwrite");
+      for (const name of ["records", "syncQueue", "recoverySnapshots", "recoveryWork"]) {
+        tx.objectStore(name).clear();
+      }
+      Object.entries({
+        session_generation: sessionGuard.sessionGeneration, wipe_epoch: sessionGuard.wipeEpoch,
+        signed_out: false, wipe_pending: false, bound_account: sessionGuard.boundAccount,
+        auth_token: sessionGuard.authToken, auth_token_expires_at: sessionGuard.authTokenExpiresAt,
+        recovery_state: { recovery_id: plan.recovery_id, state: "uploaded", remote_ack: true }
+      }).forEach(([key, value]) => tx.objectStore("settings").put({ key, value }));
+      tx.objectStore("records").put(imported);
+      tx.objectStore("records").put(original);
+      tx.objectStore("syncQueue").add({
+        entry_id: original.id, entry_hash: original.entry_hash, device_identity: original.device_identity
+      });
+      tx.objectStore("recoverySnapshots").put({
+        recovery_id: plan.recovery_id, device_identity: imported.device_identity, read_back_verified: true,
+        records: [imported, original], queue: [], outcomes: {}
+      });
+      tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+    });
+    const dump = () => new Promise((resolve, reject) => {
+      const output = {};
+      const tx = db.transaction(stores, "readonly");
+      for (const name of stores) {
+        const get = tx.objectStore(name).getAll(); get.onsuccess = () => { output[name] = get.result; };
+      }
+      tx.oncomplete = () => resolve(output); tx.onerror = () => reject(tx.error);
+    });
+    const putRestored = (row) => new Promise((resolve, reject) => {
+      const tx = db.transaction("records", "readwrite");
+      tx.objectStore("records").put(row);
+      tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+    });
+
+    await seed();
+    const before = await dump();
+    const planBefore = structuredClone(plan);
+    const sourceBefore = structuredClone(imported);
+    await recovery.applyRebuild(db, plan, {}, { sessionGuard });
+    const applied = await dump();
+    const restored = applied.records.find((row) => row.id === imported.server_entry_id);
+    const rebuiltReplacement = applied.records.find((row) => row.id === replacement.id);
+    const packageAShape = {
+      ...imported, id: imported.server_entry_id, importedFromServer: false, restoredOwn: true
+    };
+    const normalizedRestored = structuredClone(restored);
+    const normalizedImported = structuredClone(imported);
+    for (const key of ["id", "importedFromServer", "restoredOwn"]) {
+      delete normalizedRestored[key];
+      delete normalizedImported[key];
+    }
+    const rawSnapshotBefore = before.recoverySnapshots[0];
+    const rawSnapshotAfter = applied.recoverySnapshots[0];
+    const storedWork = applied.recoveryWork[0];
+    const storedWorkPlan = {
+      recovery_id: storedWork.recovery_id, server_head: storedWork.server_head,
+      r_copies: storedWork.r_copies, replacement_hashes: storedWork.replacement_hashes,
+      items: storedWork.items
+    };
+
+    await recovery.applyRebuild(db, plan, {}, { sessionGuard });
+    const replayed = await dump();
+
+    const legacyWithoutFlag = structuredClone(restored);
+    delete legacyWithoutFlag.restoredOwn;
+    await putRestored(legacyWithoutFlag);
+    const beforeLegacyReplay = await dump();
+    let legacyReplayError = "";
+    try { await recovery.applyRebuild(db, plan, {}, { sessionGuard }); }
+    catch (error) { legacyReplayError = error.name; }
+    const afterLegacyReplay = await dump();
+    db.close();
+
+    return {
+      packageAParity: stable(restored) === stable(packageAShape),
+      normalizedCopyParity: stable(normalizedRestored) === stable(normalizedImported),
+      restoredFlags: restored.restoredOwn === true && restored.importedFromServer === false,
+      rawSourceUnchanged: stable(imported) === stable(sourceBefore) && !owns(imported, "restoredOwn"),
+      planUnchanged: stable(plan) === stable(planBefore) && !stable(plan).includes("restoredOwn"),
+      snapshotRecordsUnchanged: stable(rawSnapshotBefore.records) === stable(rawSnapshotAfter.records),
+      snapshotHasNoRestoredOwn: !stable(rawSnapshotAfter).includes("restoredOwn"),
+      workHasNoRestoredOwn: !stable(storedWork).includes("restoredOwn"),
+      storedWorkPlanExact: stable(storedWorkPlan) === stable(plan),
+      replacementHasNoRestoredOwn: !owns(rebuiltReplacement, "restoredOwn"),
+      datesPreserved: restored.confirmed_at === imported.confirmed_at
+        && rebuiltReplacement.confirmed_at === original.confirmed_at,
+      replayIdentical: stable(applied) === stable(replayed),
+      replayOutcomeIdentical: stable(applied.recoverySnapshots[0].outcomes)
+        === stable(replayed.recoverySnapshots[0].outcomes),
+      replaySnapshotIdentical: stable(applied.recoverySnapshots) === stable(replayed.recoverySnapshots),
+      replayWorkIdentical: stable(applied.recoveryWork) === stable(replayed.recoveryWork),
+      legacyReplayError,
+      legacyReplayIdentical: stable(beforeLegacyReplay) === stable(afterLegacyReplay),
+      legacyFlagRemainsAbsent: !owns(afterLegacyReplay.records.find((row) => row.id === imported.server_entry_id), "restoredOwn")
+    };
+  });
+  expect(result).toEqual({
+    packageAParity: true,
+    normalizedCopyParity: true,
+    restoredFlags: true,
+    rawSourceUnchanged: true,
+    planUnchanged: true,
+    snapshotRecordsUnchanged: true,
+    snapshotHasNoRestoredOwn: true,
+    workHasNoRestoredOwn: true,
+    storedWorkPlanExact: true,
+    replacementHasNoRestoredOwn: true,
+    datesPreserved: true,
+    replayIdentical: true,
+    replayOutcomeIdentical: true,
+    replaySnapshotIdentical: true,
+    replayWorkIdentical: true,
+    legacyReplayError: "",
+    legacyReplayIdentical: true,
+    legacyFlagRemainsAbsent: true
+  });
+});
+
 test("rebuild collisions abort atomically for occupied destinations and changed sources", async ({ page }) => {
   await openApp(page);
   const result = await page.evaluate(async () => {
