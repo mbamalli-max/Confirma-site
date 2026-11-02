@@ -10,6 +10,10 @@ const ACTIVE_STATES = new Set(["open", "uploaded", "planned", "syncing"]);
 const HASH_PATTERN = /^[0-9a-f]{64}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE_CHECKS = new Set(["ok", "before_2000", "future", "after_receipt_bound"]);
+const ACCOUNTED_FOR_INFORMATIONAL_REASONS = new Set([
+  "autoclear_disabled",
+  "device_active_nothing_to_clear"
+]);
 const FIRST_2000_SECOND = 946684800;
 const ONE_DAY_SECONDS = 86400;
 const POSTGRES_TIMESTAMP_CONSERVATIVE_LIMIT_SECONDS = 8_000_000_000;
@@ -688,7 +692,7 @@ async function recordStoredPartDigestMismatch(client, session, manifest, manifes
       ...reconciliation
     })]
   );
-  return { outcome: "not_cleared", reasons };
+  return { outcome: "not_cleared", reasons, accounted_for: false };
 }
 
 async function completeRecovery(client, session, device, manifest, manifestHash) {
@@ -841,7 +845,11 @@ async function completeRecovery(client, session, device, manifest, manifestHash)
     return row?.entry_hash === item.entry_hash && acceptedItems.has(`${item.entry_id}:${item.entry_hash}`);
   });
   if (!importedMatch) addReason(reasons, "missing_own_imported_match");
-  if (device.status !== "FORKED") addReason(reasons, "device_not_forked");
+  if (device.status === "ACTIVE") {
+    addReason(reasons, "device_active_nothing_to_clear");
+  } else if (device.status !== "FORKED") {
+    addReason(reasons, "device_status_ineligible");
+  }
 
   for (const { item, reservation } of verifiedMappings) {
     const inserted = await client.query(
@@ -889,9 +897,13 @@ async function completeRecovery(client, session, device, manifest, manifestHash)
     }
   }
 
-  const allReportedAccounted = reasons.length === 0;
   if (!config.recoveryAutoclear) addReason(reasons, "autoclear_disabled");
-  const cleared = allReportedAccounted && config.recoveryAutoclear;
+  const allReportedAccounted = reasons.every(
+    (reason) => ACCOUNTED_FOR_INFORMATIONAL_REASONS.has(reason)
+  );
+  const cleared = allReportedAccounted
+    && config.recoveryAutoclear
+    && device.status === "FORKED";
   const outcome = cleared ? "cleared" : "not_cleared";
   const unresolved = !allReportedAccounted;
   const reconciliation = {
@@ -964,7 +976,7 @@ async function completeRecovery(client, session, device, manifest, manifestHash)
     if (clearedDevice.rowCount !== 1) throw routeError(409, "device_status_changed");
   }
 
-  return { outcome, reasons };
+  return { outcome, reasons, accounted_for: allReportedAccounted };
 }
 
 export async function registerRecoveryRoutes(app) {
@@ -1427,7 +1439,12 @@ export async function registerRecoveryRoutes(app) {
         const session = await lockOwnedSession(client, recoveryId, auth);
         if (session.outcome) {
           if (session.manifest_hash !== manifestHash) throw routeError(409, "recovery_completion_conflict");
-          return { outcome: session.outcome, reasons: session.outcome_reasons || [] };
+          return {
+            outcome: session.outcome,
+            reasons: session.outcome_reasons || [],
+            accounted_for:
+              session.reconciliation_result?.all_items_reported_by_device_accounted_for === true
+          };
         }
         assertMutableSession(session);
         return completeRecovery(client, session, device, manifest, manifestHash);

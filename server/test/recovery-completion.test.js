@@ -5,7 +5,7 @@ import { config } from "../src/config.js";
 import { getPool, query } from "../src/db.js";
 import { canonicalJson, recoveryPartSha256 } from "../src/routes/recovery.js";
 import { purgeRecoveryPayloads } from "../scripts/purge-recovery-payloads.mjs";
-import { assertLocalTestDatabase } from "./helpers/db.js";
+import { assertLocalTestDatabase, waitForBackendsBlockedBy } from "./helpers/db.js";
 import {
   advanceHead,
   applyRecoveryMigrations,
@@ -179,6 +179,7 @@ async function buildC1ShapeRecovery({ mutateImported = null, includeAcceptedCopi
 
 async function buildValidRecovery({
   autoclear = false,
+  deviceStatus = "FORKED",
   dateCheck = "ok",
   confirmedAt = 1793000200,
   mutateOriginal = null,
@@ -187,7 +188,7 @@ async function buildValidRecovery({
   expectedPlanStatus = 200
 } = {}) {
   setRecoveryAutoclear(autoclear);
-  const device = await seedRecoveryDevice();
+  const device = await seedRecoveryDevice({ status: deviceStatus });
   const accepted = ledgerEntry(device, { confirmed_at: 1793000100 });
   assert.equal((await syncEntries(app, device, [accepted])).statusCode, 200);
   advanceHead(device, accepted);
@@ -306,7 +307,11 @@ test("autoclear off verifies and maps everything but returns a durable, idempote
   const fixture = await buildValidRecovery({ autoclear: false });
   const first = await complete(fixture.device, fixture.recoveryId, fixture.manifest);
   assert.equal(first.statusCode, 200);
-  assert.deepEqual(first.json(), { outcome: "not_cleared", reasons: ["autoclear_disabled"] });
+  assert.deepEqual(first.json(), {
+    outcome: "not_cleared",
+    reasons: ["autoclear_disabled"],
+    accounted_for: true
+  });
   assert.equal((await query(
     "SELECT status FROM device_identities WHERE device_identity = $1",
     [fixture.device.deviceIdentity]
@@ -332,7 +337,7 @@ test("autoclear on clears exactly a valid FORKED device and recovery-start audit
   const fixture = await buildValidRecovery({ autoclear: true });
   const response = await complete(fixture.device, fixture.recoveryId, fixture.manifest);
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.json(), { outcome: "cleared", reasons: [] });
+  assert.deepEqual(response.json(), { outcome: "cleared", reasons: [], accounted_for: true });
   assert.equal((await query(
     "SELECT status FROM device_identities WHERE device_identity = $1",
     [fixture.device.deviceIdentity]
@@ -342,9 +347,167 @@ test("autoclear on clears exactly a valid FORKED device and recovery-start audit
   )).rows[0].n, 1);
 });
 
-async function assertUnresolved(fixture, response, reason) {
+test("an ACTIVE device completes accounted without a device-row write or clear", async () => {
+  const fixture = await buildValidRecovery({ autoclear: false, deviceStatus: "ACTIVE" });
+  const blocker = await getPool().connect();
+  let completion;
+  try {
+    await blocker.query("BEGIN");
+    await blocker.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      [`ledger-integrity:${fixture.device.deviceIdentity}`]
+    );
+    const blockerPid = Number((await blocker.query("SELECT pg_backend_pid() AS pid")).rows[0].pid);
+    completion = complete(fixture.device, fixture.recoveryId, fixture.manifest);
+    await waitForBackendsBlockedBy(getPool(), blockerPid, [/pg_advisory_xact_lock/]);
+    const beforeDecision = (await query(
+      `SELECT status, updated_at::text AS updated_at, xmin::text AS row_version
+       FROM device_identities WHERE device_identity = $1`,
+      [fixture.device.deviceIdentity]
+    )).rows[0];
+    await blocker.query("COMMIT");
+
+    const response = await completion;
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json(), {
+      outcome: "not_cleared",
+      reasons: ["device_active_nothing_to_clear", "autoclear_disabled"],
+      accounted_for: true
+    });
+    const afterDecision = (await query(
+      `SELECT status, updated_at::text AS updated_at, xmin::text AS row_version
+       FROM device_identities WHERE device_identity = $1`,
+      [fixture.device.deviceIdentity]
+    )).rows[0];
+    assert.deepEqual(afterDecision, beforeDecision);
+    assert.equal(afterDecision.status, "ACTIVE");
+    const session = (await query(
+      `SELECT state, reconciliation_result
+       FROM recovery_sessions WHERE recovery_id = $1`,
+      [fixture.recoveryId]
+    )).rows[0];
+    assert.equal(session.state, "completed");
+    assert.equal(session.reconciliation_result.all_items_reported_by_device_accounted_for, true);
+    assert.equal((await query(
+      `SELECT COUNT(*)::int AS n FROM recovery_audit_events
+       WHERE recovery_id = $1 AND kind = 'recovery_completed_not_cleared'`,
+      [fixture.recoveryId]
+    )).rows[0].n, 1);
+
+    const repeated = await complete(fixture.device, fixture.recoveryId, fixture.manifest);
+    assert.deepEqual(repeated.json(), response.json());
+  } catch (error) {
+    await blocker.query("ROLLBACK").catch(() => {});
+    if (completion) await completion.catch(() => {});
+    throw error;
+  } finally {
+    blocker.release();
+  }
+});
+
+test("an ACTIVE device stays not_cleared when autoclear is enabled", async () => {
+  const originalAutoclear = config.recoveryAutoclear;
+  try {
+    const fixture = await buildValidRecovery({ autoclear: true, deviceStatus: "ACTIVE" });
+    const blocker = await getPool().connect();
+    let completion;
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [`ledger-integrity:${fixture.device.deviceIdentity}`]
+      );
+      const blockerPid = Number((await blocker.query("SELECT pg_backend_pid() AS pid")).rows[0].pid);
+      completion = complete(fixture.device, fixture.recoveryId, fixture.manifest);
+      await waitForBackendsBlockedBy(getPool(), blockerPid, [/pg_advisory_xact_lock/]);
+      const beforeDecision = (await query(
+        `SELECT status, updated_at::text AS updated_at, xmin::text AS row_version
+         FROM device_identities WHERE device_identity = $1`,
+        [fixture.device.deviceIdentity]
+      )).rows[0];
+      await blocker.query("COMMIT");
+
+      const response = await completion;
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.json().accounted_for, true);
+      assert.equal(response.json().outcome, "not_cleared");
+      assert.ok(response.json().reasons.includes("device_active_nothing_to_clear"));
+      assert.ok(!response.json().reasons.includes("autoclear_disabled"));
+
+      const afterDecision = (await query(
+        `SELECT status, updated_at::text AS updated_at, xmin::text AS row_version
+         FROM device_identities WHERE device_identity = $1`,
+        [fixture.device.deviceIdentity]
+      )).rows[0];
+      assert.deepEqual(afterDecision, beforeDecision);
+      assert.equal(afterDecision.status, "ACTIVE");
+      assert.equal((await query(
+        "SELECT state FROM recovery_sessions WHERE recovery_id = $1",
+        [fixture.recoveryId]
+      )).rows[0].state, "completed");
+      assert.equal((await query(
+        `SELECT COUNT(*)::int AS n FROM recovery_audit_events
+         WHERE recovery_id = $1 AND kind = 'recovery_completed_cleared'`,
+        [fixture.recoveryId]
+      )).rows[0].n, 0);
+    } catch (error) {
+      await blocker.query("ROLLBACK").catch(() => {});
+      if (completion) await completion.catch(() => {});
+      throw error;
+    } finally {
+      blocker.release();
+    }
+  } finally {
+    setRecoveryAutoclear(originalAutoclear);
+  }
+});
+
+test("an ACTIVE device with an unaccounted replacement escalates", async () => {
+  const fixture = await buildValidRecovery({ autoclear: true, deviceStatus: "ACTIVE" });
+  await query(
+    `UPDATE recovery_reservations
+     SET status = 'reserved', accepted_at = NULL
+     WHERE recovery_id = $1`,
+    [fixture.recoveryId]
+  );
+  const response = await complete(fixture.device, fixture.recoveryId, fixture.manifest);
+  await assertUnresolved(fixture, response, "reported_item_not_replaced", "ACTIVE");
+  assert.ok(response.json().reasons.includes("device_active_nothing_to_clear"));
+  assert.equal((await query(
+    "SELECT status FROM device_identities WHERE device_identity = $1",
+    [fixture.device.deviceIdentity]
+  )).rows[0].status, "ACTIVE");
+});
+
+test("an ACTIVE device with an integrity event after the manifest HWM escalates", async () => {
+  const fixture = await buildValidRecovery({ autoclear: true, deviceStatus: "ACTIVE" });
+  await query(
+    `INSERT INTO ledger_integrity_events (device_identity, entry_id, kind, detail)
+     VALUES ($1, 2, 'fork_id_conflict', $2::jsonb)`,
+    [fixture.device.deviceIdentity, JSON.stringify({ received_entry_hash: fixture.rejectedHash })]
+  );
+  const response = await complete(fixture.device, fixture.recoveryId, fixture.manifest);
+  await assertUnresolved(fixture, response, "integrity_event_after_hwm", "ACTIVE");
+  assert.equal((await query(
+    "SELECT status FROM device_identities WHERE device_identity = $1",
+    [fixture.device.deviceIdentity]
+  )).rows[0].status, "ACTIVE");
+});
+
+test("a device in any other status is ineligible and not accounted", async () => {
+  const fixture = await buildValidRecovery({ autoclear: true, deviceStatus: "ROTATED" });
+  const response = await complete(fixture.device, fixture.recoveryId, fixture.manifest);
+  await assertUnresolved(fixture, response, "device_status_ineligible", "ROTATED");
+  assert.equal((await query(
+    "SELECT status FROM device_identities WHERE device_identity = $1",
+    [fixture.device.deviceIdentity]
+  )).rows[0].status, "ROTATED");
+});
+
+async function assertUnresolved(fixture, response, reason, expectedDeviceStatus = "FORKED") {
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().outcome, "not_cleared");
+  assert.equal(response.json().accounted_for, false);
   assert.ok(response.json().reasons.includes(reason), response.body);
   const session = (await query(
     "SELECT state, reconciliation_result FROM recovery_sessions WHERE recovery_id = $1",
@@ -355,13 +518,13 @@ async function assertUnresolved(fixture, response, reason) {
   assert.equal((await query(
     "SELECT status FROM device_identities WHERE device_identity = $1",
     [fixture.device.deviceIdentity]
-  )).rows[0].status, "FORKED");
+  )).rows[0].status, expectedDeviceStatus);
 }
 
 test("actual C1 raw Class R identity is accepted without rewriting preserved evidence", async () => {
   const fixture = await buildC1ShapeRecovery();
   const response = await complete(fixture.device, fixture.recoveryId, fixture.manifest);
-  assert.deepEqual(response.json(), { outcome: "cleared", reasons: [] });
+  assert.deepEqual(response.json(), { outcome: "cleared", reasons: [], accounted_for: true });
   const session = (await query(
     "SELECT reconciliation_result FROM recovery_sessions WHERE recovery_id = $1",
     [fixture.recoveryId]
@@ -524,7 +687,10 @@ test("stored part bytes are re-hashed before planning and completion", async () 
   const completed = await complete(device, recoveryId, manifest);
   assert.equal(completed.statusCode, 200);
   assert.equal(completed.json().outcome, "not_cleared");
+  assert.equal(completed.json().accounted_for, false);
   assert.ok(completed.json().reasons.includes("stored_part_digest_mismatch"));
+  const repeated = await complete(device, recoveryId, manifest);
+  assert.deepEqual(repeated.json(), completed.json());
   const session = (await query(
     "SELECT state, reconciliation_result FROM recovery_sessions WHERE recovery_id = $1",
     [recoveryId]
@@ -860,7 +1026,7 @@ test("a legitimate reversal remap is accepted", async () => {
   };
   assert.deepEqual(
     (await complete(device, recoveryId, manifest)).json(),
-    { outcome: "cleared", reasons: [] }
+    { outcome: "cleared", reasons: [], accounted_for: true }
   );
 });
 
@@ -965,7 +1131,7 @@ test("partial acceptance survives expiry, takeover, remaining sync, and completi
     own_imported: [{ entry_id: accepted.id, entry_hash: accepted.entry_hash }]
   };
   const completed = await complete(device, takeover.recoveryId, manifest);
-  assert.deepEqual(completed.json(), { outcome: "cleared", reasons: [] });
+  assert.deepEqual(completed.json(), { outcome: "cleared", reasons: [], accounted_for: true });
   assert.equal((await query(
     "SELECT COUNT(*)::int AS n FROM ledger_recoveries WHERE recovery_id = $1",
     [takeover.recoveryId]
@@ -1084,6 +1250,7 @@ test("each completion proof condition fails closed with a machine reason", async
       const response = await complete(fixture.device, fixture.recoveryId, fixture.manifest);
       assert.equal(response.statusCode, 200);
       assert.equal(response.json().outcome, "not_cleared");
+      assert.equal(response.json().accounted_for, false);
       assert.ok(response.json().reasons.includes(current.reason));
       assert.equal((await query(
         "SELECT status FROM device_identities WHERE device_identity = $1",
@@ -1120,6 +1287,7 @@ test("fork_continuity, hash_mismatch, unmatched conflicts, and events after hwm 
       );
       const response = await complete(fixture.device, fixture.recoveryId, fixture.manifest);
       assert.equal(response.json().outcome, "not_cleared");
+      assert.equal(response.json().accounted_for, false);
       assert.ok(response.json().reasons.includes(
         kind === "fork_id_conflict" ? "unmatched_fork_conflict" : "ineligible_integrity_event"
       ));
@@ -1202,6 +1370,7 @@ test("completion, integrity-event writing, and sync follow the lock order withou
   for (const response of responses) {
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().outcome, "not_cleared");
+    assert.equal(response.json().accounted_for, false);
     assert.ok(response.json().reasons.includes("integrity_event_after_hwm"));
   }
 });
