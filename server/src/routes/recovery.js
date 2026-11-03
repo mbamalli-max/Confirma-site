@@ -838,13 +838,53 @@ async function completeRecovery(client, session, device, manifest, manifestHash)
     `SELECT id, kind, detail FROM ledger_integrity_events WHERE device_identity = $1 ORDER BY id`,
     [session.device_identity]
   )).rows;
+  // Resolve all otherwise-unmatched historical conflicts together. A prior
+  // mapping is evidence only while its completed/accounted session and exact
+  // replacement ledger row still agree for this device and account.
+  const previouslyRecoveredCandidates = [...new Set(integrityEvents
+    .filter((event) => (
+      Number(event.id) <= Number(session.integrity_hwm)
+      && event.kind === "fork_id_conflict"
+      && !rejected.has(String(event.detail?.received_entry_hash || ""))
+    ))
+    .map((event) => String(event.detail?.received_entry_hash || ""))
+    .filter(isHash))];
+  const previouslyRecovered = previouslyRecoveredCandidates.length === 0
+    ? new Set()
+    : new Set((await client.query(
+      `
+        SELECT DISTINCT mapping.original_entry_hash
+        FROM ledger_recoveries AS mapping
+        JOIN recovery_sessions AS previous_session
+          ON previous_session.recovery_id = mapping.recovery_id
+         AND previous_session.device_identity = mapping.device_identity
+        JOIN ledger_entries AS replacement
+          ON replacement.device_identity = mapping.device_identity
+         AND replacement.entry_id = mapping.replacement_entry_id
+         AND replacement.entry_hash = mapping.replacement_entry_hash
+        WHERE mapping.device_identity = $1
+          AND mapping.original_entry_hash = ANY($2::text[])
+          AND mapping.recovery_id <> $3
+          AND previous_session.user_id = $4
+          AND previous_session.state = 'completed'
+          AND previous_session.reconciliation_result
+            @> '{"all_items_reported_by_device_accounted_for": true}'::jsonb
+      `,
+      [
+        session.device_identity,
+        previouslyRecoveredCandidates,
+        session.recovery_id,
+        session.user_id
+      ]
+    )).rows.map((row) => row.original_entry_hash));
   for (const event of integrityEvents) {
     const id = Number(event.id);
     if (id > Number(session.integrity_hwm)) {
       addReason(reasons, "integrity_event_after_hwm");
     } else if (event.kind !== "fork_id_conflict") {
       addReason(reasons, "ineligible_integrity_event");
-    } else if (!rejected.has(String(event.detail?.received_entry_hash || ""))) {
+    } else if (!rejected.has(String(event.detail?.received_entry_hash || ""))
+        && !previouslyRecovered.has(String(event.detail?.received_entry_hash || ""))) {
       addReason(reasons, "unmatched_fork_conflict");
     }
   }
