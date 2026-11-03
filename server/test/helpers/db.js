@@ -69,10 +69,29 @@ export async function createStageDatabase(throughVersion, {
     },
     async drop() {
       await pool.end();
-      await admin.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(name)} WITH (FORCE)`);
+      await dropStageDatabase(admin, name);
       await admin.end();
     }
   };
+}
+
+// DROP DATABASE ... WITH (FORCE) must signal every backend on the database. A freshly
+// created stage database can briefly host an autovacuum worker (no role), which a
+// non-superuser test role may not signal, so PostgreSQL answers 42501 "permission
+// denied to terminate process" and the database is left behind. The worker is
+// transient: retry that one error for a few seconds; any other error, or a
+// persistent one, still fails. No privileges are widened.
+async function dropStageDatabase(admin, name, { attempts = 40, delayMs = 250 } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await admin.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(name)} WITH (FORCE)`);
+      return;
+    } catch (error) {
+      const transientWorker = error?.code === "42501" && /terminate process/i.test(String(error.message));
+      if (!transientWorker || attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
 }
 
 export function assertLocalTestDatabase(databaseUrl) {
