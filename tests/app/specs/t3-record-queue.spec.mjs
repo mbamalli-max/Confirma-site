@@ -356,7 +356,10 @@ test("Q4e a restored (imported) record is never queued by the repair", async ({ 
       tx.onerror = () => reject(tx.error);
     });
     db.close();
-  }, { ...own, id: 1000000001, entry_hash: "f".repeat(64), importedFromServer: true });
+  // An imported DISPLAY row belonging to another device. (A row claiming THIS device's
+  // identity is recovery's concern, not the ordinary queue repair's; that own-import
+  // case is covered by the recovery specs, e.g. restore-chain R5/R11 and recovery-c3.)
+  }, { ...own, id: 1000000001, entry_hash: "f".repeat(64), importedFromServer: true, device_identity: "c".repeat(32) });
   await page.reload();
   await expect.poll(async () => (await readLocalState(page)).stores.syncQueue.length).toBe(1);
   await page.waitForTimeout(500);

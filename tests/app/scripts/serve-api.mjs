@@ -17,6 +17,7 @@ const child = spawn(process.execPath, [server], {
     DATABASE_URL: database.toString(),
     NODE_ENV: "test",
     ALLOW_DEV_OTP: "true",
+    RECOVERY_MODE: "all",
     JWT_SECRET: "local-app-playwright-secret",
     SERVER_RECEIPT_SECRET: "local-app-playwright-receipt",
     CORS_ORIGINS: [app.origin, oldApp.origin].join(","),

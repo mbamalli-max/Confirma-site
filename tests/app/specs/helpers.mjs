@@ -117,13 +117,19 @@ export async function installIdbFault(page) {
     const abortAfterWipeDeletes = (store, key) => {
       const fault = window.__signoutTestFault?.next;
       const storeNames = transactionStoreNames.get(store.transaction) || [...store.transaction.objectStoreNames];
-      const wipeStores = ["records", "syncQueue", "customLabels", "usage", "voiceCorrections", "anomaly_log", "settings"];
+      const wipeStores = [
+        "records", "syncQueue", "customLabels", "usage", "voiceCorrections", "anomaly_log",
+        "recoverySnapshots", "recoveryWork", "settings"
+      ];
       if (fault !== "wipe-after-deletes" || store.name !== "settings" || key !== "wipe_epoch"
         || storeNames.length !== wipeStores.length || !wipeStores.every((name, index) => storeNames[index] === name)) return;
       window.__signoutTestFault.next = "";
       window.__signoutTestFault.fired = {
         settingKey: key,
-        storeNames,
+        // Preserve the pre-C3 diagnostic shape for existing assertions while
+        // the condition above still proves the two recovery stores share the
+        // same atomic wipe transaction.
+        storeNames: storeNames.filter((name) => name !== "recoverySnapshots" && name !== "recoveryWork"),
         keys: [...(transactionKeys.get(store.transaction) || [])]
       };
       queueMicrotask(() => store.transaction.abort());
@@ -159,7 +165,10 @@ export async function installIdbFault(page) {
       transactionStoreNames.set(transaction, names);
       const fault = window.__signoutTestFault?.next;
       const isSettingsOnly = names.length === 1 && names[0] === "settings";
-      const isWipe = ["records", "syncQueue", "customLabels", "usage", "voiceCorrections", "anomaly_log", "settings"]
+      const isWipe = [
+        "records", "syncQueue", "customLabels", "usage", "voiceCorrections", "anomaly_log",
+        "recoverySnapshots", "recoveryWork", "settings"
+      ]
         .every((name) => names.includes(name));
       if (mode === "readwrite" && ((fault === "settings" && isSettingsOnly) || (fault === "wipe" && isWipe))) {
         window.__signoutTestFault.next = "";
@@ -268,6 +277,19 @@ export async function readStoredProfile(page) {
   return (stores.settings || []).find((record) => record.key === "profile");
 }
 
+export async function ensureCaptureScreen(page, { timeout = 5_000 } = {}) {
+  const captureScreen = page.locator("#screen-capture.active");
+  if (!(await captureScreen.isVisible())) {
+    const recordNavigation = page.locator("#nav-record-v2");
+    await expect(recordNavigation, "cannot record: capture is inactive and Record navigation is unavailable")
+      .toBeVisible({ timeout });
+    await recordNavigation.click({ timeout });
+    await expect(captureScreen, "Record navigation did not return to the capture screen")
+      .toBeVisible({ timeout });
+  }
+  return captureScreen;
+}
+
 export async function writeLocalState(page, entries) {
   await page.evaluate(async (values) => {
     const request = indexedDB.open("confirma-v3-db");
@@ -362,9 +384,11 @@ function databaseCommand(sql) {
     "--command", sql
   ], {
     encoding: "utf8",
+    // Large ledgers (thousands of rows with payloads) exceed Node's 1 MiB default.
+    maxBuffer: 256 * 1024 * 1024,
     env: { ...process.env, ...target.env }
   });
-  if (result.status !== 0) throw new Error(`read-only database assertion failed: ${result.stderr || "psql exited unsuccessfully"}`);
+  if (result.status !== 0) throw new Error(`read-only database assertion failed: ${result.stderr || result.error?.code || "psql exited unsuccessfully"}`);
   return result.stdout.trim();
 }
 
@@ -400,6 +424,28 @@ export function deviceStatusForIdentity(deviceIdentity) {
   if (!/^[0-9a-f]{16,128}$/i.test(id)) throw new Error("expected a hex device identity");
   const json = databaseCommand(`SELECT row_to_json(device) FROM (SELECT status, revoked_at FROM device_identities WHERE device_identity = '${id}') device;`);
   return json ? JSON.parse(json) : null;
+}
+
+// Read-only recovery checkpoint evidence from the throwaway browser-test database.
+export function recoveryPartsForSession(recoveryId) {
+  const id = String(recoveryId || "");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("expected a UUID recovery id");
+  const json = databaseCommand(`SELECT coalesce(json_agg(row_to_json(part)), '[]'::json) FROM (SELECT part_no, sha256 FROM recovery_parts WHERE recovery_id = '${id}' ORDER BY part_no) part;`);
+  return JSON.parse(json || "[]");
+}
+
+export function recoverySessionState(recoveryId) {
+  const id = String(recoveryId || "");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("expected a UUID recovery id");
+  const json = databaseCommand(`SELECT row_to_json(session) FROM (SELECT state, declared_part_count FROM recovery_sessions WHERE recovery_id = '${id}') session;`);
+  return json ? JSON.parse(json) : null;
+}
+
+export function recoverySessionsForDevice(deviceIdentity) {
+  const id = String(deviceIdentity || "");
+  if (!/^[0-9a-f]{16,128}$/i.test(id)) throw new Error("expected a hex device identity");
+  const json = databaseCommand(`SELECT coalesce(json_agg(row_to_json(session)), '[]'::json) FROM (SELECT recovery_id::text, state, completed_at FROM recovery_sessions WHERE device_identity = '${id}' ORDER BY started_at, recovery_id) session;`);
+  return JSON.parse(json || "[]");
 }
 
 // Test fixture write (throwaway test database only): give a test account's unlisted profile a sector

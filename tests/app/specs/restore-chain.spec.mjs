@@ -1,10 +1,13 @@
 import { expect, test } from "@playwright/test";
+import { detectSuspect } from "../../../app-v3/recovery-core.js";
 import {
   APP_API_URL,
   armFault,
   armRecordWriteHold,
   clearStore,
+  deleteLocalSettings,
   deviceStatusForIdentity,
+  ensureCaptureScreen,
   installIdbFault,
   ledgerEntriesForDevice,
   ledgerIntegrityEventsForDevice,
@@ -203,15 +206,7 @@ async function verifyOwnRows(page, local) {
 }
 
 async function confirmRecord(page, amount, { waitForSync = false, expectPaused = false, expectSaveFailure = false } = {}) {
-  const captureScreen = page.locator("#screen-capture.active");
-  if (!(await captureScreen.isVisible())) {
-    const recordNavigation = page.locator("#nav-record-v2");
-    await expect(recordNavigation, "cannot record: capture is inactive and Record navigation is unavailable")
-      .toBeVisible({ timeout: RECORD_NAV_TIMEOUT });
-    await recordNavigation.click({ timeout: RECORD_NAV_TIMEOUT });
-    await expect(captureScreen, "Record navigation did not return to the capture screen")
-      .toBeVisible({ timeout: RECORD_NAV_TIMEOUT });
-  }
+  await ensureCaptureScreen(page, { timeout: RECORD_NAV_TIMEOUT });
   await page.locator("#quick-label-grid button").first().click();
   await page.locator("#amount-input-v2").fill(String(amount));
   await page.locator("#prepare-confirmation").click();
@@ -270,6 +265,50 @@ async function reloadThroughStartupRestore(page) {
   const response = await recordsResponse;
   expect(response.status(), "startup restore GET /records failed").toBe(200);
   await waitForStableLocalRows(page);
+}
+
+async function waitForCompletedRecovery(page) {
+  await expect.poll(async () => {
+    const recovery = (await readLocalState(page)).settings.recovery_state;
+    return recovery?.state === "completed" && recovery?.completion?.accounted_for === true
+      ? "completed-accounted"
+      : `${recovery?.state || "none"}-${String(recovery?.completion?.accounted_for)}`;
+  }, SERVER_TIMEOUT).toBe("completed-accounted");
+  await expect.poll(() => page.evaluate(() => {
+    const banner = document.querySelector("#recovery-hold-banner");
+    if (!banner) return "absent";
+    const style = getComputedStyle(banner);
+    if (banner.hidden || style.display === "none" || style.visibility === "hidden") return "hidden";
+    const text = banner.textContent || "";
+    return text.includes("We're repairing a syncing problem")
+      || text.includes("We need to finish repairing this on our side")
+      ? "hold-visible"
+      : "non-hold";
+  }), SERVER_TIMEOUT).toMatch(/^(?:absent|hidden|non-hold)$/);
+  return readLocalState(page);
+}
+
+async function waitForHeldRecovery(page, { states = ["escalated"] } = {}) {
+  await expect.poll(async () => (
+    (await readLocalState(page)).settings.recovery_state?.state || "none"
+  ), SERVER_TIMEOUT).toMatch(new RegExp(`^(?:${states.join("|")})$`));
+  const recovery = (await readLocalState(page)).settings.recovery_state;
+  await expect(page.locator("#recovery-hold-banner")).toHaveText(recovery?.state === "escalated"
+    ? "Your records are preserved. We need to finish repairing this on our side."
+    : "We're repairing a syncing problem. Your saved records are being preserved.");
+  return readLocalState(page);
+}
+
+function recoveryWorkFor(local) {
+  return local.stores.recoveryWork.find((work) => (
+    work.recovery_id === local.settings.recovery_state?.recovery_id
+  ));
+}
+
+function expectNoRecoveryReplacement(local, message) {
+  const work = recoveryWorkFor(local);
+  expect(work, `${message}: recovery work missing`).toBeDefined();
+  expect((work.items || []).filter((item) => item.replacement), `${message}: replacement planned`).toHaveLength(0);
 }
 
 function expectUnchangedOriginals(before, after, message) {
@@ -461,7 +500,8 @@ test("restore chain R5/R11: an old imported copy is repaired as the original sig
   for (const [index, record] of originals.entries()) await putStoreValue(page, "records", importedOwnCopy(record, 80_000 + index));
 
   await reloadThroughStartupRestore(page);
-  const local = await readLocalState(page);
+  const local = await waitForCompletedRecovery(page);
+  expectNoRecoveryReplacement(local, "R5/R11 imported-copy repair");
   const repaired = ownRecords(local);
   expect(repaired.map((row) => row.id)).toEqual(originals.map((row) => row.id));
   expect(repaired.every((row) => row.restoredOwn === true && row.importedFromServer === false)).toBe(true);
@@ -471,6 +511,7 @@ test("restore chain R5/R11: an old imported copy is repaired as the original sig
   expect(local.settings.fork_recovery_pending).toBeUndefined();
   await confirmRecord(page, 6503, { waitForSync: true });
   expect(ownRecords(await readLocalState(page)).at(-1).id).toBe(3);
+  expectOneContinuousServerChain(deviceIdentity, 3, "R5/R11 next append must retain a valid chain");
   expect(ledgerIntegrityEventsForDevice(deviceIdentity)).toEqual([]);
   expect(deviceStatusForIdentity(deviceIdentity)?.status).toBe("ACTIVE");
 });
@@ -496,10 +537,12 @@ test("restore chain P2: earlier-dated other-device imports receive fresh local i
     ...row
   });
   let responseRows = [otherRows[0]];
+  let tamperedResponses = 0;
   await page.route("**/records", async (route) => {
     const response = await route.fetch();
     const body = await response.json();
     body.records = [...responseRows.map(syntheticRow), ...(body.records || [])];
+    tamperedResponses += 1;
     await route.fulfill({ response, body: JSON.stringify(body) });
   });
   try {
@@ -527,12 +570,13 @@ test("restore chain P2: earlier-dated other-device imports receive fresh local i
     const repeated = await readLocalState(page);
     expect(repeated.stores.records).toEqual(beforeRepeat);
     expect(repeated.stores.syncQueue).toEqual(originalQueue);
+    expect(tamperedResponses, "synthetic /records responses were never intercepted").toBeGreaterThan(0);
   } finally {
     await page.unrouteAll({ behavior: "ignoreErrors" });
   }
 });
 
-test("restore chain P2: invalid own signatures defer imported-copy repair", async ({ page }) => {
+test("restore chain P2: transport-only invalid server signatures do not block a locally authorized R repair", async ({ page }) => {
   test.slow();
   const { originals } = await createSyncedChain(page, "restore-chain-invalid-signatures", [6521]);
   const original = originals[0];
@@ -548,35 +592,95 @@ test("restore chain P2: invalid own signatures defer imported-copy repair", asyn
   ];
 
   for (const [variant, signature] of invalidSignatures) {
+    // Isolate each variant: a completed recovery from the previous variant
+    // would otherwise satisfy waitForCompletedRecovery without any new recovery
+    // running (the interception counters below prove that it ran).
+    await deleteLocalSettings(page, ["fork_recovery_pending", "fork_recovery_skips", "recovery_state"]);
+    await clearStore(page, "recoverySnapshots");
+    await clearStore(page, "recoveryWork");
     await clearStore(page, "records");
     await clearStore(page, "syncQueue");
     await putStoreValue(page, "records", importedOwnCopy(original, 84_000));
     const before = stable(await readLocalState(page));
-    await page.route("**/records", async (route) => {
+    const tamperedResponses = { plain: 0, recovery: 0 };
+    await page.route("**/records**", async (route) => {
       const response = await route.fetch();
       const body = await response.json();
       const own = body.records?.find((row) => row.device_identity === original.device_identity && Number(row.entry_id) === Number(original.id));
-      if (own) own.signature = signature;
+      if (own) {
+        own.signature = signature;
+        const counter = new URL(route.request().url()).searchParams.has("offset") ? "recovery" : "plain";
+        tamperedResponses[counter] += 1;
+      }
       await route.fulfill({ response, body: JSON.stringify(body) });
     });
+    let after;
     try {
       await reloadThroughStartupRestore(page);
+      after = await waitForCompletedRecovery(page);
     } finally {
       await page.unrouteAll({ behavior: "ignoreErrors" });
     }
-    const after = await readLocalState(page);
-    expect(after.stores.records, `${variant} signature changed records`).toEqual(before.stores.records);
+    expect(tamperedResponses.plain, `${variant} plain /records response was never tampered`).toBeGreaterThan(0);
+    expect(tamperedResponses.recovery, `${variant} recovery /records response was never tampered`).toBeGreaterThan(0);
+    const repaired = ownRecords(after);
+    expect(repaired.map((row) => row.id), `${variant} signature did not restore the accepted id`).toEqual([original.id]);
+    expect(repaired.every((row) => row.restoredOwn === true && row.importedFromServer === false), `${variant} signature lost restored-own provenance`).toBe(true);
+    expect(repaired.map(({ entry_hash, signature: localSignature }) => ({ entry_hash, signature: localSignature })), `${variant} signature changed the local signed bytes`)
+      .toEqual([{ entry_hash: original.entry_hash, signature: original.signature }]);
     expect(after.stores.syncQueue, `${variant} signature changed queue`).toEqual(before.stores.syncQueue);
-    expect(after.stores.records.some((record) => record.importedFromServer && record.entry_hash === original.entry_hash), `${variant} signature must retain imported copy`).toBe(true);
-    expect(after.settings.fork_recovery_pending?.cases, `${variant} signature must defer recovery`).toEqual(expect.arrayContaining([
-      expect.objectContaining({ entry_id: original.id, entry_hash: original.entry_hash, reason: "hash_or_signature_unverified" })
-    ]));
+    expectNoRecoveryReplacement(after, `${variant} transport signature`);
+    expect(deviceStatusForIdentity(original.device_identity)?.status, `${variant} transport signature changed device status`).toBe("ACTIVE");
   }
 });
 
-test("restore chain R6/R6b: every repair collision is deferred without changing ledger or queue bytes", async ({ page }) => {
+test("restore chain P2: invalid signatures on local imported copies cannot authorize repair", async ({ page }) => {
   test.slow();
-  const { originals } = await createSyncedChain(page, "restore-chain-collisions", [6601]);
+  const { deviceIdentity, originals } = await createSyncedChain(page, "restore-chain-local-invalid-signatures", [6531]);
+  const original = originals[0];
+  const differentKeySignature = await page.evaluate(async (entryHash) => {
+    const keyPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+    const signature = await crypto.subtle.sign({ name: "ECDSA", hash: { name: "SHA-256" } }, keyPair.privateKey, new TextEncoder().encode(entryHash));
+    return btoa(String.fromCharCode(...new Uint8Array(signature)));
+  }, original.entry_hash);
+  const invalidSignatures = [
+    ["garbage", "not-a-valid-signature"],
+    ["different-key", differentKeySignature],
+    ["truncated-base64", original.signature.slice(0, -1)]
+  ];
+
+  await clearStore(page, "records");
+  await clearStore(page, "syncQueue");
+  for (const [index, [variant, signature]] of invalidSignatures.entries()) {
+    await putStoreValue(page, "records", {
+      ...importedOwnCopy(original, 85_000 + index),
+      signature,
+      invalid_signature_variant: variant
+    });
+  }
+  const before = stable(await readLocalState(page));
+  await reloadThroughStartupRestore(page);
+  const after = await waitForHeldRecovery(page);
+
+  expect(after.stores.records).toEqual(before.stores.records);
+  expect(after.stores.syncQueue).toEqual(before.stores.syncQueue);
+  expect(after.stores.records.map((row) => row.invalid_signature_variant).sort())
+    .toEqual(invalidSignatures.map(([variant]) => variant).sort());
+  expect(after.stores.records.every((row) => row.importedFromServer === true)).toBe(true);
+  expect(after.stores.records.some((row) => row.id === original.id && row.importedFromServer === false)).toBe(false);
+  expect(after.settings.recovery_state.completion).toEqual(expect.objectContaining({ accounted_for: false }));
+  expectNoRecoveryReplacement(after, "local invalid signatures");
+  expect(recoveryWorkFor(after).r_copies || []).toEqual([]);
+  expect(recoveryWorkFor(after).manifest.items).toEqual(expect.arrayContaining([
+    expect.objectContaining({ original_entry_hash: original.entry_hash, disposition: "unexplained" })
+  ]));
+  expect(ledgerEntriesForDevice(deviceIdentity)).toHaveLength(1);
+  expect(deviceStatusForIdentity(deviceIdentity)?.status).toBe("ACTIVE");
+});
+
+test("restore chain R6/R6b: a record-id collision is preserved under the C3 unexplained hold", async ({ page }) => {
+  test.slow();
+  const { deviceIdentity, originals } = await createSyncedChain(page, "restore-chain-id-collision", [6601]);
   const original = originals[0];
   await clearStore(page, "records");
   const copy = importedOwnCopy(original, 81_000);
@@ -587,43 +691,195 @@ test("restore chain R6/R6b: every repair collision is deferred without changing 
   await putStoreValue(page, "syncQueue", queued);
   const before = stable(await readLocalState(page));
   await reloadThroughStartupRestore(page);
-  const after = await readLocalState(page);
+  const after = await waitForHeldRecovery(page, { states: ["classified"] });
   expect(after.stores.records).toEqual(before.stores.records);
   expect(after.stores.syncQueue).toEqual(before.stores.syncQueue);
-  expect(after.settings.fork_recovery_pending.cases).toEqual(expect.arrayContaining([
-    expect.objectContaining({ entry_id: original.id, entry_hash: original.entry_hash })
+  // Package A has already persisted its collision marker before C3 begins, so
+  // beginRecoveryState does not duplicate these C1-detected reasons in durable state.
+  expect(detectSuspect({ ...after, deviceIdentity }).reasons).toEqual(expect.arrayContaining([
+    "own_imported_copy",
+    "own_id_duplicate"
   ]));
+  expectNoRecoveryReplacement(after, "record-id collision");
+  expect(recoveryWorkFor(after).r_copies).toHaveLength(1);
+  expect(ledgerEntriesForDevice(deviceIdentity)).toHaveLength(1);
+  expect(deviceStatusForIdentity(deviceIdentity)?.status).toBe("ACTIVE");
+});
 
-  // Missing-own, hash-under-another-id, and queue-only collisions use the same
-  // fail-closed transaction; preserve a byte-for-byte snapshot for each.
-  for (const variant of ["missing", "hash", "queue", "verification", "signature-missing"]) {
+test("restore chain R6/R6b: missing-own and queue collisions remain Package A deferrals", async ({ page }) => {
+  test.slow();
+  const { deviceIdentity, originals } = await createSyncedChain(page, "restore-chain-package-a-collisions", [6611]);
+  const original = originals[0];
+  const queued = { entry_id: original.id, entry_hash: "d".repeat(64), status: "queued", entry_payload: collision(original, original.id, "d".repeat(64)) };
+
+  for (const variant of ["missing", "queue"]) {
+    await deleteLocalSettings(page, ["fork_recovery_pending", "fork_recovery_skips", "recovery_state"]);
     await clearStore(page, "records");
     await clearStore(page, "syncQueue");
     if (variant === "missing") await putStoreValue(page, "records", collision(original, original.id));
-    if (variant === "hash") await putStoreValue(page, "records", collision(original, 91_000, original.entry_hash));
     if (variant === "queue") await putStoreValue(page, "syncQueue", { ...queued, entry_hash: "c".repeat(64) });
-    if (variant === "verification") await putStoreValue(page, "records", importedOwnCopy(original, 82_000));
-    if (variant === "signature-missing") await putStoreValue(page, "records", importedOwnCopy(original, 83_000));
-    if (variant === "verification" || variant === "signature-missing") {
-      await page.route("**/records", async (route) => {
-        const response = await route.fetch();
-        const body = await response.json();
-        const own = body.records?.find((row) => row.device_identity === originals[0].device_identity);
-        if (own && variant === "verification") own.entry_hash = "a".repeat(64);
-        if (own && variant === "signature-missing") own.signature = null;
-        await route.fulfill({ response, body: JSON.stringify(body) });
-      });
-    }
     const snapshot = stable(await readLocalState(page));
     await reloadThroughStartupRestore(page);
-    await page.unrouteAll({ behavior: "ignoreErrors" });
     const result = await readLocalState(page);
     expect(result.stores.records, `${variant} collision changed records`).toEqual(snapshot.stores.records);
     expect(result.stores.syncQueue, `${variant} collision changed queue`).toEqual(snapshot.stores.syncQueue);
     expect(result.settings.fork_recovery_pending?.cases, `${variant} must retain the recovery evidence`).toEqual(expect.arrayContaining([
-      expect.objectContaining({ reason: variant === "verification" || variant === "signature-missing" ? "hash_or_signature_unverified" : "collision" })
+      expect.objectContaining({ reason: "collision" })
     ]));
+    expect(result.settings.recovery_state, `${variant} unexpectedly started C3 recovery`).toBeUndefined();
+    expect(result.stores.recoverySnapshots, `${variant} unexpectedly preserved a C3 snapshot`).toEqual([]);
+    expect(result.stores.recoveryWork, `${variant} unexpectedly planned C3 work`).toEqual([]);
+    expect(ledgerEntriesForDevice(deviceIdentity), `${variant} created a replacement`).toHaveLength(1);
   }
+});
+
+test("restore chain R6/R6b: an accepted hash under an unexpected local id is preserved without overwrite or duplicate", async ({ page }) => {
+  test.slow();
+  const { deviceIdentity, originals } = await createSyncedChain(page, "restore-chain-unexpected-hash-id", [6612]);
+  const accepted = originals[0];
+  await clearStore(page, "records");
+  await clearStore(page, "syncQueue");
+  await putStoreValue(page, "records", collision(accepted, 91_000, accepted.entry_hash));
+
+  const before = stable(await readLocalState(page));
+  const recordsBytes = JSON.stringify(before.stores.records);
+  const queueBytes = JSON.stringify(before.stores.syncQueue);
+  const serverBefore = stable(ledgerEntriesForDevice(deviceIdentity));
+  let recoveryRequests = 0;
+  const observeRecovery = (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/recovery/")) recoveryRequests += 1;
+  };
+  page.on("request", observeRecovery);
+
+  try {
+    await reloadThroughStartupRestore(page);
+    const after = await readLocalState(page);
+    expect(after.stores.records).toEqual(before.stores.records);
+    expect(after.stores.syncQueue).toEqual(before.stores.syncQueue);
+    expect(JSON.stringify(after.stores.records)).toBe(recordsBytes);
+    expect(JSON.stringify(after.stores.syncQueue)).toBe(queueBytes);
+    expect(after.stores.records.map((row) => row.id)).toEqual([91_000]);
+    expect(after.stores.records[0]).toEqual(expect.objectContaining({ id: 91_000, entry_hash: accepted.entry_hash }));
+    expect(after.stores.records.filter((row) => row.entry_hash === accepted.entry_hash)).toHaveLength(1);
+    expect(after.stores.records.some((row) => row.id === accepted.id)).toBe(false);
+    expect(ledgerEntriesForDevice(deviceIdentity)).toEqual(serverBefore);
+    expect(serverBefore).toHaveLength(1);
+    expect(serverBefore[0].entry_hash).toBe(accepted.entry_hash);
+    expect(after.settings.recovery_state).toBeUndefined();
+    expect(after.stores.recoverySnapshots).toEqual([]);
+    expect(after.stores.recoveryWork).toEqual([]);
+    expect(recoveryRequests).toBe(0);
+
+    // Evidence for this isolated shape: Package A finds the accepted hash
+    // locally and exits before writing a marker. The contract is preservation,
+    // no duplicate/overwrite, no recovery work and idempotence on replay.
+    await reloadThroughStartupRestore(page);
+    const repeated = await readLocalState(page);
+    expect(repeated.stores.records).toEqual(before.stores.records);
+    expect(repeated.stores.syncQueue).toEqual(before.stores.syncQueue);
+    expect(JSON.stringify(repeated.stores.records)).toBe(recordsBytes);
+    expect(JSON.stringify(repeated.stores.syncQueue)).toBe(queueBytes);
+    expect(repeated.stores.records.map((row) => row.id)).toEqual([91_000]);
+    expect(repeated.stores.records.filter((row) => row.entry_hash === accepted.entry_hash)).toHaveLength(1);
+    expect(repeated.stores.records.some((row) => row.id === accepted.id)).toBe(false);
+    expect(ledgerEntriesForDevice(deviceIdentity)).toEqual(serverBefore);
+    expect(repeated.settings.recovery_state).toBeUndefined();
+    expect(repeated.stores.recoverySnapshots).toEqual([]);
+    expect(repeated.stores.recoveryWork).toEqual([]);
+    expect(recoveryRequests).toBe(0);
+  } finally {
+    page.off("request", observeRecovery);
+  }
+});
+
+test("restore chain R6/R6b: a tampered server hash is unexplained and remains held", async ({ page }) => {
+  test.slow();
+  const { deviceIdentity, originals } = await createSyncedChain(page, "restore-chain-verification-collision", [6621]);
+  const original = originals[0];
+  await clearStore(page, "records");
+  await clearStore(page, "syncQueue");
+  await putStoreValue(page, "records", importedOwnCopy(original, 82_000));
+  const tamperedResponses = { plain: 0, recovery: 0 };
+  await page.route("**/records**", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    const own = body.records?.find((row) => row.device_identity === deviceIdentity);
+    if (own) {
+      own.entry_hash = "a".repeat(64);
+      const counter = new URL(route.request().url()).searchParams.has("offset") ? "recovery" : "plain";
+      tamperedResponses[counter] += 1;
+    }
+    await route.fulfill({ response, body: JSON.stringify(body) });
+  });
+  const before = stable(await readLocalState(page));
+  let after;
+  try {
+    await reloadThroughStartupRestore(page);
+    after = await waitForHeldRecovery(page);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+  // Recovery-first startup may skip the plain /records request entirely; the
+  // paged recovery read is the response that must be intercepted and changed.
+  expect(tamperedResponses.recovery, "recovery /records response was never tampered").toBeGreaterThan(0);
+  expect(after.stores.records).toEqual(before.stores.records);
+  expect(after.stores.syncQueue).toEqual(before.stores.syncQueue);
+  expect(after.stores.records).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      importedFromServer: true,
+      device_identity: deviceIdentity,
+      entry_hash: original.entry_hash
+    })
+  ]));
+  expectNoRecoveryReplacement(after, "tampered server hash");
+  expect(recoveryWorkFor(after).r_copies || []).toEqual([]);
+  expect(recoveryWorkFor(after).manifest.items).toEqual(expect.arrayContaining([
+    expect.objectContaining({ original_entry_hash: original.entry_hash, disposition: "unexplained" })
+  ]));
+  expect(ledgerEntriesForDevice(deviceIdentity)).toHaveLength(1);
+  expect(deviceStatusForIdentity(deviceIdentity)?.status).toBe("ACTIVE");
+});
+
+test("restore chain R6/R6b: a missing transport signature still completes the locally authorized R repair", async ({ page }) => {
+  test.slow();
+  const { deviceIdentity, originals } = await createSyncedChain(page, "restore-chain-missing-transport-signature", [6631]);
+  const original = originals[0];
+  await clearStore(page, "records");
+  await clearStore(page, "syncQueue");
+  await putStoreValue(page, "records", importedOwnCopy(original, 83_000));
+  const beforeQueue = stable((await readLocalState(page)).stores.syncQueue);
+  const tamperedResponses = { plain: 0, recovery: 0 };
+  await page.route("**/records**", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    const own = body.records?.find((row) => row.device_identity === deviceIdentity);
+    if (own) {
+      own.signature = null;
+      const counter = new URL(route.request().url()).searchParams.has("offset") ? "recovery" : "plain";
+      tamperedResponses[counter] += 1;
+    }
+    await route.fulfill({ response, body: JSON.stringify(body) });
+  });
+  let after;
+  try {
+    await reloadThroughStartupRestore(page);
+    after = await waitForCompletedRecovery(page);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+  expect(tamperedResponses.plain, "plain /records response was never tampered").toBeGreaterThan(0);
+  expect(tamperedResponses.recovery, "recovery /records response was never tampered").toBeGreaterThan(0);
+  const repaired = ownRecords(after);
+  expect(repaired.map((row) => row.id)).toEqual([original.id]);
+  expect(repaired.every((row) => row.restoredOwn === true && row.importedFromServer === false)).toBe(true);
+  expect(repaired.map(({ entry_hash, signature }) => ({ entry_hash, signature })))
+    .toEqual([{ entry_hash: original.entry_hash, signature: original.signature }]);
+  expect(after.stores.syncQueue).toEqual(beforeQueue);
+  expectNoRecoveryReplacement(after, "missing transport signature");
+  expect(recoveryWorkFor(after).r_copies).toHaveLength(1);
+  expect(ledgerEntriesForDevice(deviceIdentity)).toHaveLength(1);
+  expect(deviceStatusForIdentity(deviceIdentity)?.status).toBe("ACTIVE");
 });
 
 test("restore chain R7: pending queue is preserved byte-for-byte across reload before sync resumes", async ({ page }) => {

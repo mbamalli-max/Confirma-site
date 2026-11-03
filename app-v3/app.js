@@ -30,9 +30,53 @@ import {
 import {
   UNLISTED_BUSINESS_TYPE_ID, searchBusinessTypes, cleanBusinessDescription, businessDescriptionError
 } from "./business-search.js";
+import {
+  RecoveryPreconditionError,
+  RecoverySessionChangedError,
+  applyRebuild,
+  classifyRecords,
+  detectSuspect,
+  planReplacements,
+  takeSnapshot
+} from "./recovery-core.js";
+import {
+  RecoveryGuardError,
+  RecoveryPlanChangedError,
+  beginRecoveryState,
+  buildDetectionFingerprint,
+  buildCompletionManifest,
+  buildPlanRequest,
+  buildRecoveryParts,
+  clearRecoveryRetry,
+  deferRecoveryRetry,
+  expectedRecoveryHead,
+  isHeadMoveRefusal,
+  isPermanentRecoveryRefusal,
+  isRecoveryStateActive,
+  markRecoverySynced,
+  partDeclaration,
+  persistRecoveryPlan,
+  readRecoverySnapshot,
+  readRecoveryState,
+  readRecoveryWork,
+  recoveryResponseAllowsUnlock,
+  replaceRecoveryPlanAfterHeadMove,
+  sha256Canonical,
+  transitionRecoveryState,
+  verifyServerChain
+} from "./recovery-client.js";
 
 const DB_NAME = "confirma-v3-db";
 const DB_VERSION = 6;
+const RECOVERY_APP_VERSION = "package-c-c3";
+// Recovery requests use explicit deadlines without changing any ordinary API call.
+const RECOVERY_REQUEST_TIMEOUT_MS = 20_000;
+const RECOVERY_PART_UPLOAD_TIMEOUT_MS = 45_000;
+// Startup waits briefly for recovery, then wires the held UI while the same gate continues.
+const RECOVERY_STARTUP_WAIT_MS = 3_000;
+// Retry opportunities are event-driven (next open or online), never timer-driven.
+const RECOVERY_TIMEOUT_RETRY_DELAY_MS = 5 * 60 * 1000;
+const RECOVERY_UNAVAILABLE_RETRY_DELAY_MS = 15 * 60 * 1000;
 const FEATURE_TRANSFER_PRIMARY = false;
 const ONBOARDING_TOTAL_STEPS = 6;
 const ONBOARDING_PROFILE_STEP = 6;
@@ -124,7 +168,12 @@ const state = {
   lastSyncReceipt: "",
   swRegistration: null,
   swRefreshInFlight: false,
-  anomalyAutoReviewTimer: null
+  anomalyAutoReviewTimer: null,
+  recoveryActive: false,
+  recoveryGatePromise: null,
+  recoveryResumePromise: null,
+  recoveryState: null,
+  recoveryCompletionNotice: ""
 };
 
 let dashChart = null;
@@ -146,6 +195,7 @@ async function init() {
   if (await resolveAccountStartup()) {
     wireEvents();
     window.addEventListener("online", () => {
+      void recoveryGate({ allowAttempt: true });
       void flushPendingRevocations();
     });
     registerPwa();
@@ -184,11 +234,16 @@ async function init() {
   }
   initializeAuthPhoneCountry();
   syncVerificationState();
+  // Replacement signing depends on both the persisted device key and the
+  // verified identity anchor in the local profile. Do not let recovery reach
+  // its signing checkpoint until both halves of that trust state are loaded.
+  const startupRecoveryGate = recoveryGate({ allowAttempt: true });
+  await waitForRecoveryGateAtStartup(startupRecoveryGate);
   await updateSyncBadge();
   wireEvents();
   window.addEventListener("online", () => {
     void updateSyncBadge();
-    void flushSyncQueue();
+    void resumeRecoveryAfterSignIn();
     void flushPendingRevocations();
   });
   window.addEventListener("offline", () => {
@@ -226,12 +281,31 @@ async function init() {
     if (pinLockEnabled) {
       showPinLock();
     }
-    void flushSyncQueue();
-    void restoreServerAccountIntoLocal({ quiet: true }).then(() => noteEligibleSignIn("open"));
+    // Both ordinary startup operations are chained to the single original gate.
+    // A bounded UI wait must never create a second recovery runner.
+    void startupRecoveryGate.then((active) => {
+      if (active) return;
+      void flushSyncQueue();
+      void restoreServerAccountIntoLocal({ quiet: true }).then(() => noteEligibleSignIn("open"));
+    }).catch((error) => console.warn("Startup recovery gate did not finish cleanly.", error));
   } else {
     showScreen("screen-onboarding");
   }
   syncDevQaSnapshot("init");
+}
+
+async function waitForRecoveryGateAtStartup(gatePromise) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      gatePromise,
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(true), RECOVERY_STARTUP_WAIT_MS);
+      })
+    ]);
+  } finally {
+    if (timer != null) clearTimeout(timer);
+  }
 }
 
 // Returns false only when the server refused this install's session; the
@@ -6487,7 +6561,8 @@ async function verifyActiveOtpChallenge(
   enteredCode,
   {
     country = getPhoneInputCountry(),
-    persistProfileRemotely = true
+    persistProfileRemotely = true,
+    resumeRecovery = true
   } = {}
 ) {
   if (!state.profile) {
@@ -6678,11 +6753,17 @@ async function verifyActiveOtpChallenge(
   syncVerificationState();
   await refreshSyncQueueCount();
   if (activeChallenge.source === "server") {
-    await restoreServerAccountIntoLocal({
+    const restored = await restoreServerAccountIntoLocal({
       allowProfilePush: persistProfileRemotely
     });
     // A completed OTP sign-in is an eligible sign-in for the profile prompt (shown once on capture).
     void noteEligibleSignIn("otp");
+    if (resumeRecovery) {
+      void resumeRecoveryAfterSignIn({
+        ordinaryQueueAlreadyFlushed: restored.ordinaryQueueFlushed,
+        afterSuccessfulSignIn: true
+      }).catch((error) => console.warn("Post-sign-in recovery resume failed.", error));
+    }
   }
   syncDevQaSnapshot("otp_verified");
   return challengeChannel === "email"
@@ -6753,6 +6834,7 @@ async function verifyLocalOtpCode() {
     els["otp-verify-code"].textContent = "Verifying…";
   }
   const enteredCode = (els["otp-code-input"]?.value || "").trim();
+  const wasServerChallenge = state.otpChallenge?.source === "server";
   try {
     clearOtpError();
     await verifyActiveOtpChallenge(enteredCode);
@@ -6777,7 +6859,8 @@ async function verifyLocalOtpCode() {
   if (returnScreen === "screen-capture") {
     await renderRecentRecords();
   }
-  void flushSyncQueue();
+  // A server sign-in already ran the post-sign-in recovery/queue follow-up.
+  if (!wasServerChallenge) void flushSyncQueue();
   state.otpFromOnboarding = false;
   showScreen(returnScreen);
 }
@@ -6970,6 +7053,745 @@ async function fetchAuthenticatedJson(path, options = {}) {
   return data || {};
 }
 
+function ensureRecoveryBanner() {
+  let banner = document.getElementById("recovery-hold-banner");
+  if (banner) return banner;
+  banner = document.createElement("div");
+  banner.id = "recovery-hold-banner";
+  banner.setAttribute("role", "status");
+  banner.setAttribute("aria-live", "polite");
+  banner.hidden = true;
+  Object.assign(banner.style, {
+    position: "sticky",
+    top: "0",
+    zIndex: "1000",
+    padding: "12px 16px",
+    background: "#eef7f1",
+    color: "#183b2a",
+    borderBottom: "1px solid #bdd8c6",
+    fontWeight: "650",
+    lineHeight: "1.4"
+  });
+  document.body.prepend(banner);
+  return banner;
+}
+
+function renderRecoveryBanner(recoveryState = state.recoveryState) {
+  if (!state.recoveryCompletionNotice && !isRecoveryStateActive(recoveryState)) {
+    const existing = document.getElementById("recovery-hold-banner");
+    if (existing) {
+      existing.hidden = true;
+      existing.textContent = "";
+    }
+    return;
+  }
+  const banner = ensureRecoveryBanner();
+  if (state.recoveryCompletionNotice) {
+    banner.textContent = state.recoveryCompletionNotice;
+    banner.hidden = false;
+    return;
+  }
+  banner.textContent = recoveryState?.state === "escalated"
+    ? "Your records are preserved. We need to finish repairing this on our side."
+    : recoveryState?.availability === "waiting"
+      ? "Repair for this device is waiting to be turned on. Your saved records are being preserved."
+      : "We're repairing a syncing problem. Your saved records are being preserved.";
+  banner.hidden = false;
+}
+
+function captureRecoverySessionGuard() {
+  return {
+    sessionGeneration: Number(state.sessionGeneration || 0),
+    wipeEpoch: Number(state.wipeEpoch || 0),
+    boundAccount: String(state.boundAccount || ""),
+    authToken: String(state.authSessionKey || ""),
+    authTokenExpiresAt: String(state.authSessionExpiresAt || "")
+  };
+}
+
+function canRunRecoveryForGuard(guard) {
+  return Boolean(
+    state.db
+    && state.deviceIdentity
+    && state.devicePublicKey
+    && state.devicePrivateKey
+    && !getSigningBlockReason()
+    && navigator.onLine
+    && isAuthSessionValid()
+    && canUseAccountSession("ordinary", guard.authToken)
+    && guard.sessionGeneration === state.sessionGeneration
+    && guard.wipeEpoch === state.wipeEpoch
+    && guard.boundAccount === state.boundAccount
+    && guard.authToken === state.authSessionKey
+  );
+}
+
+function readRecoveryInputs() {
+  return new Promise((resolve, reject) => {
+    const transaction = state.db.transaction(["settings", "records", "syncQueue"], "readonly");
+    const settings = transaction.objectStore("settings");
+    const records = transaction.objectStore("records");
+    const queue = transaction.objectStore("syncQueue");
+    let localRecords = null;
+    let localQueue = null;
+    const settingValues = {};
+    const settingKeys = ["fork_recovery_pending", "recovery_state"];
+    const finish = () => {
+      if (localRecords == null || localQueue == null || Object.keys(settingValues).length !== settingKeys.length) return;
+      resolve({
+        deviceIdentity: state.deviceIdentity,
+        localRecords,
+        localQueue,
+        settings: settingValues,
+        recoveryState: settingValues.recovery_state || null
+      });
+    };
+    const recordsRequest = records.getAll();
+    recordsRequest.onsuccess = () => { localRecords = recordsRequest.result || []; finish(); };
+    recordsRequest.onerror = () => reject(recordsRequest.error);
+    const queueRequest = queue.getAll();
+    queueRequest.onsuccess = () => { localQueue = queueRequest.result || []; finish(); };
+    queueRequest.onerror = () => reject(queueRequest.error);
+    settingKeys.forEach((key) => {
+      const request = settings.get(key);
+      request.onsuccess = () => { settingValues[key] = request.result?.value ?? null; finish(); };
+      request.onerror = () => reject(request.error);
+    });
+    transaction.onerror = () => reject(transaction.error || new Error("Could not inspect recovery state."));
+  });
+}
+
+function queueEntryHasSignedOwnRecord(entry, deviceIdentity) {
+  const payload = entry?.entry_payload;
+  const payloadId = Number(payload?.id);
+  const queuedId = entry?.entry_id == null ? payloadId : Number(entry.entry_id);
+  const payloadHash = String(payload?.entry_hash || "");
+  const queuedHash = String(entry?.entry_hash || payloadHash);
+  return Boolean(
+    payload
+    && Number.isSafeInteger(payloadId)
+    && payloadId > 0
+    && queuedId === payloadId
+    && /^[0-9a-f]{64}$/i.test(payloadHash)
+    && queuedHash === payloadHash
+    && /^[0-9a-f]{64}$/i.test(String(payload.prev_entry_hash || ""))
+    && typeof payload.signature === "string"
+    && payload.signature.length > 0
+    && String(payload.device_identity || "") === String(deviceIdentity || "")
+  );
+}
+
+function hasLocalRecoveryEvidence(local, detected) {
+  const reasons = new Set(detected?.reasons || []);
+  if (["own_imported_copy", "own_id_duplicate", "hash_chain_break"].some((reason) => reasons.has(reason))) {
+    return true;
+  }
+  const hasExplicitForkSignal = reasons.has("fork_recovery_pending") || reasons.has("queue_fork_rejection");
+  return hasExplicitForkSignal
+    && (local?.localQueue || []).some((entry) => queueEntryHasSignedOwnRecord(entry, local?.deviceIdentity));
+}
+
+function recoveryDetectionEntryHashes(local, detected) {
+  const reasons = new Set(detected?.reasons || []);
+  const deviceIdentity = String(local?.deviceIdentity || "");
+  const records = local?.localRecords || [];
+  const queue = local?.localQueue || [];
+  const hashes = new Set();
+  const addHash = (row) => {
+    const hash = String(row?.entry_hash || row?.entry_payload?.entry_hash || "");
+    if (hash) hashes.add(hash);
+  };
+
+  if (reasons.has("own_imported_copy")) {
+    records.filter((row) => row?.importedFromServer && String(row?.device_identity || "") === deviceIdentity)
+      .forEach(addHash);
+  }
+
+  const own = records.filter((row) => !row?.importedFromServer
+    && (!deviceIdentity || String(row?.device_identity || "") === deviceIdentity));
+  if (reasons.has("own_id_duplicate")) {
+    const byId = new Map();
+    own.forEach((row) => {
+      const key = String(row?.id);
+      const group = byId.get(key) || [];
+      group.push(row);
+      byId.set(key, group);
+    });
+    byId.forEach((rows) => {
+      if (rows.length > 1) rows.forEach(addHash);
+    });
+    const ownHashById = new Map(own.map((row) => [String(row?.id), String(row?.entry_hash || "")]));
+    queue.forEach((entry) => {
+      const payload = entry?.entry_payload;
+      const id = String(entry?.entry_id ?? payload?.id ?? "");
+      const hash = String(entry?.entry_hash || payload?.entry_hash || "");
+      if (id && ownHashById.has(id) && ownHashById.get(id) !== hash) {
+        own.filter((row) => String(row?.id) === id).forEach(addHash);
+        addHash(entry);
+      }
+    });
+  }
+
+  if (reasons.has("hash_chain_break")) {
+    for (let index = 1; index < own.length; index += 1) {
+      if (own[index]?.prev_entry_hash !== own[index - 1]?.entry_hash) addHash(own[index]);
+    }
+  }
+
+  if (reasons.has("fork_recovery_pending") || reasons.has("queue_fork_rejection")) {
+    queue.filter((entry) => queueEntryHasSignedOwnRecord(entry, deviceIdentity)).forEach(addHash);
+  }
+  return [...hashes];
+}
+
+async function fetchAllRecoveryRecords(guard) {
+  const output = [];
+  for (let offset = 0; offset < 1_000_000; offset += 1000) {
+    const response = await recoveryFetchAuthenticatedJson(`/records?offset=${offset}`, {
+      authToken: guard.authToken,
+      generation: guard.sessionGeneration
+    });
+    const page = Array.isArray(response.records) ? response.records : [];
+    output.push(...page);
+    if (page.length < 1000) return output;
+  }
+  throw new Error("The recovery record list exceeded its safe page limit.");
+}
+
+function recoveryTimeoutError() {
+  const error = new Error("The recovery request timed out.");
+  error.name = "RecoveryTimeoutError";
+  error.code = "recovery_timeout";
+  error.transient = true;
+  return error;
+}
+
+async function recoveryFetchAuthenticatedJson(path, options = {}, timeoutMs = RECOVERY_REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const response = await fetchAuthenticatedJson(path, { ...options, controller });
+    if (timedOut) throw recoveryTimeoutError();
+    return response;
+  } catch (error) {
+    if (timedOut) throw recoveryTimeoutError();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function recoveryRequest(path, guard, {
+  method = "POST",
+  body,
+  timeoutMs = RECOVERY_REQUEST_TIMEOUT_MS
+} = {}) {
+  return recoveryFetchAuthenticatedJson(path, {
+    method,
+    body,
+    authToken: guard.authToken,
+    generation: guard.sessionGeneration
+  }, timeoutMs);
+}
+
+async function createRecoverySession(recoveryState, snapshot, guard) {
+  try {
+    const response = await recoveryRequest("/recovery/sessions", guard, {
+      body: {
+        recovery_id: recoveryState.recovery_id,
+        device_identity: recoveryState.device_identity,
+        app_version: RECOVERY_APP_VERSION,
+        local_summary: {
+          records: Number(snapshot?.records?.length || 0),
+          queue: Number(snapshot?.queue?.length || 0),
+          snapshot_read_back_verified: snapshot?.read_back_verified === true
+        }
+      }
+    });
+    await clearRecoveryRetry(state.db, {
+      recoveryId: recoveryState.recovery_id,
+      guard
+    });
+    return response;
+  } catch (error) {
+    const code = String(error?.payload?.error || error?.payload?.code || "");
+    if (error?.statusCode === 403 && code === "recovery_not_enabled") {
+      error.recoveryOperation = "session_create";
+    }
+    throw error;
+  }
+}
+
+async function uploadRecoverySnapshot(recoveryState, snapshot, guard) {
+  const session = await createRecoverySession(recoveryState, snapshot, guard);
+  const parts = await buildRecoveryParts(snapshot);
+  const declaration = partDeclaration(parts);
+  let preservationComplete = false;
+  for (const part of parts) {
+    const acknowledgement = await recoveryRequest(
+      `/recovery/sessions/${encodeURIComponent(recoveryState.recovery_id)}/parts/${part.part_no}`,
+      guard,
+      {
+        method: "PUT",
+        timeoutMs: RECOVERY_PART_UPLOAD_TIMEOUT_MS,
+        body: {
+          sha256: part.sha256,
+          part_count: parts.length,
+          part_hashes: declaration,
+          records: part.records,
+          queue: part.queue
+        }
+      }
+    );
+    if (Number(acknowledgement.n) !== part.part_no || acknowledgement.sha256 !== part.sha256) {
+      throw new RecoveryPreconditionError("The recovery upload acknowledgement did not match its preserved part.");
+    }
+    preservationComplete = acknowledgement.preservation_complete === true;
+  }
+  if (!preservationComplete) {
+    throw new RecoveryPreconditionError("The server did not acknowledge the complete recovery snapshot.");
+  }
+  return { session, parts };
+}
+
+async function importRecoveryPublicKey() {
+  const stored = state.devicePublicKey || await getSetting("device_public_key");
+  if (typeof CryptoKey !== "undefined" && stored instanceof CryptoKey) return stored;
+  return crypto.subtle.importKey(
+    "jwk",
+    JSON.parse(stored),
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["verify"]
+  );
+}
+
+async function verifyRecoverySignature(hash, signature) {
+  try {
+    const bytes = Uint8Array.from(atob(String(signature || "")), (character) => character.charCodeAt(0));
+    if (bytes.length !== 64 || btoa(String.fromCharCode(...bytes)) !== signature) return false;
+    const publicKey = await importRecoveryPublicKey();
+    return crypto.subtle.verify(
+      { name: "ECDSA", hash: { name: "SHA-256" } },
+      publicKey,
+      bytes,
+      new TextEncoder().encode(hash)
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function classifyRecoverySnapshot(snapshot, session, guard) {
+  const serverRecords = await fetchAllRecoveryRecords(guard);
+  const classification = await classifyRecords({
+    localRecords: snapshot.records || [],
+    localQueue: snapshot.queue || [],
+    serverRecords,
+    serverHead: session.head,
+    deviceIdentity: state.deviceIdentity,
+    receivedBoundSeconds: Number(session.received_bound_seconds)
+  }, {
+    sha256,
+    verifySignature: verifyRecoverySignature
+  });
+  return { classification, serverRecords };
+}
+
+async function buildRecoveryPlan(snapshot, session, guard) {
+  const { classification, serverRecords } = await classifyRecoverySnapshot(snapshot, session, guard);
+  const plan = await planReplacements({
+    xValid: classification.xValid,
+    R: classification.R,
+    serverHead: session.head,
+    recoveryId: snapshot.recovery_id,
+    localQueue: snapshot.queue || [],
+    receivedBoundSeconds: Number(session.received_bound_seconds)
+  }, {
+    sha256,
+    sign: async (hash) => {
+      const signature = await signEntryHash(hash);
+      if (!signature) throw new RecoveryPreconditionError("The device key could not sign a recovery replacement.");
+      return signature;
+    },
+    now: () => Date.now()
+  });
+  const parts = await buildRecoveryParts(snapshot);
+  const manifest = buildCompletionManifest({ snapshot, classification, plan, parts });
+  return { classification, serverRecords, plan, parts, manifest };
+}
+
+async function persistFirstRecoveryPlan(recoveryState, snapshot, session, guard) {
+  const built = await buildRecoveryPlan(snapshot, session, guard);
+  return persistRecoveryPlan(state.db, {
+    recoveryId: recoveryState.recovery_id,
+    plan: built.plan,
+    manifest: built.manifest,
+    parts: built.parts,
+    guard
+  });
+}
+
+async function rebuildPlanAfterHeadMove(recoveryState, snapshot, previousWork, guard) {
+  const session = await createRecoverySession(recoveryState, snapshot, guard);
+  const built = await buildRecoveryPlan(snapshot, session, guard);
+  return replaceRecoveryPlanAfterHeadMove(state.db, {
+    recoveryId: recoveryState.recovery_id,
+    previousWork,
+    plan: built.plan,
+    manifest: built.manifest,
+    parts: built.parts,
+    guard,
+    maxAttempts: 3
+  });
+}
+
+async function submitRecoveryPlanAndRebuild(recoveryState, snapshot, guard) {
+  let work = await readRecoveryWork(state.db, recoveryState.recovery_id);
+  if (!work) throw new RecoveryPreconditionError("The persisted recovery plan is missing.");
+  while (true) {
+    try {
+      await recoveryRequest(`/recovery/sessions/${encodeURIComponent(recoveryState.recovery_id)}/plan`, guard, {
+        body: buildPlanRequest(work)
+      });
+      break;
+    } catch (error) {
+      if (!isHeadMoveRefusal(error)) throw error;
+      work = await rebuildPlanAfterHeadMove(recoveryState, snapshot, work, guard);
+    }
+  }
+  await applyRebuild(state.db, work, recoveryState, { sessionGuard: guard });
+  return transitionRecoveryState(state.db, {
+    recoveryId: recoveryState.recovery_id,
+    expectedStates: "classified",
+    nextState: "rebuilt",
+    guard
+  });
+}
+
+async function syncRecoveryReplacements(recoveryState, guard) {
+  const work = await readRecoveryWork(state.db, recoveryState.recovery_id);
+  if (!work) throw new RecoveryPreconditionError("The persisted recovery work is missing.");
+  const replacements = (work.items || []).filter((item) => item.replacement).map((item) => item.replacement);
+  let receipt = "";
+  for (let offset = 0; offset < replacements.length; offset += 25) {
+    const response = await recoveryRequest("/sync/entries", guard, {
+      body: {
+        device_identity: state.deviceIdentity,
+        public_key: state.devicePublicKey,
+        entries: replacements.slice(offset, offset + 25)
+      }
+    });
+    receipt = response.server_receipt || receipt;
+  }
+  await markRecoverySynced(state.db, {
+    recoveryId: recoveryState.recovery_id,
+    work,
+    guard,
+    receipt
+  });
+  await refreshSyncQueueCount();
+  return readRecoveryState(state.db);
+}
+
+async function verifyRecoveryOnServer(recoveryState, guard) {
+  const work = await readRecoveryWork(state.db, recoveryState.recovery_id);
+  if (!work) throw new RecoveryPreconditionError("The persisted recovery work is missing.");
+  const serverRecords = await fetchAllRecoveryRecords(guard);
+  if (!verifyServerChain({
+    records: serverRecords,
+    deviceIdentity: state.deviceIdentity,
+    expectedHead: expectedRecoveryHead(work)
+  })) {
+    throw new RecoveryPreconditionError("The repaired server chain could not be verified.");
+  }
+  return transitionRecoveryState(state.db, {
+    recoveryId: recoveryState.recovery_id,
+    expectedStates: "synced",
+    nextState: "verified",
+    guard
+  });
+}
+
+async function completeRecovery(recoveryState, guard) {
+  const work = await readRecoveryWork(state.db, recoveryState.recovery_id);
+  if (!work?.manifest) throw new RecoveryPreconditionError("The persisted recovery manifest is missing.");
+  const manifestHash = await sha256Canonical(work.manifest);
+  const response = await recoveryRequest(
+    `/recovery/sessions/${encodeURIComponent(recoveryState.recovery_id)}/complete`,
+    guard,
+    { body: { manifest: work.manifest, manifest_hash: manifestHash } }
+  );
+  const accountedFor = recoveryResponseAllowsUnlock(response);
+  const next = await transitionRecoveryState(state.db, {
+    recoveryId: recoveryState.recovery_id,
+    expectedStates: "verified",
+    nextState: accountedFor ? "completed" : "escalated",
+    guard,
+    patch: {
+      completion: {
+        outcome: response.outcome || "",
+        accounted_for: accountedFor,
+        reasons: Array.isArray(response.reasons) ? response.reasons.map(String) : []
+      }
+    },
+    removePending: accountedFor
+  });
+  if (accountedFor) {
+    const reasons = Array.isArray(response.reasons) ? response.reasons : [];
+    const remainsMarkedForReview = response.outcome === "not_cleared"
+      && reasons.includes("autoclear_disabled")
+      && !reasons.includes("device_active_nothing_to_clear");
+    state.recoveryCompletionNotice = remainsMarkedForReview
+      ? "Repair finished. The items this device reported were accounted for. The device remains marked for review on our side."
+      : "Repair finished. The items this device reported were accounted for.";
+  }
+  return next;
+}
+
+async function runRecoveryStateMachine(initialState, guard) {
+  let recoveryState = initialState;
+  for (let checkpoint = 0; checkpoint < 16; checkpoint += 1) {
+    if (!isRecoveryStateActive(recoveryState) || recoveryState.state === "escalated") return recoveryState;
+    const snapshot = recoveryState.state === "suspect"
+      ? null
+      : await readRecoverySnapshot(state.db, recoveryState.recovery_id);
+    if (recoveryState.state !== "suspect" && !snapshot) {
+      throw new RecoveryPreconditionError("The immutable recovery snapshot is missing.");
+    }
+
+    if (recoveryState.state === "suspect") {
+      const saved = await takeSnapshot(state.db, {
+        deviceIdentity: state.deviceIdentity,
+        publicKeyFingerprint: state.publicKeyFingerprint,
+        appVersion: RECOVERY_APP_VERSION,
+        recoveryId: recoveryState.recovery_id
+      });
+      if (!saved?.read_back_verified) throw new RecoveryPreconditionError();
+      recoveryState = await transitionRecoveryState(state.db, {
+        recoveryId: recoveryState.recovery_id,
+        expectedStates: "suspect",
+        nextState: "snapshotted",
+        guard
+      });
+      continue;
+    }
+
+    if (recoveryState.state === "snapshotted") {
+      const uploaded = await uploadRecoverySnapshot(recoveryState, snapshot, guard);
+      recoveryState = await transitionRecoveryState(state.db, {
+        recoveryId: recoveryState.recovery_id,
+        expectedStates: "snapshotted",
+        nextState: "uploaded",
+        guard,
+        patch: {
+          remote_ack: true,
+          cursor: {
+            parts: partDeclaration(uploaded.parts),
+            received_bound_seconds: Number(uploaded.session.received_bound_seconds),
+            server_head: uploaded.session.head
+          }
+        }
+      });
+      continue;
+    }
+
+    if (recoveryState.state === "uploaded") {
+      const session = await createRecoverySession(recoveryState, snapshot, guard);
+      await persistFirstRecoveryPlan(recoveryState, snapshot, session, guard);
+      recoveryState = await readRecoveryState(state.db);
+      continue;
+    }
+
+    if (recoveryState.state === "classified") {
+      recoveryState = await submitRecoveryPlanAndRebuild(recoveryState, snapshot, guard);
+      continue;
+    }
+
+    if (recoveryState.state === "rebuilt") {
+      recoveryState = await syncRecoveryReplacements(recoveryState, guard);
+      continue;
+    }
+
+    if (recoveryState.state === "synced") {
+      recoveryState = await verifyRecoveryOnServer(recoveryState, guard);
+      continue;
+    }
+
+    if (recoveryState.state === "verified") {
+      recoveryState = await completeRecovery(recoveryState, guard);
+      continue;
+    }
+  }
+  throw new RecoveryPreconditionError("Recovery exceeded its safe checkpoint limit.");
+}
+
+async function escalateRecovery(recoveryState, guard) {
+  if (!isRecoveryStateActive(recoveryState) || recoveryState.state === "escalated") return recoveryState;
+  return transitionRecoveryState(state.db, {
+    recoveryId: recoveryState.recovery_id,
+    expectedStates: ["suspect", "snapshotted", "uploaded", "classified", "rebuilt", "synced", "verified"],
+    nextState: "escalated",
+    guard
+  });
+}
+
+async function runRecoveryWithLock(recoveryState, guard) {
+  const execute = async () => runRecoveryStateMachine(await readRecoveryState(state.db) || recoveryState, guard);
+  if (!(typeof navigator !== "undefined" && navigator.locks?.request)) return execute();
+  let acquired = false;
+  let result = recoveryState;
+  await navigator.locks.request(
+    `confirma-recovery:${recoveryState.device_identity}`,
+    { ifAvailable: true },
+    async (lock) => {
+      if (!lock) return;
+      acquired = true;
+      result = await execute();
+    }
+  );
+  return acquired ? result : (await readRecoveryState(state.db) || recoveryState);
+}
+
+async function recoveryGateInternal({ allowAttempt = false } = {}) {
+  if (!state.db) return false;
+  const local = await readRecoveryInputs();
+  const detected = detectSuspect(local);
+  let recoveryState = local.recoveryState;
+
+  // A Package A fork marker is a signal to inspect, not proof that there are
+  // recoverable bytes. In particular, a malformed orphan queue row can make
+  // ordinary sync report continuity and write the marker. Let authentication
+  // handle that row unless there is a damaged record shape or a complete,
+  // signed own queue payload to preserve. An already-started recovery always
+  // retains its hold and resumes from its durable checkpoint.
+  if (!isRecoveryStateActive(recoveryState) && (!detected.suspect || !hasLocalRecoveryEvidence(local, detected))) {
+    state.recoveryActive = false;
+    state.recoveryState = recoveryState;
+    renderRecoveryBanner(recoveryState);
+    return false;
+  }
+
+  state.recoveryActive = true;
+  if (recoveryState?.state === "completed") state.recoveryCompletionNotice = "";
+  state.recoveryState = recoveryState?.state === "completed"
+    ? { ...recoveryState, state: "suspect" }
+    : (recoveryState || { state: "suspect" });
+  renderRecoveryBanner(state.recoveryState);
+
+  const guard = captureRecoverySessionGuard();
+  if (!recoveryState || recoveryState.state === "completed") {
+    if (!canRunRecoveryForGuard(guard)) return true;
+    const detectionFingerprint = await buildDetectionFingerprint({
+      reasons: detected.reasons,
+      entryHashes: recoveryDetectionEntryHashes(local, detected)
+    });
+    try {
+      recoveryState = await beginRecoveryState(state.db, {
+        recoveryId: crypto.randomUUID(),
+        deviceIdentity: state.deviceIdentity,
+        boundAccount: state.boundAccount,
+        reasons: detected.reasons,
+        detectionFingerprint,
+        expectedCompletedState: recoveryState?.state === "completed" ? recoveryState : null,
+        guard
+      });
+    } catch (error) {
+      if (error instanceof RecoveryGuardError) return true;
+      throw error;
+    }
+    state.recoveryState = recoveryState;
+    renderRecoveryBanner(recoveryState);
+  }
+
+  if (recoveryState.bound_account && recoveryState.bound_account !== state.boundAccount) return true;
+  if (!allowAttempt) return true;
+  const nextAttemptAfter = Number(recoveryState.next_attempt_after || 0);
+  if (Number.isFinite(nextAttemptAfter) && nextAttemptAfter > Date.now()) return true;
+  if (!canRunRecoveryForGuard(guard)) return true;
+
+  try {
+    recoveryState = await runRecoveryWithLock(recoveryState, guard);
+  } catch (error) {
+    const sessionChanged = error instanceof RecoverySessionChangedError
+      || error instanceof RecoveryGuardError
+      || error?.code === "stale_response"
+      || error?.payload?.error === "auth_expired"
+      || error?.statusCode === 401;
+    const timedOut = error?.code === "recovery_timeout";
+    const unavailable = error?.recoveryOperation === "session_create"
+      && error?.statusCode === 403
+      && String(error?.payload?.error || error?.payload?.code || "") === "recovery_not_enabled";
+    if (!sessionChanged && (timedOut || unavailable)) {
+      try {
+        recoveryState = await deferRecoveryRetry(state.db, {
+          recoveryId: recoveryState.recovery_id,
+          guard,
+          attemptedAt: Date.now(),
+          delayMs: unavailable ? RECOVERY_UNAVAILABLE_RETRY_DELAY_MS : RECOVERY_TIMEOUT_RETRY_DELAY_MS,
+          availabilityWaiting: unavailable
+        });
+      } catch {
+        // A simultaneous sign-out, wipe or tab transition wins. Leave the
+        // existing checkpoint and hold untouched.
+      }
+    }
+    const shouldEscalate = !sessionChanged && (
+      error instanceof RecoveryPreconditionError
+      || error instanceof RecoveryPlanChangedError
+      || isPermanentRecoveryRefusal(error)
+    );
+    if (shouldEscalate) {
+      try {
+        recoveryState = await escalateRecovery(await readRecoveryState(state.db) || recoveryState, guard);
+      } catch {
+        // A simultaneous sign-out, wipe or tab transition wins. The durable
+        // recovery state and hold marker are intentionally left untouched.
+      }
+    }
+  }
+
+  state.recoveryState = await readRecoveryState(state.db) || recoveryState;
+  state.recoveryActive = isRecoveryStateActive(state.recoveryState);
+  renderRecoveryBanner(state.recoveryState);
+  return state.recoveryActive;
+}
+
+async function recoveryGate(options = {}) {
+  if (state.recoveryGatePromise) return state.recoveryGatePromise;
+  state.recoveryGatePromise = recoveryGateInternal(options).finally(() => {
+    state.recoveryGatePromise = null;
+  });
+  return state.recoveryGatePromise;
+}
+
+async function resumeRecoveryAfterSignIn({
+  ordinaryQueueAlreadyFlushed = false,
+  afterSuccessfulSignIn = false
+} = {}) {
+  if (state.recoveryResumePromise) {
+    const active = await state.recoveryResumePromise;
+    // A pre-sign-in online gate may have captured the expired session. Wait for
+    // it, then use the newly installed session without overlapping its runner.
+    if (afterSuccessfulSignIn && active && canRunRecoveryForGuard(captureRecoverySessionGuard())) {
+      return resumeRecoveryAfterSignIn({ ordinaryQueueAlreadyFlushed });
+    }
+    return active;
+  }
+  state.recoveryResumePromise = (async () => {
+    const active = await recoveryGate({ allowAttempt: true });
+    if (!active && !ordinaryQueueAlreadyFlushed) await flushSyncQueue();
+    return active;
+  })().finally(() => {
+    state.recoveryResumePromise = null;
+  });
+  return state.recoveryResumePromise;
+}
+
 async function logoutFromServerSession() {
   const activeToken = state.authSessionKey;
   const nextGeneration = state.sessionGeneration + 1;
@@ -7133,6 +7955,41 @@ function getRecordsNotConfirmedBackedUpCount() {
   });
 }
 
+function getRecoveryMaterialSummary() {
+  if (!(state.db?.objectStoreNames.contains("recoverySnapshots")
+    && state.db.objectStoreNames.contains("recoveryWork"))) {
+    return Promise.resolve({ exists: false, snapshots: 0, work: 0, history: 0, state: null });
+  }
+  return new Promise((resolve, reject) => {
+    const transaction = state.db.transaction(["settings", "recoverySnapshots", "recoveryWork"], "readonly");
+    const result = { snapshots: 0, work: 0, history: 0, state: null };
+    let remaining = 4;
+    const finish = () => {
+      remaining -= 1;
+      if (!remaining) resolve({
+        ...result,
+        exists: Boolean(result.snapshots || result.work || result.history || result.state)
+      });
+    };
+    const snapshots = transaction.objectStore("recoverySnapshots").count();
+    snapshots.onsuccess = () => { result.snapshots = Number(snapshots.result || 0); finish(); };
+    snapshots.onerror = () => reject(snapshots.error);
+    const work = transaction.objectStore("recoveryWork").count();
+    work.onsuccess = () => { result.work = Number(work.result || 0); finish(); };
+    work.onerror = () => reject(work.error);
+    const recoveryHistory = transaction.objectStore("settings").get("recovery_history");
+    recoveryHistory.onsuccess = () => {
+      result.history = Array.isArray(recoveryHistory.result?.value) ? recoveryHistory.result.value.length : 0;
+      finish();
+    };
+    recoveryHistory.onerror = () => reject(recoveryHistory.error);
+    const recoveryState = transaction.objectStore("settings").get("recovery_state");
+    recoveryState.onsuccess = () => { result.state = recoveryState.result?.value || null; finish(); };
+    recoveryState.onerror = () => reject(recoveryState.error);
+    transaction.onerror = () => reject(transaction.error || new Error("Could not inspect recovery material."));
+  });
+}
+
 function removalDataLossWarning(count) {
   const drafts = Number(state.removalHeldDrafts) || 0;
   const including = drafts > 0 ? ` (including ${drafts} held draft${drafts === 1 ? "" : "s"})` : "";
@@ -7262,12 +8119,16 @@ async function keepS4LegacyRecords() {
 async function openRemoveLocalData() {
   if (getActiveScreenId() !== "screen-signed-out") await showSignedOutScreen();
   const removalCount = await getRecordsNotConfirmedBackedUpCount();
+  const recoveryMaterial = await getRecoveryMaterialSummary();
   state.removeLocalDataConfirmedCount = removalCount;
   state.removeLocalDataSessionWarning = "";
   els["remove-local-data-panel"].hidden = false;
-  els["remove-local-data-copy"].textContent = removalCount
+  const ordinaryWarning = removalCount
     ? removalDataLossWarning(removalCount)
     : "This removes records, device keys, and local account data from this device.";
+  els["remove-local-data-copy"].textContent = recoveryMaterial.exists
+    ? `${ordinaryWarning} Recovery material for a syncing repair is also stored on this device. Removing local data will permanently delete it.`
+    : ordinaryWarning;
   els["remove-local-data-error"].hidden = true;
   els["remove-local-data-error"].textContent = "";
   els["remove-local-data-anyway"].hidden = true;
@@ -7350,7 +8211,10 @@ async function removeLocalDataFlow(removeAnyway = false) {
 }
 
 async function wipeAllLocalData(confirmedRemovalCount) {
-  const stores = ["records", "syncQueue", "customLabels", "usage", "voiceCorrections", "anomaly_log", "settings"];
+  const stores = [
+    "records", "syncQueue", "customLabels", "usage", "voiceCorrections", "anomaly_log",
+    "recoverySnapshots", "recoveryWork", "settings"
+  ];
   let nextWipeEpoch = state.wipeEpoch;
   await new Promise((resolve, reject) => {
     const tx = state.db.transaction(stores, "readwrite");
@@ -7936,8 +8800,11 @@ async function restoreServerAccountIntoLocal({
   quiet = false,
   allowProfilePush = false
 } = {}) {
+  if (await recoveryGate()) {
+    return { profile: null, records: 0, ordinaryQueueFlushed: false };
+  }
   if (!(state.db && isAuthSessionValid() && state.syncApiBaseUrl)) {
-    return { profile: null, records: 0 };
+    return { profile: null, records: 0, ordinaryQueueFlushed: false };
   }
 
   const token = state.authSessionKey;
@@ -7974,7 +8841,7 @@ async function restoreServerAccountIntoLocal({
   }
 
   const records = await restoreServerRecordsIntoLocal({ quiet });
-  return { profile: serverProfile, records };
+  return { profile: serverProfile, records, ordinaryQueueFlushed: true };
 }
 
 // ---- S2 profile-completion prompt ----
@@ -8448,7 +9315,7 @@ async function maybePromptToRevokeOldDevices() {
 }
 
 async function finishRestoreFlow(country, phoneNumber) {
-  await restoreServerAccountIntoLocal({
+  const restored = await restoreServerAccountIntoLocal({
     quiet: true
   });
 
@@ -8464,6 +9331,10 @@ async function finishRestoreFlow(country, phoneNumber) {
   await showCapture();
   closeRestoreModal();
   syncDevQaSnapshot("restore_completed");
+  void resumeRecoveryAfterSignIn({
+    ordinaryQueueAlreadyFlushed: restored.ordinaryQueueFlushed,
+    afterSuccessfulSignIn: true
+  }).catch((error) => console.warn("Post-restore recovery resume failed.", error));
 }
 
 async function verifyRestoreCode() {
@@ -8491,7 +9362,11 @@ async function verifyRestoreCode() {
     if (state.otpChallenge?.source !== "server") {
       throw new Error("Account restore requires the verification server. Please try again when you are online.");
     }
-    await verifyActiveOtpChallenge(code, { country, persistProfileRemotely: false });
+    await verifyActiveOtpChallenge(code, {
+      country,
+      persistProfileRemotely: false,
+      resumeRecovery: false
+    });
     await finishRestoreFlow(country, phoneNumber || state.profile?.phone_number || "");
   } catch (error) {
     showRestoreError(error.message || "Unable to restore this account right now.");
@@ -8913,7 +9788,23 @@ function openDb() {
         }
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onblocked = () => {
+      const banner = ensureRecoveryBanner();
+      banner.textContent = "Close other Konfirmata tabs so this update can finish. We'll retry automatically.";
+      banner.hidden = false;
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => {
+        db.close();
+        const banner = ensureRecoveryBanner();
+        banner.textContent = "Close this Konfirmata tab so the app can finish updating in another tab.";
+        banner.hidden = false;
+      };
+      const banner = document.getElementById("recovery-hold-banner");
+      if (banner?.textContent?.includes("Konfirmata tab")) banner.hidden = true;
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
   });
 }
@@ -9395,7 +10286,7 @@ function writeLedgerRecordAndQueue(payload, expectedHead, guard, draftCandidate)
           const queueRequest = tx.objectStore("syncQueue").getAll();
           queueRequest.onsuccess = () => {
             const queueCollision = (queueRequest.result || []).some((entry) => Number(entry.entry_id) === nextId && entry.entry_hash !== payload.entry_hash);
-            const unsafe = Boolean(markerRequest.result?.value) || (!head && ownImports.length > 0)
+            const unsafe = state.recoveryActive || Boolean(markerRequest.result?.value) || (!head && ownImports.length > 0)
               || nextId <= highestImportedOwnId || idCollision || queueCollision;
             if (unsafe) {
               const previous = settingsStore.get("held_drafts");
@@ -9523,7 +10414,10 @@ async function loadSyncState() {
 }
 
 const EMPTY_INSTALL_SETTING_ALLOWLIST = new Set(["sync_api_base_url", "auth_phone_country", "wipe_epoch"]);
-const ACCOUNT_DATA_STORES = ["records", "syncQueue", "customLabels", "usage", "voiceCorrections", "anomaly_log"];
+const ACCOUNT_DATA_STORES = [
+  "records", "syncQueue", "customLabels", "usage", "voiceCorrections", "anomaly_log",
+  "recoverySnapshots", "recoveryWork"
+];
 
 function normalizeLegacyClaimConsent(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -9837,6 +10731,12 @@ async function flushSyncQueue() {
     await updateSyncBadge();
     return;
   }
+  if (state.recoveryActive) {
+    state.syncStatus = "Sync is paused while saved records are repaired.";
+    await refreshSyncQueueCount();
+    await updateSyncBadge();
+    return;
+  }
   state.syncRequestedDuringFlight = false;
   if (!canUseAccountSession("ordinary")) {
     state.syncStatus = "Account records are locked; sync is paused.";
@@ -9909,6 +10809,10 @@ async function flushSyncQueue() {
     } else if (error.payload?.code === "ledger_fork_conflict") {
       await recordForkRecoveryPending(error.payload, queuedEntries, syncGuard);
       state.syncStatus = "Server reported a fork. Sync paused until remediation.";
+    } else if (error.payload?.code === "recovery_in_progress" || error.payload?.error === "recovery_in_progress") {
+      // This is the server's expected fence while a recovery owns the device.
+      // It is retryable: keep every queue byte and never record a fork.
+      state.syncStatus = "Sync is paused while saved records are repaired.";
     } else {
       state.syncStatus = error.message || "Sync failed. Entries remain queued.";
     }
