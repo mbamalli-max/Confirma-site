@@ -15,7 +15,7 @@ import { API_VERSION, RETIRED_ROUTES, registerRetiredRoutes } from "./metrics.js
 const OWNER_ONLY = [enforceAdminIpAllowlist, requireAdmin(["owner"])];
 export const SUPPRESSED_OVERVIEW_METRIC_KEYS = Object.freeze([
   "accounts_registered",
-  "records_received",
+  "records_recorded",
   "attestations_issued",
   "accounts_phone_verified",
   "accounts_email_verified",
@@ -131,9 +131,9 @@ function discloseOverview(raw, k) {
     snapshot.accounts_with_records || 0,
     results.accounts_with_records
   );
-  results.records_received = discloseCount(
-    daily.records_received || 0,
-    snapshot.contributors_records_received || 0,
+  results.records_recorded = discloseCount(
+    daily.records_recorded || 0,
+    snapshot.contributors_records_recorded || 0,
     k
   );
   results.attestations_issued = discloseCount(
@@ -148,8 +148,8 @@ function discloseOverview(raw, k) {
   );
 
   return SUPPRESSED_OVERVIEW_METRIC_KEYS.map((key) => {
-    const { definition } = METRIC_DEFINITIONS.find((item) => item.key === key);
-    return { key, definition, disclosure: results[key] };
+    const { definition, date_basis } = METRIC_DEFINITIONS.find((item) => item.key === key);
+    return { key, definition, date_basis, disclosure: results[key] };
   });
 }
 
@@ -162,7 +162,7 @@ export async function registerAdminSuppressedRoutes(app) {
     }
     await ensureFreshRollups();
     const state = await readRollupState();
-    if (!state?.built_at) return unavailable(reply, state);
+    if (!state?.built_at || !state.basis_ready) return unavailable(reply, state);
 
     const raw = await readSuppressedOverview();
     return reply.send({
@@ -182,7 +182,7 @@ export async function registerAdminSuppressedRoutes(app) {
     const dimension = query.dimension;
     await ensureFreshRollups();
     const state = await readRollupState();
-    if (!state?.built_at) return unavailable(reply, state, { dimension });
+    if (!state?.built_at || !state.basis_ready) return unavailable(reply, state, { dimension });
 
     const [cells, raw] = await Promise.all([
       readDimensionSnapshot(dimension),

@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import {
   METRIC_DEFINITIONS,
   METRICS_REBUILD_LOCK_KEY,
+  ROLLUP_BASIS_MARKER,
   ensureFreshRollups,
   readOverview,
   readRollupState,
@@ -92,7 +93,7 @@ async function seedUser({
         crypto.randomBytes(32).toString("hex"),
         index === 0 ? "0".repeat(64) : crypto.randomBytes(32).toString("hex"),
         "synthetic-signature",
-        record.confirmedAt || record.syncedAt,
+        Object.hasOwn(record, "confirmedAt") ? record.confirmedAt : record.syncedAt,
         record.syncedAt,
         { synthetic: true }
       ]
@@ -159,6 +160,74 @@ async function resetState() {
     UPDATE metrics_rollup_state
     SET built_at = NULL, stale = TRUE, build_ms = NULL, out_of_range = 0,
         invalidations = 0, last_attempt_at = NULL, last_failure_at = NULL
+    WHERE id = TRUE
+  `);
+  clearMetricsCache();
+}
+
+async function seedFreshReceiptBasisRollups() {
+  // Start with the unaffected v2 figures/dimensions, then replace every record-derived row
+  // with the receipt-date keys and calculations produced by the old code. The marker is absent.
+  await rebuildRollups();
+  await query(`DELETE FROM metrics_daily_rollup WHERE metric_key IN ('records_recorded', 'records_received')`);
+  await query(`
+    INSERT INTO metrics_daily_rollup (metric_date, metric_key, bucket, count)
+    SELECT
+      (entry.synced_at AT TIME ZONE 'UTC')::date,
+      'records_received',
+      CASE WHEN classification.classification IN ('INTERNAL_TEST', 'DEMO') THEN 'excluded' ELSE 'external' END,
+      COUNT(*)::int
+    FROM ledger_entries entry
+    INNER JOIN device_identities device ON device.device_identity = entry.device_identity
+    INNER JOIN users account ON account.id = device.user_id
+    LEFT JOIN account_classification classification ON classification.user_id = account.id
+    WHERE (entry.synced_at AT TIME ZONE 'UTC')::date >= DATE '2000-01-01'
+      AND (entry.synced_at AT TIME ZONE 'UTC')::date <= (clock_timestamp() AT TIME ZONE 'UTC')::date + 1
+    GROUP BY 1, 3
+  `);
+  await query(`
+    DELETE FROM metrics_snapshot
+    WHERE metric_key = $1
+       OR metric_key IN ('records_undated', 'contributors_records_recorded', 'contributors_records_received')
+       OR metric_key LIKE 'accounts_submitting_records_%'
+  `, [ROLLUP_BASIS_MARKER]);
+  await query(`
+    INSERT INTO metrics_snapshot (metric_key, bucket, count)
+    SELECT
+      'contributors_records_received',
+      CASE WHEN classification.classification IN ('INTERNAL_TEST', 'DEMO') THEN 'excluded' ELSE 'external' END,
+      COUNT(DISTINCT account.id)::int
+    FROM ledger_entries entry
+    INNER JOIN device_identities device ON device.device_identity = entry.device_identity
+    INNER JOIN users account ON account.id = device.user_id
+    LEFT JOIN account_classification classification ON classification.user_id = account.id
+    WHERE (entry.synced_at AT TIME ZONE 'UTC')::date >= DATE '2000-01-01'
+      AND (entry.synced_at AT TIME ZONE 'UTC')::date <= (clock_timestamp() AT TIME ZONE 'UTC')::date + 1
+    GROUP BY 2
+  `);
+  await query(`
+    INSERT INTO metrics_snapshot (metric_key, bucket, count)
+    SELECT
+      'accounts_submitting_records_' || ranges.range_key,
+      CASE WHEN classification.classification IN ('INTERNAL_TEST', 'DEMO') THEN 'excluded' ELSE 'external' END,
+      COUNT(DISTINCT account.id)::int
+    FROM ledger_entries entry
+    INNER JOIN device_identities device ON device.device_identity = entry.device_identity
+    INNER JOIN users account ON account.id = device.user_id
+    LEFT JOIN account_classification classification ON classification.user_id = account.id
+    CROSS JOIN (VALUES
+      ('30d', (clock_timestamp() AT TIME ZONE 'UTC')::date - 29),
+      ('90d', (clock_timestamp() AT TIME ZONE 'UTC')::date - 89),
+      ('12m', (date_trunc('month', clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '11 months')::date),
+      ('all', DATE '2000-01-01')
+    ) AS ranges(range_key, start_date)
+    WHERE (entry.synced_at AT TIME ZONE 'UTC')::date >= ranges.start_date
+      AND (entry.synced_at AT TIME ZONE 'UTC')::date <= (clock_timestamp() AT TIME ZONE 'UTC')::date + 1
+    GROUP BY 1, 2
+  `);
+  await query(`
+    UPDATE metrics_rollup_state
+    SET built_at = clock_timestamp(), stale = FALSE, last_attempt_at = NULL, last_failure_at = NULL
     WHERE id = TRUE
   `);
   clearMetricsCache();
@@ -257,7 +326,8 @@ before(async () => {
       new URL("../migrations/011_admin_metrics_rollup.sql", import.meta.url),
       new URL("../migrations/012_admin_dimension_snapshot.sql", import.meta.url),
       new URL("../migrations/016_admin_exclusion_model.sql", import.meta.url),
-      new URL("../migrations/017_sector_assignment.sql", import.meta.url)
+      new URL("../migrations/017_sector_assignment.sql", import.meta.url),
+      new URL("../migrations/023_recovery.sql", import.meta.url)
     ]
   });
   config.adminJwtSecret = crypto.randomBytes(32).toString("hex");
@@ -293,7 +363,7 @@ test("1: overview figures agree with independent source counts", async () => {
     Object.fromEntries(METRIC_DEFINITIONS.map(({ key }) => [key, metric(overview, key).total])),
     {
       accounts_registered: 3,
-      records_received: 4,
+      records_recorded: 4,
       attestations_issued: 1,
       accounts_submitting_records: 3,
       accounts_phone_verified: 1,
@@ -302,7 +372,8 @@ test("1: overview figures agree with independent source counts", async () => {
       accounts_with_records: 3,
       accounts_with_3plus_records: 0,
       accounts_setup_fields_stored: 0,
-      accounts_setup_fields_with_records: 0
+      accounts_setup_fields_with_records: 0,
+      records_undated: 0
     }
   );
 });
@@ -313,7 +384,7 @@ test("2: six-week and three-month series agree with the source dates", async () 
   const app = await buildApp();
   const access = await ownerAccess(app);
   try {
-    const weekly = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=records_received&bucket=week&periods=6", headers: access.headers });
+    const weekly = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=records_recorded&bucket=week&periods=6", headers: access.headers });
     const monthly = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=attestations_issued&bucket=month&periods=3", headers: access.headers });
     assert.equal(weekly.json().periods.length, 6);
     assert.equal(monthly.json().periods.length, 3);
@@ -336,7 +407,7 @@ test("3: every returned total reconciles to its two buckets", async () => {
 test("4: an empty database returns every metric with three zeroes", async () => {
   await rebuildRollups();
   const overview = await readOverview({ range: "all" });
-  assert.equal(overview.metrics.length, 11);
+  assert.equal(overview.metrics.length, 12);
   for (const item of overview.metrics) {
     assert.deepEqual([item.external, item.excluded, item.total], [0, 0, 0]);
   }
@@ -527,12 +598,12 @@ test("5: an exclusion moves all historical records out of External on the next r
   try {
     await rebuildRollups();
     const before = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
-    assert.equal(metric(before.json(), "records_received").external, 1);
+    assert.equal(metric(before.json(), "records_recorded").external, 1);
     const preview = await app.inject({ method: "POST", url: "/admin/classification/preview", headers: access.headers, payload: { phone_number: user.phone_number, classification: "INTERNAL_TEST", reason_code: "OPERATOR_TEST_ACCOUNT" } });
     await app.inject({ method: "POST", url: "/admin/classification/apply", headers: access.headers, payload: { confirmation_token: preview.json().confirmation_token } });
     const response = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
-    assert.equal(metric(response.json(), "records_received").external, 0);
-    assert.equal(metric(response.json(), "records_received").excluded, 1);
+    assert.equal(metric(response.json(), "records_recorded").external, 0);
+    assert.equal(metric(response.json(), "records_recorded").excluded, 1);
   } finally { await app.close(); }
 });
 
@@ -541,31 +612,89 @@ test("6: an account with no classification row is External; payment and activity
   await seedUser();
   await rebuildRollups();
   const overview = await readOverview({ range: "all" });
-  assert.equal(metric(overview, "records_received").external, 1);
+  assert.equal(metric(overview, "records_recorded").external, 1);
   assert.equal(metric(overview, "accounts_registered").external, 2);
   assert.equal(metric(overview, "accounts_with_records").external, 1);
-  assert.equal(metric(overview, "records_received").excluded, 0);
+  assert.equal(metric(overview, "records_recorded").excluded, 0);
   assert.equal(Object.hasOwn(overview, "provisional"), false);
 });
 
-test("7: a 1970 device date is counted using today's server receipt date", async () => {
-  await seedUser({ records: [{ confirmedAt: new Date(0), syncedAt: new Date() }] });
+test("7: unusable device-recorded dates are not placed in a period and are counted separately", async () => {
+  // ledger_entries.confirmed_at is NOT NULL, so a null date cannot be stored; the rollup's
+  // IS NULL guard is defensive only. The reachable unusable dates are the epoch value the
+  // server stores when a device sends none, a pre-2000 date and a far-future date.
+  await seedUser({ records: [
+    { confirmedAt: new Date(0), syncedAt: new Date() },
+    { confirmedAt: new Date("1999-12-31T00:00:00Z"), syncedAt: new Date() },
+    { confirmedAt: new Date("2099-01-01T00:00:00Z"), syncedAt: new Date() }
+  ] });
   await rebuildRollups();
-  const rows = await query(`SELECT count FROM metrics_daily_rollup WHERE metric_key = 'records_received'`);
-  assert.equal(rows.rows.reduce((sum, row) => sum + Number(row.count), 0), 1);
+  const rows = await query(`SELECT count FROM metrics_daily_rollup WHERE metric_key = 'records_recorded'`);
+  assert.equal(rows.rows.reduce((sum, row) => sum + Number(row.count), 0), 0);
+  const overview = await readOverview({ range: "all" });
+  assert.equal(metric(overview, "records_undated").total, 3);
+  assert.ok(Number((await readRollupState()).out_of_range) >= 3);
 });
 
-test("8: a future device date is counted using its server receipt date", async () => {
-  await seedUser({ records: [{ confirmedAt: new Date("2099-01-01T00:00:00Z"), syncedAt: new Date() }] });
+test("8: a record belongs to its UTC device-recorded month, not its later server receipt month", async () => {
+  await seedUser({ records: [{
+    confirmedAt: new Date("2026-10-15T23:30:00Z"),
+    syncedAt: new Date("2026-11-03T00:30:00Z")
+  }] });
   await rebuildRollups();
-  const overview = await readOverview({ range: "30d" });
-  assert.equal(metric(overview, "records_received").total, 1);
+  const october = await query(`
+    SELECT COALESCE(SUM(count), 0)::int AS count
+    FROM metrics_daily_rollup
+    WHERE metric_key = 'records_recorded' AND metric_date >= DATE '2026-10-01' AND metric_date < DATE '2026-11-01'
+  `);
+  const november = await query(`
+    SELECT COALESCE(SUM(count), 0)::int AS count
+    FROM metrics_daily_rollup
+    WHERE metric_key = 'records_recorded' AND metric_date >= DATE '2026-11-01' AND metric_date < DATE '2026-12-01'
+  `);
+  assert.equal(Number(october.rows[0].count), 1);
+  assert.equal(Number(november.rows[0].count), 0);
+  assert.equal(metric(await readOverview({ range: "30d" }), "accounts_submitting_records").total, 1);
 });
 
-test("9: out-of-range receipt dates are excluded and counted", async () => {
-  await seedUser({ records: [{ syncedAt: new Date("1999-12-31T00:00:00Z") }] });
+test("8a: a recovered FORKED-device replacement is an ordinary confirmed_at row and stays counted once across rebuilds", async () => {
+  const user = await seedUser({
+    deviceStatus: "FORKED",
+    records: [{
+      confirmedAt: new Date("2026-10-15T12:00:00Z"),
+      syncedAt: new Date("2026-11-03T12:00:00Z")
+    }]
+  });
+  const recoveryId = crypto.randomUUID();
+  const replacement = await query(`SELECT entry_hash FROM ledger_entries WHERE device_identity = $1`, [user.deviceIdentity]);
+  await query(`
+    INSERT INTO recovery_sessions (
+      recovery_id, device_identity, user_id, state, app_version, local_summary, lease_expires_at
+    ) VALUES ($1, $2, $3, 'completed', 'test', '{}'::jsonb, NOW() - INTERVAL '1 minute')
+  `, [recoveryId, user.deviceIdentity, user.id]);
+  await query(`
+    INSERT INTO ledger_recoveries (
+      device_identity, original_entry_hash, original_local_id, original_signed_id, original_confirmed_at,
+      date_check, replacement_entry_id, replacement_entry_hash, recovery_id
+    ) VALUES ($1, $2, 1, 1, '"2026-10-15T12:00:00.000Z"'::jsonb, 'ok', 1, $3, $4)
+  `, [user.deviceIdentity, crypto.randomBytes(32).toString("hex"), replacement.rows[0].entry_hash, recoveryId]);
+
   await rebuildRollups();
-  assert.equal(metric(await readOverview({ range: "all" }), "records_received").total, 0);
+  await rebuildRollups();
+  const october = await query(`
+    SELECT COALESCE(SUM(count), 0)::int AS count
+    FROM metrics_daily_rollup
+    WHERE metric_key = 'records_recorded' AND metric_date = DATE '2026-10-15'
+  `);
+  assert.equal(Number(october.rows[0].count), 1);
+  const source = await readFile(new URL("../src/admin-metrics.js", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /ledger_recoveries|recovery_/i);
+});
+
+test("9: out-of-range device-recorded dates are excluded and counted", async () => {
+  await seedUser({ records: [{ confirmedAt: new Date("1999-12-31T00:00:00Z"), syncedAt: new Date() }] });
+  await rebuildRollups();
+  assert.equal(metric(await readOverview({ range: "all" }), "records_recorded").total, 0);
   assert.ok(Number((await readRollupState()).out_of_range) >= 1);
 });
 
@@ -630,6 +759,175 @@ test("14: a forced rebuild failure preserves the previous rollups", async () => 
   assert.deepEqual(afterRows.rows, beforeRows.rows);
 });
 
+test("fix2 P1a: a fresh v2 receipt-date rollup rebuilds before recorded-date figures are served", async () => {
+  const now = new Date();
+  const daysAgo = (days) => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const thirteenMonthsAgo = new Date(now);
+  thirteenMonthsAgo.setUTCMonth(thirteenMonthsAgo.getUTCMonth() - 13);
+  for (const confirmedAt of [daysAgo(40), daysAgo(100), thirteenMonthsAgo, new Date(0)]) {
+    await seedUser({ records: [{ confirmedAt, syncedAt: now }] });
+  }
+  await seedFreshReceiptBasisRollups();
+
+  const oldDaily = await query(`
+    SELECT COALESCE(SUM(count), 0)::int AS count
+    FROM metrics_daily_rollup
+    WHERE metric_key = 'records_received'
+      AND metric_date >= (clock_timestamp() AT TIME ZONE 'UTC')::date - 29
+  `);
+  const oldSubmitters = await query(`
+    SELECT metric_key, count FROM metrics_snapshot
+    WHERE metric_key LIKE 'accounts_submitting_records_%' AND bucket = 'external'
+  `);
+  assert.equal(Number(oldDaily.rows[0].count), 4);
+  assert.deepEqual(
+    Object.fromEntries(oldSubmitters.rows.map(({ metric_key, count }) => [metric_key, Number(count)])),
+    {
+      accounts_submitting_records_30d: 4,
+      accounts_submitting_records_90d: 4,
+      accounts_submitting_records_12m: 4,
+      accounts_submitting_records_all: 4
+    }
+  );
+  assert.equal((await readRollupState()).basis_ready, false);
+
+  const app = await buildApp();
+  const access = await ownerAccess(app);
+  try {
+    const response = await app.inject({ method: "GET", url: "/admin/v2/overview?range=30d", headers: access.headers });
+    assert.equal(response.statusCode, 200);
+    assert.equal(metric(response.json(), "records_recorded").total, 0);
+    assert.equal(metric(response.json(), "accounts_submitting_records").total, 0);
+    assert.equal(metric(response.json(), "records_undated").total, 1);
+    assert.equal(response.body.includes("records_received"), false);
+    assert.equal((await readRollupState()).basis_ready, true);
+
+    for (const [range, expected] of [["90d", 1], ["12m", 2], ["all", 3]]) {
+      const next = await app.inject({ method: "GET", url: `/admin/v2/overview?range=${range}`, headers: access.headers });
+      assert.equal(metric(next.json(), "records_recorded").total, expected, range);
+      assert.equal(metric(next.json(), "accounts_submitting_records").total, expected, range);
+      assert.equal(metric(next.json(), "records_undated").total, 1, range);
+    }
+  } finally { await app.close(); }
+});
+
+test("fix2 P1b: throttled and failed old-basis rebuilds return unavailable, never old figures", async () => {
+  await seedUser({ records: [{ confirmedAt: new Date(0), syncedAt: new Date() }] });
+  await seedFreshReceiptBasisRollups();
+  const app = await buildApp();
+  const access = await ownerAccess(app);
+  try {
+    await query(`UPDATE metrics_rollup_state SET last_attempt_at = clock_timestamp() WHERE id = TRUE`);
+    for (const url of [
+      "/admin/v2/overview?range=30d",
+      "/admin/v2/timeseries?metric=records_recorded&bucket=month&periods=1"
+    ]) {
+      const throttled = await app.inject({ method: "GET", url, headers: access.headers });
+      assert.equal(throttled.statusCode, 503, url);
+      assert.equal(throttled.json().error, "metrics_unavailable", url);
+      assert.equal(throttled.body.includes("records_received"), false, url);
+    }
+
+    await query(`UPDATE metrics_rollup_state SET last_attempt_at = NULL WHERE id = TRUE`);
+    await rejectStateUpdate(async () => {
+      for (const url of [
+        "/admin/v2/overview?range=30d",
+        "/admin/v2/timeseries?metric=records_recorded&bucket=month&periods=1"
+      ]) {
+        const failed = await app.inject({ method: "GET", url, headers: access.headers });
+        assert.equal(failed.statusCode, 503, url);
+        assert.equal(failed.json().error, "metrics_unavailable", url);
+        assert.equal(failed.body.includes("records_received"), false, url);
+      }
+    });
+  } finally { await app.close(); }
+});
+
+test("fix2 P1b/P1c: an old-basis rebuild in progress makes overview and timeseries unavailable", async () => {
+  await seedUser({ records: [{ confirmedAt: new Date(0), syncedAt: new Date() }] });
+  await seedFreshReceiptBasisRollups();
+  const holder = await getPool().connect();
+  const app = await buildApp();
+  const access = await ownerAccess(app);
+  let rebuilding;
+  try {
+    await holder.query("BEGIN");
+    await holder.query(`LOCK TABLE ledger_entries IN ACCESS EXCLUSIVE MODE`);
+    rebuilding = rebuildRollups();
+    await sleep(100);
+    for (const url of [
+      "/admin/v2/overview?range=30d",
+      "/admin/v2/timeseries?metric=records_recorded&bucket=month&periods=1"
+    ]) {
+      const response = await withinOneSecond(app.inject({ method: "GET", url, headers: access.headers }));
+      assert.equal(response.statusCode, 503, url);
+      assert.equal(response.json().error, "metrics_unavailable", url);
+    }
+  } finally {
+    await holder.query("COMMIT").catch(() => {});
+    holder.release();
+    if (rebuilding) await rebuilding;
+    await app.close();
+  }
+});
+
+test("fix2 P1d: empty-ledger old-basis rows are unavailable until rebuilt, then zeros are real", async () => {
+  await query(`
+    INSERT INTO metrics_daily_rollup (metric_date, metric_key, bucket, count)
+    VALUES ((clock_timestamp() AT TIME ZONE 'UTC')::date, 'records_received', 'external', 9)
+  `);
+  await query(`
+    INSERT INTO metrics_snapshot (metric_key, bucket, count)
+    VALUES ('accounts_submitting_records_30d', 'external', 1)
+  `);
+  await query(`
+    UPDATE metrics_rollup_state
+    SET built_at = clock_timestamp(), stale = FALSE, last_attempt_at = clock_timestamp()
+    WHERE id = TRUE
+  `);
+  const app = await buildApp();
+  const access = await ownerAccess(app);
+  try {
+    const unavailable = await app.inject({ method: "GET", url: "/admin/v2/overview?range=30d", headers: access.headers });
+    assert.equal(unavailable.statusCode, 503);
+    await query(`UPDATE metrics_rollup_state SET last_attempt_at = NULL WHERE id = TRUE`);
+    const rebuilt = await app.inject({ method: "GET", url: "/admin/v2/overview?range=30d", headers: access.headers });
+    assert.equal(rebuilt.statusCode, 200);
+    assert.equal(metric(rebuilt.json(), "records_recorded").total, 0);
+    assert.equal(metric(rebuilt.json(), "accounts_submitting_records").total, 0);
+    assert.equal(metric(rebuilt.json(), "records_undated").total, 0);
+    assert.equal((await readRollupState()).basis_ready, true);
+  } finally { await app.close(); }
+});
+
+test("fix2 P1e: the basis marker is idempotent, hidden, and excluded from status row counts", async () => {
+  await seedUser({ records: [{ syncedAt: new Date() }] });
+  await rebuildRollups();
+  await rebuildRollups();
+  const markerRows = await query(`SELECT COUNT(*)::int AS count FROM metrics_snapshot WHERE metric_key = $1`, [ROLLUP_BASIS_MARKER]);
+  assert.equal(Number(markerRows.rows[0].count), 1);
+
+  const app = await buildApp();
+  const access = await ownerAccess(app);
+  try {
+    const responses = [];
+    for (const [method, url] of [
+      ["GET", "/admin/v2/overview?range=all"],
+      ["GET", "/admin/v2/timeseries?metric=records_recorded&bucket=month&periods=1"],
+      ["GET", "/admin/v2/suppressed/overview"],
+      ["GET", "/admin/v2/breakdown?dimension=country"],
+      ["GET", "/admin/v2/status"],
+      ["POST", "/admin/v2/refresh"]
+    ]) responses.push(await app.inject({ method, url, headers: access.headers }));
+    for (const response of responses) assert.equal(response.body.includes(ROLLUP_BASIS_MARKER), false);
+    const status = responses.at(-2).json();
+    const nonMarkerRows = await query(`SELECT COUNT(*)::int AS count FROM metrics_snapshot WHERE metric_key <> $1`, [ROLLUP_BASIS_MARKER]);
+    assert.equal(status.row_counts.metrics_snapshot, Number(nonMarkerRows.rows[0].count));
+    assert.equal(Object.hasOwn(status, "basis_ready"), false);
+    assert.equal(Number((await query(`SELECT COUNT(*)::int AS count FROM metrics_snapshot WHERE metric_key = $1`, [ROLLUP_BASIS_MARKER])).rows[0].count), 1);
+  } finally { await app.close(); }
+});
+
 test("15: the admin read pool rejects writes", async () => {
   await assert.rejects(adminReadQuery(`INSERT INTO metrics_snapshot (metric_key, bucket, count) VALUES ('x', 'external', 0)`), /read-only/i);
 });
@@ -670,7 +968,7 @@ test("19: every metrics route rejects anonymous and viewer access and admits own
   const access = await ownerAccess(app);
   const routes = [
     { method: "GET", url: "/admin/v2/overview?range=all" },
-    { method: "GET", url: "/admin/v2/timeseries?metric=records_received&bucket=week&periods=1" },
+    { method: "GET", url: "/admin/v2/timeseries?metric=records_recorded&bucket=week&periods=1" },
     { method: "POST", url: "/admin/v2/refresh" },
     { method: "GET", url: "/admin/v2/status" }
   ];
@@ -690,18 +988,30 @@ test("20: every successful response carries operator labels and freshness contex
   try {
     for (const route of [
       { method: "GET", url: "/admin/v2/overview?range=all" },
-      { method: "GET", url: "/admin/v2/timeseries?metric=records_received&bucket=week&periods=1" },
+      { method: "GET", url: "/admin/v2/timeseries?metric=records_recorded&bucket=week&periods=1" },
       { method: "POST", url: "/admin/v2/refresh" },
       { method: "GET", url: "/admin/v2/status" }
     ]) {
       const body = (await app.inject({ ...route, headers: access.headers })).json();
       assert.equal(body.audience, "operator_only");
       assert.equal(body.suppression, "none");
-      assert.equal(body.api_version, 2);
+      assert.equal(body.api_version, 3);
       assert.equal(Object.hasOwn(body, "provisional"), false);
       assert.ok(Object.hasOwn(body, "as_of"));
       assert.equal(typeof body.stale, "boolean");
+      assert.equal(Object.hasOwn(body, "date_basis"), false);
     }
+    const overview = (await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers })).json();
+    assert.deepEqual(
+      Object.fromEntries(overview.metrics.map(({ key, date_basis }) => [key, date_basis])),
+      Object.fromEntries(METRIC_DEFINITIONS.map(({ key, date_basis }) => [key, date_basis]))
+    );
+    const series = (await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=records_recorded&bucket=week&periods=1", headers: access.headers })).json();
+    assert.deepEqual(series.metric, { key: "records_recorded", date_basis: "recorded" });
+    const definitions = METRIC_DEFINITIONS.map(({ definition }) => definition).join(" ").toLowerCase();
+    assert.match(metric(overview, "records_recorded").definition, /calendar date recorded on the device/);
+    assert.match(metric(overview, "accounts_submitting_records").definition, /calendar date recorded on the device/);
+    assert.equal(definitions.includes("received in"), false);
   } finally { await app.close(); }
 });
 
@@ -714,8 +1024,8 @@ test("21: invalid range, metric, bucket, and period values return 400", async ()
       "/admin/v2/overview?range=1d",
       "/admin/v2/timeseries?metric=nope&bucket=week&periods=1",
       "/admin/v2/timeseries?metric=accounts_phone_verified&bucket=week&periods=1",
-      "/admin/v2/timeseries?metric=records_received&bucket=day&periods=1",
-      "/admin/v2/timeseries?metric=records_received&bucket=week&periods=27"
+      "/admin/v2/timeseries?metric=records_recorded&bucket=day&periods=1",
+      "/admin/v2/timeseries?metric=records_recorded&bucket=week&periods=27"
     ];
     for (const url of urls) assert.equal((await app.inject({ method: "GET", url, headers: access.headers })).statusCode, 400);
   } finally { await app.close(); }
@@ -753,7 +1063,7 @@ test("23a: metrics responses disclose no account identifiers", async () => {
   try {
     const routes = [
       ...["30d", "90d", "12m", "all"].map((range) => ({ method: "GET", url: `/admin/v2/overview?range=${range}` })),
-      ...["accounts_registered", "records_received", "attestations_issued"].flatMap((metricKey) => ["week", "month"].map((bucket) => ({
+      ...["accounts_registered", "records_recorded", "attestations_issued"].flatMap((metricKey) => ["week", "month"].map((bucket) => ({
         method: "GET",
         url: `/admin/v2/timeseries?metric=${metricKey}&bucket=${bucket}&periods=1`
       }))),
@@ -780,7 +1090,7 @@ test("23b: metrics queries project only aggregate and state fields", async () =>
     await query(`UPDATE metrics_rollup_state SET stale = TRUE, last_attempt_at = NULL WHERE id = TRUE`);
     assert.equal((await ensureFreshRollups()).rebuilt, true);
     for (const range of ["30d", "90d", "12m", "all"]) await readOverview({ range });
-    for (const metricKey of ["accounts_registered", "records_received", "attestations_issued"]) {
+    for (const metricKey of ["accounts_registered", "records_recorded", "attestations_issued"]) {
       for (const bucket of ["week", "month"]) {
         await readTimeseries({ metric: metricKey, bucket, periods: 1 });
       }
@@ -847,7 +1157,7 @@ test("slice 3c 16: profile markers never appear in admin responses or rollup row
   try {
     const routes = [
       ...["30d", "90d", "12m", "all"].map((range) => `/admin/v2/overview?range=${range}`),
-      ...["accounts_registered", "records_received", "attestations_issued"].flatMap((key) => [
+      ...["accounts_registered", "records_recorded", "attestations_issued"].flatMap((key) => [
         `/admin/v2/timeseries?metric=${key}&bucket=week&periods=1`,
         `/admin/v2/timeseries?metric=${key}&bucket=month&periods=1`
       ]),
@@ -893,7 +1203,7 @@ test("slice 3c 17: rebuild and read statements return no profile-field result co
   try {
     await rebuildRollups();
     for (const range of ["30d", "90d", "12m", "all"]) await readOverview({ range });
-    for (const key of ["accounts_registered", "records_received", "attestations_issued"]) {
+    for (const key of ["accounts_registered", "records_recorded", "attestations_issued"]) {
       for (const bucket of ["week", "month"]) await readTimeseries({ metric: key, bucket, periods: 1 });
     }
     await readRollupState();
@@ -958,7 +1268,7 @@ test("27: all metrics routes send Cache-Control no-store", async () => {
   try {
     for (const route of [
       { method: "GET", url: "/admin/v2/overview?range=all" },
-      { method: "GET", url: "/admin/v2/timeseries?metric=records_received&bucket=week&periods=1" },
+      { method: "GET", url: "/admin/v2/timeseries?metric=records_recorded&bucket=week&periods=1" },
       { method: "POST", url: "/admin/v2/refresh" },
       { method: "GET", url: "/admin/v2/status" }
     ]) assert.equal((await app.inject({ ...route, headers: access.headers })).headers["cache-control"], "no-store");
@@ -1009,7 +1319,7 @@ test("30: an invalidation committed before rebuild is reflected and ends fresh",
   await query(`INSERT INTO account_classification (user_id, classification, reason_code, classified_by) VALUES ($1, 'EXTERNAL', 'CORRECTION', $2)`, [user.id, admin.id]);
   await query(`UPDATE metrics_rollup_state SET stale = TRUE, invalidations = invalidations + 1`);
   await rebuildRollups();
-  assert.equal(metric(await readOverview({ range: "all" }), "records_received").external, 1);
+  assert.equal(metric(await readOverview({ range: "all" }), "records_recorded").external, 1);
   assert.equal((await readRollupState()).stale, false);
 });
 
@@ -1037,7 +1347,7 @@ test("33: every figure in a rebuild comes from one repeatable-read snapshot", as
     await holder.query("COMMIT");
     assert.equal((await rebuilding).rebuilt, true);
     const overview = await readOverview({ range: "all" });
-    assert.equal(metric(overview, "records_received").total, 0);
+    assert.equal(metric(overview, "records_recorded").total, 0);
     assert.equal(metric(overview, "accounts_with_records").total, 0);
   } finally {
     await holder.query("ROLLBACK").catch(() => {});
@@ -1051,7 +1361,7 @@ test("34: no prior rollup plus a rebuild failure returns 503, while status remai
   try {
     await rejectStateUpdate(async () => {
       const overview = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
-      const series = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=records_received&bucket=week&periods=1", headers: access.headers });
+      const series = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=records_recorded&bucket=week&periods=1", headers: access.headers });
       assert.equal(overview.statusCode, 503);
       assert.equal(overview.json().error, "metrics_unavailable");
       assert.equal(series.statusCode, 503);
@@ -1260,7 +1570,7 @@ test("45: an out-of-range account is counted out of range and no response is lab
     const status = await app.inject({ method: "GET", url: "/admin/v2/status", headers: access.headers });
     for (const response of [refresh, overview, series, status]) {
       assert.equal(Object.hasOwn(response.json(), "provisional"), false);
-      assert.equal(response.json().api_version, 2);
+      assert.equal(response.json().api_version, 3);
     }
     assert.ok(status.json().out_of_range >= 1);
     assert.equal(overview.body.includes("accounts_all"), false);
@@ -1276,14 +1586,14 @@ test("46: never-built metrics return 503 with version labels after an initial re
   try {
     await rejectStateUpdate(async () => {
       const overview = await app.inject({ method: "GET", url: "/admin/v2/overview?range=all", headers: access.headers });
-      const series = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=records_received&bucket=week&periods=1", headers: access.headers });
+      const series = await app.inject({ method: "GET", url: "/admin/v2/timeseries?metric=records_recorded&bucket=week&periods=1", headers: access.headers });
       const status = await app.inject({ method: "GET", url: "/admin/v2/status", headers: access.headers });
       assert.equal(status.statusCode, 200);
       assert.equal(status.json().built_at, null);
       for (const response of [overview, series]) {
         assert.equal(response.statusCode, 503);
         assert.equal(response.json().error, "metrics_unavailable");
-        assert.equal(response.json().api_version, 2);
+        assert.equal(response.json().api_version, 3);
       }
     });
   } finally { await app.close(); }
@@ -1295,7 +1605,7 @@ test("47: every retired pre-exclusion read route answers 410 client_outdated", a
   try {
     for (const [method, url] of [
       ["GET", "/admin/metrics/overview?range=all"],
-      ["GET", "/admin/metrics/timeseries?metric=records_received&bucket=week&periods=1"],
+      ["GET", "/admin/metrics/timeseries?metric=records_recorded&bucket=week&periods=1"],
       ["POST", "/admin/metrics/refresh"],
       ["GET", "/admin/metrics/status"],
       ["GET", "/admin/suppressed/overview"],
@@ -1305,7 +1615,7 @@ test("47: every retired pre-exclusion read route answers 410 client_outdated", a
       for (const headers of [access.headers, {}]) {
         const response = await app.inject({ method, url, headers });
         assert.equal(response.statusCode, 410, `${method} ${url}`);
-        assert.deepEqual(response.json(), { error: "client_outdated", api_version: 2 });
+        assert.deepEqual(response.json(), { error: "client_outdated", api_version: 3 });
       }
     }
   } finally { await app.close(); }

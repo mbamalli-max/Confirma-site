@@ -19,7 +19,7 @@ function iso(value) {
   return value ? new Date(value).toISOString() : null;
 }
 
-export const API_VERSION = 2;
+export const API_VERSION = 3;
 
 function labels(state) {
   return {
@@ -97,7 +97,7 @@ export async function registerAdminMetricsRoutes(app) {
     }
     await ensureFreshRollups();
     const state = await readRollupState();
-    if (!state?.built_at) return unavailable(reply, state);
+    if (!state?.built_at || !state.basis_ready) return unavailable(reply, state);
 
     const key = cacheKey("overview", { range: request.query.range }, state);
     const cached = fromCache(key, state);
@@ -116,7 +116,7 @@ export async function registerAdminMetricsRoutes(app) {
     }
     await ensureFreshRollups();
     const state = await readRollupState();
-    if (!state?.built_at) return unavailable(reply, state);
+    if (!state?.built_at || !state.basis_ready) return unavailable(reply, state);
 
     const query = {
       metric: request.query.metric,

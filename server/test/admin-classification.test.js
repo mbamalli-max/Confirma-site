@@ -172,7 +172,7 @@ test("1: an account with no classification row is External (exclusion model, E1)
   try {
     const response = await app.inject({ method: "GET", url: "/admin/v2/exclusions", headers });
     assert.equal(response.statusCode, 200);
-    assert.equal(response.json().api_version, 2);
+    assert.equal(response.json().api_version, 3);
     assert.deepEqual(response.json().accounts, { external: 2, excluded: 0, total: 2 });
     assert.equal(response.json().exclusions_last_changed, null);
     assert.equal(response.json().accounts_created_since, null);
@@ -291,7 +291,7 @@ test("5c: the retired summary route answers 410 client_outdated", async () => {
   try {
     const response = await app.inject({ method: "GET", url: "/admin/classification/summary", headers });
     assert.equal(response.statusCode, 410);
-    assert.deepEqual(response.json(), { error: "client_outdated", api_version: 2 });
+    assert.deepEqual(response.json(), { error: "client_outdated", api_version: 3 });
   } finally {
     await app.close();
   }

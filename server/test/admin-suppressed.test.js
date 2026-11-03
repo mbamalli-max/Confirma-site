@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { closeAdminPools, getAdminReadPool } from "../src/admin-db.js";
-import { METRIC_DEFINITIONS, rebuildRollups } from "../src/admin-metrics.js";
+import { METRIC_DEFINITIONS, ROLLUP_BASIS_MARKER, rebuildRollups } from "../src/admin-metrics.js";
 import { config } from "../src/config.js";
 import { getPool, query } from "../src/db.js";
 import { SUPPRESSED_OVERVIEW_METRIC_KEYS } from "../src/routes/admin/suppressed.js";
@@ -279,8 +279,8 @@ test("overview applies subset and eligible-event contributor rules", async () =>
     assert.equal(response.statusCode, 200);
     assert.deepEqual(metric(response.json(), "accounts_registered"), { status: "published", value: 10 });
     assert.deepEqual(metric(response.json(), "accounts_phone_verified"), { status: "withheld" });
-    assert.deepEqual(metric(response.json(), "records_received"), { status: "fewer_than_k" });
-    assert.equal(response.body.includes("contributors_records_received"), false);
+    assert.deepEqual(metric(response.json(), "records_recorded"), { status: "fewer_than_k" });
+    assert.equal(response.body.includes("contributors_records_recorded"), false);
   } finally {
     await app.close();
   }
@@ -295,12 +295,12 @@ test("out-of-range events do not qualify as contributors", async () => {
   await rebuildRollups();
   const contributor = await query(`
     SELECT count FROM metrics_snapshot
-    WHERE metric_key = 'contributors_records_received' AND bucket = 'external'
+    WHERE metric_key = 'contributors_records_recorded' AND bucket = 'external'
   `);
   assert.equal(contributor.rows[0].count, 2);
   const daily = await query(`
     SELECT COALESCE(SUM(count), 0)::int AS count FROM metrics_daily_rollup
-    WHERE metric_key = 'records_received' AND bucket = 'external'
+    WHERE metric_key = 'records_recorded' AND bucket = 'external'
   `);
   assert.equal(daily.rows[0].count, 2);
 });
@@ -491,7 +491,7 @@ test("8: identical record volume is suppressed for two contributors and publishe
     }
     await rebuildRollups();
     const app = await buildApp();
-    try { return metric((await ownerRequest(app, "/admin/v2/suppressed/overview")).json(), "records_received"); }
+    try { return metric((await ownerRequest(app, "/admin/v2/suppressed/overview")).json(), "records_recorded"); }
     finally { await app.close(); }
   };
   assert.deepEqual(await readCase(2), { status: "fewer_than_k" });
@@ -514,7 +514,7 @@ test("8a: overview event disclosure uses eligible contributors and eligible even
   let app = await buildApp();
   try {
     const body = (await ownerRequest(app, "/admin/v2/suppressed/overview")).json();
-    assert.deepEqual(metric(body, "records_received"), { status: "fewer_than_k" });
+    assert.deepEqual(metric(body, "records_recorded"), { status: "fewer_than_k" });
     assert.deepEqual(metric(body, "attestations_issued"), { status: "fewer_than_k" });
   } finally { await app.close(); }
 
@@ -534,7 +534,7 @@ test("8a: overview event disclosure uses eligible contributors and eligible even
   app = await buildApp();
   try {
     const body = (await ownerRequest(app, "/admin/v2/suppressed/overview")).json();
-    assert.deepEqual(metric(body, "records_received"), { status: "published", value: 5 });
+    assert.deepEqual(metric(body, "records_recorded"), { status: "published", value: 5 });
     assert.deepEqual(metric(body, "attestations_issued"), { status: "published", value: 5 });
   } finally { await app.close(); }
 });
@@ -550,7 +550,7 @@ test("8b: every seeded rebuild keeps event totals zero with zero contributors an
     for (const account of accounts) await seedAccount(account);
     await rebuildRollups();
     for (const [eventKey, contributorKey] of [
-      ["records_received", "contributors_records_received"],
+      ["records_recorded", "contributors_records_recorded"],
       ["attestations_issued", "contributors_attestations_issued"]
     ]) {
       const values = await query(`
@@ -613,7 +613,7 @@ test("9a: response keys explicitly exclude internal, demo, unclassified, and tot
   const app = await buildApp();
   const allowed = new Set([
     "api_version", "audience", "release_status", "suppression", "minimum_cell_size", "scope", "range",
-    "as_of", "stale", "statements", "metrics", "key", "definition",
+    "as_of", "stale", "statements", "metrics", "key", "definition", "date_basis",
     "disclosure", "status", "value", "dimension", "dimension_label", "result", "reason",
     "total", "cells", "category", "count", "top_n", "min_shown_count"
   ]);
@@ -644,7 +644,7 @@ test("9b: reclassifying a populated account changes raw External rollups and pub
   const dailyBefore = await query(`
     SELECT metric_key, COALESCE(SUM(count), 0)::int AS count
     FROM metrics_daily_rollup
-    WHERE bucket = 'external' AND metric_key IN ('records_received', 'attestations_issued')
+    WHERE bucket = 'external' AND metric_key IN ('records_recorded', 'attestations_issued')
     GROUP BY metric_key
   `);
   let app = await buildApp();
@@ -658,17 +658,17 @@ test("9b: reclassifying a populated account changes raw External rollups and pub
   const dailyAfter = await query(`
     SELECT metric_key, COALESCE(SUM(count), 0)::int AS count
     FROM metrics_daily_rollup
-    WHERE bucket = 'external' AND metric_key IN ('records_received', 'attestations_issued')
+    WHERE bucket = 'external' AND metric_key IN ('records_recorded', 'attestations_issued')
     GROUP BY metric_key
   `);
   const beforeMap = Object.fromEntries(rawBefore.rows.map(({ metric_key, count }) => [metric_key, count]));
   const afterMap = Object.fromEntries(rawAfter.rows.map(({ metric_key, count }) => [metric_key, count]));
   const dailyBeforeMap = Object.fromEntries(dailyBefore.rows.map(({ metric_key, count }) => [metric_key, count]));
   const dailyAfterMap = Object.fromEntries(dailyAfter.rows.map(({ metric_key, count }) => [metric_key, count]));
-  for (const key of ["accounts_all", "accounts_phone_verified", "accounts_with_records", "contributors_records_received"]) {
+  for (const key of ["accounts_all", "accounts_phone_verified", "accounts_with_records", "contributors_records_recorded"]) {
     assert.equal(afterMap[key], beforeMap[key] + 1);
   }
-  assert.equal(dailyAfterMap.records_received, dailyBeforeMap.records_received + 3);
+  assert.equal(dailyAfterMap.records_recorded, dailyBeforeMap.records_recorded + 3);
 
   app = await buildApp();
   try {
@@ -679,7 +679,7 @@ test("9b: reclassifying a populated account changes raw External rollups and pub
       if (current.disclosure.status === "published") {
         const expectedRaw = current.key === "accounts_registered"
           ? afterMap.accounts_all
-          : ["records_received", "attestations_issued"].includes(current.key)
+          : ["records_recorded", "attestations_issued"].includes(current.key)
             ? dailyAfterMap[current.key]
             : afterMap[current.key];
         assert.equal(current.disclosure.value, expectedRaw);
@@ -705,7 +705,7 @@ test("11: statements describe the exclusion method; nothing is labelled provisio
   try {
     for (const response of await suppressedResponses(app)) {
       const body = response.json();
-      assert.equal(body.api_version, 2);
+      assert.equal(body.api_version, 3);
       assert.equal(Object.hasOwn(body, "provisional"), false);
       assert.equal(body.statements[0], "Counts all accounts except those the owner has identified as internal test, demonstration or administrator accounts.");
       assert.equal(body.statements[1], "Identification is the owner's own entry. It is not an independent confirmation.");
@@ -734,24 +734,26 @@ test("slice 3c 10: suppressed overview keeps the exact eight pre-slice results",
   try {
     const response = await ownerRequest(app, "/admin/v2/suppressed/overview");
     assert.deepEqual(response.json().metrics, [
-      { key: "accounts_registered", definition: METRIC_DEFINITIONS.find(({ key }) => key === "accounts_registered").definition, disclosure: { status: "published", value: 20 } },
-      { key: "records_received", definition: METRIC_DEFINITIONS.find(({ key }) => key === "records_received").definition, disclosure: { status: "published", value: 9 } },
-      { key: "attestations_issued", definition: METRIC_DEFINITIONS.find(({ key }) => key === "attestations_issued").definition, disclosure: { status: "fewer_than_k" } },
-      { key: "accounts_phone_verified", definition: METRIC_DEFINITIONS.find(({ key }) => key === "accounts_phone_verified").definition, disclosure: { status: "fewer_than_k" } },
-      { key: "accounts_email_verified", definition: METRIC_DEFINITIONS.find(({ key }) => key === "accounts_email_verified").definition, disclosure: { status: "fewer_than_k" } },
-      { key: "devices_active", definition: METRIC_DEFINITIONS.find(({ key }) => key === "devices_active").definition, disclosure: { status: "published", value: 20 } },
-      { key: "accounts_with_records", definition: METRIC_DEFINITIONS.find(({ key }) => key === "accounts_with_records").definition, disclosure: { status: "published", value: 9 } },
-      { key: "accounts_with_3plus_records", definition: METRIC_DEFINITIONS.find(({ key }) => key === "accounts_with_3plus_records").definition, disclosure: { status: "fewer_than_k" } }
+      ...SUPPRESSED_OVERVIEW_METRIC_KEYS.map((key) => ({
+        key,
+        definition: METRIC_DEFINITIONS.find((item) => item.key === key).definition,
+        date_basis: METRIC_DEFINITIONS.find((item) => item.key === key).date_basis,
+        disclosure: key === "accounts_registered" || key === "devices_active"
+          ? { status: "published", value: 20 }
+          : key === "records_recorded" || key === "accounts_with_records"
+            ? { status: "published", value: 9 }
+            : { status: "fewer_than_k" }
+      }))
     ]);
   } finally { await app.close(); }
 });
 
-test("slice 3c 11: suppressed overview uses an exported eight-key list while definitions have eleven entries", async () => {
+test("slice 3c 11: suppressed overview uses an exported eight-key list while definitions have twelve entries", async () => {
   await rebuildRollups();
   const app = await buildApp();
   try {
     const response = await ownerRequest(app, "/admin/v2/suppressed/overview");
-    assert.equal(METRIC_DEFINITIONS.length, 11);
+    assert.equal(METRIC_DEFINITIONS.length, 12);
     assert.equal(SUPPRESSED_OVERVIEW_METRIC_KEYS.length, 8);
     assert.deepEqual(response.json().metrics.map(({ key }) => key), SUPPRESSED_OVERVIEW_METRIC_KEYS);
     const source = await readFile(new URL("../src/routes/admin/suppressed.js", import.meta.url), "utf8");
@@ -797,12 +799,64 @@ test("12: never-built and failed rebuilds return 503 and provisional true on bot
     ]) {
       const response = await ownerRequest(app, url);
       assert.equal(response.statusCode, 503);
-      assert.equal(response.json().api_version, 2);
+      assert.equal(response.json().api_version, 3);
       assert.equal(Object.hasOwn(response.json(), "provisional"), false);
     }
   } finally {
     await app.close();
     await query(`ALTER TABLE metrics_rollup_state DROP CONSTRAINT suppressed_test_reject_build`);
+  }
+});
+
+test("fix2 P1c: every suppressed/disclosure route refuses fresh old-basis rollups", async () => {
+  for (let index = 0; index < 6; index += 1) await seedAccount({ records: [new Date()] });
+  await rebuildRollups();
+  await query(`DELETE FROM metrics_snapshot WHERE metric_key = $1`, [ROLLUP_BASIS_MARKER]);
+  await query(`
+    UPDATE metrics_rollup_state
+    SET built_at = clock_timestamp(), stale = FALSE, last_attempt_at = clock_timestamp()
+    WHERE id = TRUE
+  `);
+  const app = await buildApp();
+  try {
+    for (const response of await suppressedResponses(app)) {
+      assert.equal(response.statusCode, 503);
+      assert.equal(response.json().error, "metrics_unavailable");
+      assert.equal(response.json().api_version, 3);
+      assert.equal(response.body.includes(ROLLUP_BASIS_MARKER), false);
+      assert.equal(response.body.includes("records_received"), false);
+    }
+  } finally { await app.close(); }
+});
+
+test("fix2 P1b/P1c: failed old-basis rebuilds keep every suppressed/disclosure route unavailable", async () => {
+  for (let index = 0; index < 6; index += 1) await seedAccount({ records: [new Date()] });
+  await rebuildRollups();
+  await query(`DELETE FROM metrics_snapshot WHERE metric_key = $1`, [ROLLUP_BASIS_MARKER]);
+  await query(`
+    UPDATE metrics_rollup_state
+    SET built_at = clock_timestamp(), stale = FALSE, last_attempt_at = NULL
+    WHERE id = TRUE
+  `);
+  // Fail the rebuild itself (the rollup insert), not the throttle claim on the state row: a
+  // CHECK on metrics_rollup_state would also block ensureFreshRollups' own claim UPDATE while the
+  // row is non-stale, which is not a rebuild failure.
+  await query(`
+    ALTER TABLE metrics_daily_rollup
+    ADD CONSTRAINT suppressed_old_basis_reject_build CHECK (FALSE) NOT VALID
+  `);
+  const app = await buildApp();
+  try {
+    for (const response of await suppressedResponses(app)) {
+      assert.equal(response.statusCode, 503);
+      assert.equal(response.json().error, "metrics_unavailable");
+      assert.equal(response.body.includes("records_received"), false);
+    }
+    const failure = await query(`SELECT last_failure_at IS NOT NULL AS recorded FROM metrics_rollup_state WHERE id = TRUE`);
+    assert.equal(failure.rows[0].recorded, true, "the rebuild must have actually failed and recorded its failure");
+  } finally {
+    await app.close();
+    await query(`ALTER TABLE metrics_daily_rollup DROP CONSTRAINT suppressed_old_basis_reject_build`);
   }
 });
 
@@ -832,7 +886,7 @@ test("13: overview definitions are verbatim and response keys, labels, and state
 test("11a: suppressed overview exports the literal pre-slice metric list", () => {
   assert.deepEqual(SUPPRESSED_OVERVIEW_METRIC_KEYS, [
     "accounts_registered",
-    "records_received",
+    "records_recorded",
     "attestations_issued",
     "accounts_phone_verified",
     "accounts_email_verified",
@@ -1198,13 +1252,13 @@ test("24: contributor internals and accounts_all stay absent from every 3a respo
   try {
     for (const url of [
       "/admin/v2/overview?range=all",
-      "/admin/v2/timeseries?metric=records_received&bucket=week&periods=1",
+      "/admin/v2/timeseries?metric=records_recorded&bucket=week&periods=1",
       "/admin/v2/timeseries?metric=attestations_issued&bucket=month&periods=1"
     ]) {
       const response = await app.inject({ method: "GET", url, headers: auth(session) });
       assert.equal(response.statusCode, 200);
       for (const key of [
-        "accounts_all", "contributors_records_received",
+        "accounts_all", "contributors_records_recorded",
         "contributors_attestations_issued", "contributors_devices_active",
         "accounts_submitting_records_"
       ]) assert.equal(response.body.includes(key), false);

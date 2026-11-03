@@ -18,22 +18,26 @@ const BUSINESS_PROFILE_SQL = `(
 )`;
 
 export const METRICS_REBUILD_LOCK_KEY = 7300311;
+export const ROLLUP_BASIS_MARKER = "rollup_basis_recorded_v3";
 
 const PERIOD_METRICS = Object.freeze([
   {
     key: "accounts_registered",
     name: "Accounts registered",
-    definition: "Accounts created in the period."
+    definition: "Accounts created in the period.",
+    date_basis: "account_created"
   },
   {
-    key: "records_received",
-    name: "Records received",
-    definition: "Records received and stored by the server in the period, by the time the server received them. Device-reported record times are not used."
+    key: "records_recorded",
+    name: "Records recorded",
+    definition: "Records confirmed on a user's device in the period, grouped by the calendar date recorded on the device, with days starting at midnight Coordinated Universal Time. The date comes from the device, not an independently confirmed timestamp. Records with no usable date are counted separately. Internal, test and demo accounts are excluded.",
+    date_basis: "recorded"
   },
   {
     key: "attestations_issued",
     name: "Attestations issued",
-    definition: "Attestations issued by the server in the period. Lookups of an attestation by a third party are not recorded and are not counted."
+    definition: "Attestations issued by the server in the period, grouped by the server-issued time rather than a record date. Lookups of an attestation by a third party are not recorded and are not counted.",
+    date_basis: "server_issued"
   }
 ]);
 
@@ -41,37 +45,50 @@ const POINT_METRICS = Object.freeze([
   {
     key: "accounts_phone_verified",
     name: "Accounts with a verified phone number",
-    definition: "Accounts whose phone number has been verified. A point-in-time figure."
+    definition: "Accounts whose phone number has been verified. A point-in-time figure.",
+    date_basis: "none"
   },
   {
     key: "accounts_email_verified",
     name: "Accounts with a verified email address",
-    definition: "Accounts whose email address has been verified. A point-in-time figure."
+    definition: "Accounts whose email address has been verified. A point-in-time figure.",
+    date_basis: "none"
   },
   {
     key: "devices_active",
     name: "Devices in ACTIVE registration status",
-    definition: "Devices whose registration is currently in ACTIVE status. A point-in-time figure. Not a count of people or of recent use."
+    definition: "Devices whose registration is currently in ACTIVE status. A point-in-time figure. Not a count of people or of recent use.",
+    date_basis: "none"
   },
   {
     key: "accounts_with_records",
     name: "Accounts with at least one record",
-    definition: "Accounts with one or more records received, all time."
+    definition: "Accounts with one or more records held by the server, all time.",
+    date_basis: "none"
   },
   {
     key: "accounts_with_3plus_records",
     name: "Accounts with three or more records",
-    definition: "Accounts with three or more records received, all time. This is not the activation metric: the export step of activation is not observable by the server."
+    definition: "Accounts with three or more records held by the server, all time. This is not the activation metric: the export step of activation is not observable by the server.",
+    date_basis: "none"
   },
   {
     key: "accounts_setup_fields_stored",
     name: "Accounts with required setup fields stored",
-    definition: "Accounts whose stored profile holds a display name and a business type, the two fields the app requires before its setup can be finished. A proxy for completed onboarding, not a count of it: the server does not record a completion event, and these fields can reach the server without one. Accounts whose profile has not reached the server are not counted. A point-in-time figure with no date. This is not the activation metric."
+    definition: "Accounts whose stored profile holds a display name and a business type, the two fields the app requires before its setup can be finished. A proxy for completed onboarding, not a count of it: the server does not record a completion event, and these fields can reach the server without one. Accounts whose profile has not reached the server are not counted. A point-in-time figure with no date. This is not the activation metric.",
+    date_basis: "none"
   },
   {
     key: "accounts_setup_fields_with_records",
     name: "Accounts with required setup fields stored and at least one record",
-    definition: "Accounts counted as having the required setup fields stored that also have one or more records received, all time. A point-in-time figure."
+    definition: "Accounts counted as having the required setup fields stored that also have one or more records held by the server, all time. A point-in-time figure.",
+    date_basis: "none"
+  },
+  {
+    key: "records_undated",
+    name: "Records with no usable recorded date",
+    definition: "Records held by the server whose device-reported confirmed_at is missing, before 1 January 2000 (Coordinated Universal Time), or later than the day after the figures were built. They are not placed in any month. A point-in-time figure.",
+    date_basis: "none"
   }
 ]);
 
@@ -80,7 +97,8 @@ const POINT_METRICS = Object.freeze([
 const SUBMITTER_METRIC = Object.freeze({
   key: "accounts_submitting_records",
   name: "Accounts submitting records",
-  definition: "Accounts with one or more records received by the server in the period, each counted once, by the time the server received the records. The period is measured up to the time the figures were built."
+  definition: "Accounts with one or more records confirmed on their device in the period, each counted once, grouped by the calendar date recorded on the device, with days starting at midnight Coordinated Universal Time. The date comes from the device, not an independently confirmed timestamp. Records with no usable date are not included. Internal, test and demo accounts are excluded.",
+  date_basis: "recorded"
 });
 
 export const METRIC_DEFINITIONS = Object.freeze([...PERIOD_METRICS, SUBMITTER_METRIC, ...POINT_METRICS]);
@@ -157,8 +175,8 @@ async function performRebuild({ automatic }) {
           UNION ALL
 
           SELECT
-            (entry.synced_at AT TIME ZONE 'UTC')::date AS metric_date,
-            'records_received'::text AS metric_key,
+            (entry.confirmed_at AT TIME ZONE 'UTC')::date AS metric_date,
+            'records_recorded'::text AS metric_key,
             account.id AS user_id
           FROM ledger_entries entry
           INNER JOIN device_identities device
@@ -212,9 +230,9 @@ async function performRebuild({ automatic }) {
             AND BTRIM(COALESCE(profile.business_type_id, '')) <> ''
         ), eligible_event_rows AS (
           SELECT
-            'contributors_records_received'::text AS metric_key,
+            'contributors_records_recorded'::text AS metric_key,
             account.id AS user_id,
-            (entry.synced_at AT TIME ZONE 'UTC')::date AS event_date
+            (entry.confirmed_at AT TIME ZONE 'UTC')::date AS event_date
           FROM ledger_entries entry
           INNER JOIN device_identities device
             ON device.device_identity = entry.device_identity
@@ -275,6 +293,15 @@ async function performRebuild({ automatic }) {
 
           UNION ALL
 
+          SELECT 'records_undated'::text AS metric_key, account.id AS user_id
+          FROM ledger_entries entry
+          INNER JOIN device_identities device ON device.device_identity = entry.device_identity
+          INNER JOIN users account ON account.id = device.user_id
+          WHERE entry.confirmed_at IS NULL
+             OR NOT (${eligibleEventDateSql("(entry.confirmed_at AT TIME ZONE 'UTC')::date", "$1")})
+
+          UNION ALL
+
           SELECT 'accounts_all'::text AS metric_key, account.id AS user_id
           FROM users account
 
@@ -293,7 +320,7 @@ async function performRebuild({ automatic }) {
 
           UNION ALL
 
-          -- M3: distinct accounts with records received in each overview range, measured up
+          -- M3: distinct accounts with records recorded in each overview range, measured up
           -- to the build time ($2). Range starts match readOverview's.
           SELECT DISTINCT 'accounts_submitting_records_' || ranges.range_key AS metric_key, event.user_id
           FROM eligible_event_rows event
@@ -303,7 +330,7 @@ async function performRebuild({ automatic }) {
             ('12m', (date_trunc('month', $2::timestamptz AT TIME ZONE 'UTC') - INTERVAL '11 months')::date),
             ('all', DATE '2000-01-01')
           ) AS ranges(range_key, start_date)
-          WHERE event.metric_key = 'contributors_records_received'
+          WHERE event.metric_key = 'contributors_records_recorded'
             AND ${eligibleEventDateSql("event.event_date", "$1")}
             AND event.event_date >= ranges.start_date
         ), classified AS (
@@ -321,6 +348,13 @@ async function performRebuild({ automatic }) {
         FROM classified
         GROUP BY metric_key, bucket
       `, [eventDateUpperBound, startedAt]);
+
+      // This marker describes every rollup table rebuilt in this transaction. Old receipt-date
+      // builds do not have it, and it becomes visible atomically with the recorded-date rows.
+      await client.query(
+        `INSERT INTO metrics_snapshot (metric_key, bucket, count) VALUES ($1, 'external', 1)`,
+        [ROLLUP_BASIS_MARKER]
+      );
 
       await client.query(`DELETE FROM metrics_dimension_snapshot`);
       await client.query(`
@@ -407,7 +441,7 @@ async function performRebuild({ automatic }) {
                 SELECT (account.created_at AT TIME ZONE 'UTC')::date AS metric_date
                 FROM users account
                 UNION ALL
-                SELECT (entry.synced_at AT TIME ZONE 'UTC')::date
+                SELECT (entry.confirmed_at AT TIME ZONE 'UTC')::date
                 FROM ledger_entries entry
                 UNION ALL
                 SELECT (attestation.issued_at AT TIME ZONE 'UTC')::date
@@ -451,12 +485,20 @@ export async function ensureFreshRollups() {
   if (rebuildInProgress) return { rebuilt: false, reason: "in_progress" };
   const due = await adminReadQuery(`
     SELECT (
-      (stale OR built_at IS NULL OR built_at < clock_timestamp() - INTERVAL '15 minutes')
+      (
+        stale
+        OR built_at IS NULL
+        OR built_at < clock_timestamp() - INTERVAL '15 minutes'
+        OR NOT EXISTS (
+          SELECT 1 FROM metrics_snapshot
+          WHERE metric_key = $1 AND bucket = 'external' AND count = 1
+        )
+      )
       AND (last_attempt_at IS NULL OR last_attempt_at < clock_timestamp() - INTERVAL '60 seconds')
     ) AS due
     FROM metrics_rollup_state
     WHERE id = TRUE
-  `);
+  `, [ROLLUP_BASIS_MARKER]);
   if (!due.rows[0]?.due) return { rebuilt: false, reason: "fresh_or_throttled" };
   if (rebuildInProgress) return { rebuilt: false, reason: "in_progress" };
 
@@ -466,10 +508,18 @@ export async function ensureFreshRollups() {
       UPDATE metrics_rollup_state
       SET last_attempt_at = clock_timestamp()
       WHERE id = TRUE
-        AND (stale OR built_at IS NULL OR built_at < clock_timestamp() - INTERVAL '15 minutes')
+        AND (
+          stale
+          OR built_at IS NULL
+          OR built_at < clock_timestamp() - INTERVAL '15 minutes'
+          OR NOT EXISTS (
+            SELECT 1 FROM metrics_snapshot
+            WHERE metric_key = $1 AND bucket = 'external' AND count = 1
+          )
+        )
         AND (last_attempt_at IS NULL OR last_attempt_at < clock_timestamp() - INTERVAL '60 seconds')
       RETURNING TRUE AS claimed
-    `);
+    `, [ROLLUP_BASIS_MARKER]);
     if (!claimed.rowCount) return { rebuilt: false, reason: "fresh_or_throttled" };
     return await performRebuild({ automatic: true });
   } finally {
@@ -481,7 +531,20 @@ export async function readRollupState() {
   const result = await adminReadQuery(`
     SELECT
       built_at,
-      (stale OR built_at IS NULL OR built_at < clock_timestamp() - INTERVAL '15 minutes') AS stale,
+      (
+        stale
+        OR built_at IS NULL
+        OR built_at < clock_timestamp() - INTERVAL '15 minutes'
+        OR NOT EXISTS (
+          SELECT 1 FROM metrics_snapshot
+          WHERE metric_key = $1 AND bucket = 'external' AND count = 1
+        )
+      ) AS stale,
+      -- Reuse the existing aggregate-only projection name; it is renamed before return.
+      EXISTS (
+        SELECT 1 FROM metrics_snapshot
+        WHERE metric_key = $1 AND bucket = 'external' AND count = 1
+      ) AS due,
       build_ms,
       out_of_range,
       invalidations,
@@ -491,8 +554,9 @@ export async function readRollupState() {
       clock_timestamp() + INTERVAL '60 seconds' AS cache_valid_until
     FROM metrics_rollup_state
     WHERE id = TRUE
-  `);
-  return result.rows[0];
+  `, [ROLLUP_BASIS_MARKER]);
+  const { due, ...state } = result.rows[0];
+  return { ...state, basis_ready: Boolean(due) };
 }
 
 export async function readSuppressedOverview() {
@@ -506,8 +570,8 @@ export async function readSuppressedOverview() {
     adminReadQuery(`
       SELECT metric_key, count
       FROM metrics_snapshot
-      WHERE bucket = 'external'
-    `)
+      WHERE bucket = 'external' AND metric_key <> $1
+    `, [ROLLUP_BASIS_MARKER])
   ]);
   return {
     daily: Object.fromEntries(daily.rows.map((row) => [row.metric_key, Number(row.count)])),
@@ -549,7 +613,10 @@ export async function readOverview({ range }) {
       WHERE metric_date >= ${starts[range]}
       GROUP BY metric_key, bucket
     `),
-    adminReadQuery(`SELECT metric_key, bucket, count FROM metrics_snapshot`)
+    adminReadQuery(
+      `SELECT metric_key, bucket, count FROM metrics_snapshot WHERE metric_key <> $1`,
+      [ROLLUP_BASIS_MARKER]
+    )
   ]);
   const dailyByMetric = groupRows(daily.rows, (row) => row.metric_key);
   const snapshotByMetric = groupRows(snapshot.rows, (row) => row.metric_key);
@@ -617,7 +684,10 @@ export async function readTimeseries({ metric, bucket, periods }) {
     ...countsFromRows(rows)
   }));
   return {
-    metric,
+    metric: {
+      key: metric,
+      date_basis: METRIC_DEFINITIONS.find(({ key }) => key === metric)?.date_basis
+    },
     bucket,
     periods: outputPeriods
   };
@@ -668,8 +738,8 @@ export async function readStatus() {
     adminReadQuery(`
       SELECT
         (SELECT COUNT(*)::int FROM metrics_daily_rollup) AS daily_rollup_rows,
-        (SELECT COUNT(*)::int FROM metrics_snapshot) AS snapshot_rows
-    `),
+        (SELECT COUNT(*)::int FROM metrics_snapshot WHERE metric_key <> $1) AS snapshot_rows
+    `, [ROLLUP_BASIS_MARKER]),
     readSectorAssignment()
   ]);
   return { ...state, ...rows.rows[0], sector_assignment: sectors };
