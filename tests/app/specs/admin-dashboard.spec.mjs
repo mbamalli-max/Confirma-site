@@ -61,7 +61,7 @@ async function kpisMatch(target, all, period, value) {
   await expect(target.locator("#kpi-external-value")).toHaveText(external(all, "accounts_registered"));
   await expect(target.locator("#kpi-external-sub")).toHaveText(value === "all" ? "" : `+${external(period, "accounts_registered")} in the period`);
   await expect(target.locator("#kpi-submitting-value")).toHaveText(external(period, "accounts_submitting_records"));
-  await expect(target.locator("#kpi-records-value")).toHaveText(external(period, "records_received"));
+  await expect(target.locator("#kpi-records-value")).toHaveText(external(period, "records_recorded"));
 }
 
 const CORS = { "access-control-allow-origin": APP_URL, "content-type": "application/json" };
@@ -123,10 +123,14 @@ test("2. after sign-in nothing is kept in browser storage", async () => {
 
 test("3. the headline figures show the registered-users column of the API, with labels and footer", async () => {
   const { all, period } = firstReading;
-  expect(all.api_version).toBe(2);
+  expect(all.api_version).toBe(3);
   expect(period.range).toBe("90d");
   await kpisMatch(page, all, period, "90d");
   await expect(page.locator("#kpi-submitting-def")).toHaveText(all.metrics.find((m) => m.key === "accounts_submitting_records").definition);
+  await expect(page.locator("#kpi-records .kpi-label")).toContainText("Records recorded");
+  await expect(page.locator("#kpi-records-def")).toContainText("calendar date recorded on the device");
+  await expect(page.locator("#kpi-records-undated")).toHaveText(/records have no usable recorded date and are not placed in any month/);
+  await expect(page.locator("#growth-records_recorded h3")).toHaveText("Records recorded by registered users");
   await expect(page.locator("#operator-label")).toHaveCount(0);
   await expect(page.locator('#tabs a[data-tab="reports"]')).toHaveCount(0);
   await expect(page.locator("#footer-note")).toHaveText("Operator-generated internal metrics. Aggregate counts only. Not a user-record attestation.");
@@ -147,7 +151,7 @@ test("4. changing the period re-fetches the activity figures only", async () => 
 
 test("5. the exclusions line and the Settings counts come from the exclusions summary", async () => {
   const { exclusions } = firstReading;
-  expect(exclusions.api_version).toBe(2);
+  expect(exclusions.api_version).toBe(3);
   const changed = exclusions.exclusions_last_changed;
   await expect(page.locator("#dash-exclusions-changed")).toHaveText(changed ? "2026-10-26 23:03 EDT" : "never");
   await page.click('#tabs a[data-tab="settings"]');
@@ -163,7 +167,7 @@ test("6. a 503 shows the unavailable message with no figures and no zeros", asyn
   await page.route(`${API_BASE}/admin/v2/overview?range=12m`, (route) => route.fulfill({
     status: 503,
     headers: CORS,
-    body: JSON.stringify({ error: "metrics_unavailable", api_version: 2, as_of: null, stale: true })
+    body: JSON.stringify({ error: "metrics_unavailable", api_version: 3, as_of: null, stale: true })
   }));
   await page.selectOption("#period-select", "12m");
   await expect(page.locator("#dash-unavailable")).toBeVisible();
@@ -319,11 +323,27 @@ test("1b. a rate-limited sign-in says to wait", async ({ browser }) => {
 const SERVED_AS_OF = new Date(Date.now() - 60_000).toISOString();
 const SERVED_CHANGED = "2026-10-27T03:03:00.000Z";
 function sampleOverview(range, registered = 1) {
-  const row = (key, name, external, pit = false) => ({ key, name, definition: `${name} definition.`, point_in_time: pit, range_ignored: pit, external, excluded: 2, total: external + 2 });
+  const bases = { accounts_registered: "account_created", records_recorded: "recorded", accounts_submitting_records: "recorded", devices_active: "none" };
+  const row = (key, name, external, pit = false) => ({ key, name, definition: `${name} definition.`, date_basis: bases[key], point_in_time: pit, range_ignored: pit, external, excluded: 2, total: external + 2 });
+  return {
+    api_version: 3, audience: "operator_only", suppression: "none", range, as_of: SERVED_AS_OF, stale: false,
+    metrics: [
+      row("accounts_registered", "Accounts registered", registered),
+      row("records_recorded", "Records recorded", 7),
+      row("accounts_submitting_records", "Accounts submitting records", 4),
+      row("devices_active", "Devices in ACTIVE registration status", 9, true)
+    ]
+  };
+}
+function sampleVersion2Overview(range) {
+  const row = (key, name, external, pit = false) => ({
+    key, name, definition: `${name} definition.`, point_in_time: pit, range_ignored: pit,
+    external, excluded: 2, total: external + 2
+  });
   return {
     api_version: 2, audience: "operator_only", suppression: "none", range, as_of: SERVED_AS_OF, stale: false,
     metrics: [
-      row("accounts_registered", "Accounts registered", registered),
+      row("accounts_registered", "Accounts registered", 1),
       row("records_received", "Records received", 7),
       row("accounts_submitting_records", "Accounts submitting records", 4),
       row("devices_active", "Devices in ACTIVE registration status", 9, true)
@@ -336,7 +356,7 @@ function sampleSeries(metric, bucket, periods) {
     const d = new Date(Date.UTC(2026, 9 - (bucket === "month" ? i : 0), bucket === "month" ? 1 : 26 - i * 7));
     out.push({ period_start: d.toISOString().slice(0, 10), partial: i === 0, external: periods - i, excluded: 1, total: periods - i + 1 });
   }
-  return { api_version: 2, audience: "operator_only", suppression: "none", metric, bucket, periods: out, as_of: SERVED_AS_OF, stale: false };
+  return { api_version: 3, audience: "operator_only", suppression: "none", metric: { key: metric, date_basis: metric === "accounts_registered" ? "account_created" : "recorded" }, bucket, periods: out, as_of: SERVED_AS_OF, stale: false };
 }
 function sampleBreakdown(dimension, result = { status: "published", cells: dimension === "sector"
   ? [{ category: "trade_retail", count: 7 }]
@@ -344,14 +364,14 @@ function sampleBreakdown(dimension, result = { status: "published", cells: dimen
     ? [{ category: "NG", count: 7 }]
     : [{ category: "ng_market_trader", count: 7 }, { category: "other", count: 5 }], total: ["country", "sector"].includes(dimension) ? 7 : 12 }, k = 5) {
   return {
-    api_version: 2, audience: "owner_only", release_status: "single_reading", suppression: "owner_view_top_10", minimum_cell_size: k,
+    api_version: 3, audience: "owner_only", release_status: "single_reading", suppression: "owner_view_top_10", minimum_cell_size: k,
     scope: "external_only", range: "all_time", as_of: SERVED_AS_OF, stale: false, dimension, dimension_label: dimension,
     statements: ["Counts all accounts except those the owner has identified as internal test, demonstration or administrator accounts.", "The 10 largest categories with 2 or more users are shown. Smaller categories and all remaining categories are combined in 'Other'.", `${dimension === "country" ? "Country" : dimension === "sector" ? "Sector" : "Business type"} is the stored code. Provenance statement.`],
     result
   };
 }
-const SAMPLE_EXCLUSIONS = { api_version: 2, accounts: { external: 12, excluded: 3, total: 15 }, exclusions_last_changed: SERVED_CHANGED, accounts_created_since: 2, audience: "operator_only", suppression: "none", definitions: {}, as_of: SERVED_AS_OF };
-const SAMPLE_STATUS = { api_version: 2, audience: "operator_only", suppression: "none", as_of: SERVED_AS_OF, stale: false, built_at: SERVED_AS_OF, build_ms: 30, out_of_range: 2, invalidations: 1, last_attempt_at: SERVED_AS_OF, last_failure_at: null, row_counts: { metrics_daily_rollup: 1, metrics_snapshot: 1 }, sector_assignment: { catalog: 9, user_selected: 3, reviewed_rule: 0, fallback: 4, catalog_mismatches: 0 } };
+const SAMPLE_EXCLUSIONS = { api_version: 3, accounts: { external: 12, excluded: 3, total: 15 }, exclusions_last_changed: SERVED_CHANGED, accounts_created_since: 2, audience: "operator_only", suppression: "none", definitions: {}, as_of: SERVED_AS_OF };
+const SAMPLE_STATUS = { api_version: 3, audience: "operator_only", suppression: "none", as_of: SERVED_AS_OF, stale: false, built_at: SERVED_AS_OF, build_ms: 30, out_of_range: 2, invalidations: 1, last_attempt_at: SERVED_AS_OF, last_failure_at: null, row_counts: { metrics_daily_rollup: 1, metrics_snapshot: 1 }, sector_assignment: { catalog: 9, user_selected: 3, reviewed_rule: 0, fallback: 4, catalog_mismatches: 0 } };
 
 async function servedPage(browser, handle) {
   const ctx = await browser.newContext({ baseURL: APP_URL });
@@ -727,7 +747,7 @@ test("12. phone width: no sideways scroll and 44px touch targets on every screen
     await target.fill("#signin-password", "x");
     await target.click("#signin-submit");
     await expect(target.locator("#aud-country .bar-row").first()).toBeVisible();
-    await expect(target.locator("#growth-records_received svg")).toBeVisible();
+    await expect(target.locator("#growth-records_recorded svg")).toBeVisible();
     expect(await noSideways(), "dashboard").toBe(true);
     const tall = async (selectors) => {
       for (const selector of selectors) {
@@ -800,8 +820,18 @@ test("D1. an older server or a different version shows no figures, only the out-
   for (const [label, answer] of [
     ["older server: no /admin/v2 routes", ({ send }) => send(404, { message: "Route GET:/admin/v2/overview not found" })],
     ["retired route", ({ send }) => send(410, { error: "client_outdated", api_version: 1 })],
-    ["different version", ({ url, send }) => send(200, { ...sampleOverview(url.searchParams.get("range")), api_version: 3 })],
-    ["version missing", ({ url, send }) => { const body = sampleOverview(url.searchParams.get("range")); delete body.api_version; return send(200, body); }]
+    ["realistic version-2 response", ({ url, send }) => send(200, sampleVersion2Overview(url.searchParams.get("range")))],
+    ["version missing", ({ url, send }) => { const body = sampleOverview(url.searchParams.get("range")); delete body.api_version; return send(200, body); }],
+    ["recorded figure with no basis", ({ url, send }) => {
+      const body = sampleOverview(url.searchParams.get("range"));
+      delete body.metrics.find((item) => item.key === "records_recorded").date_basis;
+      return send(200, body);
+    }],
+    ["recorded figure with the wrong basis", ({ url, send }) => {
+      const body = sampleOverview(url.searchParams.get("range"));
+      body.metrics.find((item) => item.key === "records_recorded").date_basis = "server_issued";
+      return send(200, body);
+    }]
   ]) {
     const { ctx, target } = await servedPage(browser, async (ctxArgs) => (ctxArgs.url.pathname === "/admin/v2/overview" ? answer(ctxArgs) : undefined));
     try {
@@ -821,6 +851,26 @@ test("D1. an older server or a different version shows no figures, only the out-
   }
 });
 
+test("D1a. a version-3 timeseries metric with no date basis shows no figures", async ({ browser }) => {
+  const { ctx, target } = await servedPage(browser, async ({ url, send }) => {
+    if (url.pathname !== "/admin/v2/timeseries") return undefined;
+    const body = sampleSeries(url.searchParams.get("metric"), url.searchParams.get("bucket"), Number(url.searchParams.get("periods")));
+    delete body.metric.date_basis;
+    return send(200, body);
+  });
+  try {
+    await servedSignIn(target);
+    await expect(target.locator("#version-mismatch")).toBeVisible();
+    await expect(target.locator("#version-mismatch")).toHaveText("This page and the server are out of step. Reload the page. No figures are shown.");
+    for (const id of ["#kpi-external-value", "#kpi-submitting-value", "#kpi-records-value"]) {
+      await expect(target.locator(id)).toHaveText("—");
+    }
+    await expect(target.locator(".bar-row, .chart svg")).toHaveCount(0);
+  } finally {
+    await ctx.close();
+  }
+});
+
 test("D2. growth charts mark only the current period as in progress, in chart and table", async ({ browser }) => {
   const asked = [];
   const { ctx, target } = await servedPage(browser, async ({ url, send }) => {
@@ -833,7 +883,7 @@ test("D2. growth charts mark only the current period as in progress, in chart an
   });
   try {
     await servedSignIn(target);
-    for (const metric of ["accounts_registered", "records_received"]) {
+    for (const metric of ["accounts_registered", "records_recorded"]) {
       const panel = target.locator(`#growth-${metric}`);
       await expect(panel.locator("rect.bar")).toHaveCount(12);
       await expect(panel.locator("rect.bar.partial")).toHaveCount(1);
@@ -859,9 +909,9 @@ test("D2. growth charts mark only the current period as in progress, in chart an
       expect(printed.some(([period]) => period === tableValues.at(-1)[0])).toBe(tableValues.at(-1)[1] !== "0");
     }
     await target.selectOption("#growth-bucket", "week");
-    await expect(target.locator("#growth-records_received rect.bar")).toHaveCount(26);
-    await expect(target.locator("#growth-records_received rect.bar.partial")).toHaveCount(1);
-    expect(asked).toContain("/admin/v2/timeseries?metric=records_received&bucket=week&periods=26");
+    await expect(target.locator("#growth-records_recorded rect.bar")).toHaveCount(26);
+    await expect(target.locator("#growth-records_recorded rect.bar.partial")).toHaveCount(1);
+    expect(asked).toContain("/admin/v2/timeseries?metric=records_recorded&bucket=week&periods=26");
   } finally {
     await ctx.close();
   }
@@ -953,7 +1003,7 @@ test("D5. rebuild asks first and reports rebuilt, already rebuilding, limit, fai
     [(send) => send(200, { ...SAMPLE_STATUS, rebuilt: false, reason: "in_progress" }), "Already rebuilding. Check again shortly."],
     [(send) => send(429, { error: "Too Many Requests" }), "Refresh limit reached (6 per hour)."],
     [(send) => send(200, { ...SAMPLE_STATUS, rebuilt: false, reason: "failed" }), "Rebuild failed."],
-    [(send) => send(500, { error: "internal", api_version: 2 }), "Rebuild failed."],
+    [(send) => send(500, { error: "internal", api_version: 3 }), "Rebuild failed."],
     [(send, abort) => abort(), "Outcome unconfirmed — reload the status to see whether the figures were rebuilt."]
   ];
   let index = 0;
@@ -990,8 +1040,15 @@ test("D6. methodology carries the API definitions, the statements and the activa
   const { ctx, target } = await servedPage(browser, async () => undefined);
   try {
     await servedSignIn(target);
+    const chartNote = target.locator("section", { has: target.locator("#growth-title") }).locator(":scope > p.muted");
+    await expect(chartNote).not.toContainText("counted when the server receives");
+    await expect(chartNote).toContainText("Records are placed in the month they were recorded on the device.");
+    await expect(chartNote).toContainText("Activity on a phone that has not synced is not seen until it syncs.");
+    await expect(target.locator("#dashboard-screen")).not.toContainText("counted when the server receives");
     await target.evaluate(() => { location.hash = "#settings/methodology"; });
-    await expect(target.locator("#method-definitions dt")).toHaveText(["Accounts registered", "Records received", "Accounts submitting records", "Devices in ACTIVE registration status"]);
+    const timing = target.locator("#settings-methodology h3", { hasText: "Timing" }).locator("xpath=following-sibling::p[1]");
+    await expect(timing).toContainText("Activity on a phone that has not synced is not seen until it syncs.");
+    await expect(target.locator("#method-definitions dt")).toHaveText(["Accounts registered", "Records recorded", "Accounts submitting records", "Devices in ACTIVE registration status"]);
     await expect(target.locator("#method-definitions dd").first()).toHaveText("Accounts registered definition.");
     await expect(target.locator("#method-statements li", { hasText: "Counts all accounts except" })).toHaveCount(1);
     await expect(target.locator("#method-statements li", { hasText: "Provenance statement." })).toHaveCount(3);
@@ -1027,7 +1084,7 @@ test("D9. figures still being built (503) are asked for once more and then shown
     if (url.pathname !== "/admin/v2/overview") return undefined;
     const key = url.searchParams.get("range");
     seen[key] = (seen[key] || 0) + 1;
-    if (seen[key] === 1) return send(503, { error: "metrics_unavailable", api_version: 2, as_of: null, stale: true });
+    if (seen[key] === 1) return send(503, { error: "metrics_unavailable", api_version: 3, as_of: null, stale: true });
     return undefined;
   });
   try {

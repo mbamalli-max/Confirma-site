@@ -8,8 +8,10 @@ import { API_BASE, mintSession, seedOwner } from "./admin-helpers.mjs";
 // This is an open tab, or Railway deploying before Vercel. It must show no figures, never
 // new-model numbers under old labels. The old files are read from git, not from this branch.
 const LIVE_COMMIT = "ea16b36";
+const CURRENT_V2_PAGE_COMMIT = "1ebd92a";
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const oldFile = (name) => execFileSync("git", ["show", `${LIVE_COMMIT}:admin/${name}`], { cwd: REPO, encoding: "utf8" });
+const currentV2File = (name) => execFileSync("git", ["show", `${CURRENT_V2_PAGE_COMMIT}:admin/${name}`], { cwd: REPO, encoding: "utf8" });
 
 const APP_URL = process.env.APP_TEST_URL || "http://127.0.0.1:5500";
 const CORS = { "access-control-allow-origin": APP_URL, "content-type": "application/json" };
@@ -56,6 +58,54 @@ test("X1. the pre-exclusion page against the new server shows no figures", async
     expect(statuses).toContain("410 /admin/metrics/overview");
     expect(statuses).toContain("410 /admin/classification/summary");
     expect(statuses.filter((s) => s.startsWith("200 /admin/metrics") || s.startsWith("200 /admin/classification/summary"))).toEqual([]);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("X2. the page live at 1ebd92a refuses version-3 answers on the existing v2 routes", async ({ browser }) => {
+  const ctx = await browser.newContext({ baseURL: APP_URL });
+  const page = await ctx.newPage();
+  const answers = [];
+  page.on("response", (response) => {
+    if (response.url().startsWith(`${API_BASE}/admin/v2/`) && response.request().method() !== "OPTIONS") {
+      answers.push(response.json().catch(() => null));
+    }
+  });
+  try {
+    await page.route("**/admin/config.js", (route) => route.fulfill({
+      contentType: "text/javascript", body: `export const API_BASE = "${API_BASE}";\nexport const LOGOUT_TIMEOUT_MS = 1500;`
+    }));
+    await page.route(`${API_BASE}/admin/auth/login`, async (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: PREFLIGHT });
+      return route.fulfill({ status: 200, headers: CORS, body: JSON.stringify(await mintSession(owner)) });
+    });
+    for (const [name, type] of [
+      ["index.html", "text/html"],
+      ["admin.js", "text/javascript"],
+      ["admin.css", "text/css"],
+      ["catalog-labels.js", "text/javascript"]
+    ]) {
+      const body = currentV2File(name);
+      await page.route(`**/admin/${name}`, async (route) => {
+        const response = await route.fetch();
+        return route.fulfill({ response, body, contentType: type });
+      });
+    }
+    await page.goto("/admin/index.html");
+    await page.fill("#signin-email", owner.email);
+    await page.fill("#signin-password", "x");
+    // The page live at 1ebd92a signs in with email and password only (no authenticator field).
+    await page.click("#signin-submit");
+    await expect(page.locator("#version-mismatch")).toBeVisible();
+    await expect(page.locator("#version-mismatch")).toHaveText("This page and the server are out of step. Reload the page. No figures are shown.");
+    for (const id of ["#kpi-external-value", "#kpi-submitting-value", "#kpi-records-value", "#dash-exclusions-changed"]) {
+      await expect(page.locator(id)).toHaveText("—");
+    }
+    await expect(page.locator(".bar-row, .chart svg")).toHaveCount(0);
+    const bodies = await Promise.all(answers);
+    expect(bodies.some((body) => body?.api_version === 3)).toBe(true);
+    expect(bodies.some((body) => body?.api_version === 2)).toBe(false);
   } finally {
     await ctx.close();
   }

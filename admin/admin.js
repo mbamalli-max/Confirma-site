@@ -11,7 +11,21 @@ const PREVIEW_LIFETIME_MS = Number(config.CLASSIFY_PREVIEW_MS) > 0 ? Number(conf
 // How long to wait before asking once more for figures that are still being built.
 const UNAVAILABLE_RETRY_MS = Number(config.UNAVAILABLE_RETRY_MS) >= 0 && config.UNAVAILABLE_RETRY_MS !== undefined ? Number(config.UNAVAILABLE_RETRY_MS) : 1500;
 // The figure routes this page understands (server slice B1).
-const API_VERSION = 2;
+const API_VERSION = 3;
+const METRIC_DATE_BASES = Object.freeze({
+  accounts_registered: "account_created",
+  records_recorded: "recorded",
+  attestations_issued: "server_issued",
+  accounts_submitting_records: "recorded",
+  accounts_phone_verified: "none",
+  accounts_email_verified: "none",
+  devices_active: "none",
+  accounts_with_records: "none",
+  accounts_with_3plus_records: "none",
+  accounts_setup_fields_stored: "none",
+  accounts_setup_fields_with_records: "none",
+  records_undated: "none"
+});
 const TABS = ["dashboard", "settings"];
 const SUBTABS = ["exclusions", "quality", "detail", "methodology"];
 const DIMENSIONS = ["country", "sector", "business_type"];
@@ -104,6 +118,26 @@ async function v2(method, path, body) {
     showOutOfStep();
     throw new OutOfStep();
   }
+  if (r.status === 200 && r.data && Array.isArray(r.data.metrics)) {
+    const basisOk = r.data.metrics.every((item) => (
+      typeof item?.key === "string"
+      && Object.hasOwn(METRIC_DATE_BASES, item.key)
+      && item.date_basis === METRIC_DATE_BASES[item.key]
+    ));
+    if (!basisOk) {
+      showOutOfStep();
+      throw new OutOfStep();
+    }
+  }
+  if (r.status === 200 && r.data && Object.hasOwn(r.data, "metric")) {
+    const metric = r.data.metric;
+    if (!metric || typeof metric !== "object"
+        || !Object.hasOwn(METRIC_DATE_BASES, metric.key)
+        || metric.date_basis !== METRIC_DATE_BASES[metric.key]) {
+      showOutOfStep();
+      throw new OutOfStep();
+    }
+  }
   return r;
 }
 
@@ -155,11 +189,12 @@ function categoryLabel(dimension, category) {
 function clearDashboard() {
   for (const id of ["kpi-external-value", "kpi-submitting-value", "kpi-records-value"]) $(id).textContent = "—";
   $("kpi-external-sub").textContent = "";
+  $("kpi-records-undated").textContent = "From registered users, in the period";
   $("dash-as-of").textContent = "—";
   $("dash-exclusions-changed").textContent = "—";
   $("dash-stale").hidden = true;
   $("dash-unavailable").hidden = true;
-  for (const metric of ["accounts_registered", "records_received"]) {
+  for (const metric of ["accounts_registered", "records_recorded"]) {
     document.querySelector(`#growth-${metric} .chart-body`).replaceChildren();
   }
   for (const dimension of DIMENSIONS) {
@@ -272,6 +307,7 @@ async function loadActivity() {
   const requestId = ++activityRequest;
   for (const id of ["kpi-external-value", "kpi-submitting-value", "kpi-records-value"]) $(id).textContent = "—";
   $("kpi-external-sub").textContent = "";
+  $("kpi-records-undated").textContent = "From registered users, in the period";
   let all;
   let inPeriod;
   try {
@@ -296,7 +332,8 @@ async function loadActivity() {
   const allAccounts = figure(all.data, "accounts_registered");
   const newAccounts = figure(inPeriod.data, "accounts_registered");
   const submitting = figure(inPeriod.data, "accounts_submitting_records");
-  const records = figure(inPeriod.data, "records_received");
+  const records = figure(inPeriod.data, "records_recorded");
+  const undated = figure(all.data, "records_undated");
   if (allAccounts) $("kpi-external-value").textContent = String(allAccounts.external);
   if (newAccounts && period !== "all") $("kpi-external-sub").textContent = `+${newAccounts.external} in the period`;
   if (submitting) {
@@ -306,6 +343,9 @@ async function loadActivity() {
   if (records) {
     $("kpi-records-value").textContent = String(records.external);
     $("kpi-records-def").textContent = records.definition;
+  }
+  if (undated) {
+    $("kpi-records-undated").textContent = `${undated.external} records have no usable recorded date and are not placed in any month.`;
   }
 }
 
@@ -326,7 +366,9 @@ function renderSeries(container, metric, data) {
   const max = Math.max(1, ...periods.map((p) => Number(p.external) || 0));
   const slot = width / Math.max(1, periods.length);
   const barWidth = Math.max(4, slot * 0.6);
-  const title = metric === "accounts_registered" ? "New registered users" : "Records received from registered users";
+  const title = metric === "accounts_registered" ? "New registered users" : "Records recorded by registered users";
+  // Keep the established chart colour hook without preserving the retired metric name in visible text.
+  const chartMetricClass = metric === "records_recorded" ? "records_received" : metric;
   const chart = svg("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-labelledby": `chart-title-${metric}` });
   const titleNode = svg("title", { id: `chart-title-${metric}` });
   titleNode.textContent = `${title}, ${bucket === "month" ? "monthly" : "weekly"}. Figures are in the table below the chart.`;
@@ -339,7 +381,7 @@ function renderSeries(container, metric, data) {
     const x = index * slot + (slot - barWidth) / 2;
     const bar = svg("rect", {
       x: x.toFixed(1), y: top + plot - barHeight, width: barWidth.toFixed(1), height: Math.max(barHeight, value ? 1 : 0),
-      class: `bar bar-${metric}${p.partial ? " partial" : ""}`,
+      class: `bar bar-${chartMetricClass}${p.partial ? " partial" : ""}`,
     });
     bar.dataset.period = p.period_start;
     chart.append(bar);
@@ -378,7 +420,7 @@ async function loadGrowth() {
   const bucket = $("growth-bucket").value === "week" ? "week" : "month";
   const periods = bucket === "week" ? 26 : 12;
   const requestId = ++growthRequest;
-  const metrics = ["accounts_registered", "records_received"];
+  const metrics = ["accounts_registered", "records_recorded"];
   for (const metric of metrics) document.querySelector(`#growth-${metric} .chart-body`).replaceChildren();
   let responses;
   try {

@@ -89,11 +89,11 @@
             <div class="kpi-sub">Registered users, in the period</div>
           </div>
           <div class="card kpi" id="kpi-records">
-            <div class="kpi-label">Records received
-              <details class="info"><summary aria-label="About records received">i</summary><p id="kpi-records-def"></p></details>
+            <div class="kpi-label">Records recorded
+              <details class="info"><summary aria-label="About records recorded">i</summary><p id="kpi-records-def"></p></details>
             </div>
             <div class="kpi-value" id="kpi-records-value">—</div>
-            <div class="kpi-sub">From registered users, in the period</div>
+            <div class="kpi-sub" id="kpi-records-undated">From registered users, in the period</div>
           </div>
         </div>
       </section>
@@ -114,12 +114,12 @@
             <h3>New registered users</h3>
             <div class="chart-body"></div>
           </div>
-          <div class="card chart" id="growth-records_received">
-            <h3>Records received from registered users</h3>
+          <div class="card chart" id="growth-records_recorded">
+            <h3>Records recorded by registered users</h3>
             <div class="chart-body"></div>
           </div>
         </div>
-        <p class="muted">Records are counted when the server receives them. Activity on a phone that has not synced is not seen until it syncs.</p>
+        <p class="muted">Records are placed in the month they were recorded on the device. Activity on a phone that has not synced is not seen until it syncs.</p>
       </section>
 
       <section aria-labelledby="audience-title">
@@ -195,7 +195,7 @@
           <h3 id="confirm-title">Check before confirming</h3>
           <dl class="facts">
             <div><dt>Account created</dt><dd id="preview-created"></dd></div>
-            <div><dt>Records received</dt><dd id="preview-records"></dd></div>
+            <div><dt>Records held by the server</dt><dd id="preview-records"></dd></div>
             <div><dt>Current status</dt><dd id="preview-current"></dd></div>
             <div><dt>New status</dt><dd id="preview-target"></dd></div>
             <div><dt>Reason</dt><dd id="preview-reason"></dd></div>
@@ -224,7 +224,7 @@
           <div><dt>Registered-user business profiles: Other business by default (not confirmed)</dt><dd id="q-sector-fallback">—</dd></div>
           <div><dt>Listed business profiles whose stored sector differs from the catalog (expected 0)</dt><dd id="q-sector-mismatch">—</dd></div>
         </dl>
-        <p class="muted">Source rows outside the rollup date range counts dated rows of three kinds — account registrations, records received and valid attestations issued — whose date is before 1 January 2000 or after the day after the figures were built. These rows are left out of the figures. It is a count of rows, not of accounts or records.</p>
+        <p class="muted">Source rows outside the rollup date range counts dated rows of three kinds — account registrations, records recorded and valid attestations issued — whose relevant date is before 1 January 2000 or after the day after the figures were built. For records, the relevant date is the device-reported recorded date. Records with no usable recorded date, including a missing date, are shown separately and are not placed in any month. It is a count of rows, not of accounts or records.</p>
         <div class="button-row">
           <button id="refresh-button" type="button" class="secondary">Rebuild figures now</button>
         </div>
@@ -264,7 +264,7 @@
         <h3>Registered users</h3>
         <p>Accounts registered on the server, excluding those you have marked as internal, test, demo or administrator accounts. New accounts must confirm their email address with a code; some older accounts were created before that. Counts accounts, not independently verified unique people. Payment, records or activity are not required. Exclusion is the owner's own entry; it is not an independent confirmation, and the time of the last change is not a review of every account.</p>
         <h3>Timing</h3>
-        <p>Records are counted by the time the server received them, not the time recorded on the phone. Activity on a phone that has not synced is not seen until it syncs. The current week or month in a chart is in progress and not complete.</p>
+        <p>Records are grouped by the calendar date they were confirmed on the device, with days starting at midnight Coordinated Universal Time, not by server receipt time. The date comes from the device and is not independently confirmed. Records with no usable recorded date are counted separately and are not placed in any month. Activity on a phone that has not synced is not seen until it syncs. The current week or month in a chart is in progress and not complete.</p>
         <h3>Audience figures</h3>
         <p>Country, sector and business type describe the current profiles of registered users. Country, sector and business type use the same owner-view policy: the 10 largest categories with 2 or more users are shown, and smaller or remaining categories are combined as "Other". Withheld figures are never shown as zero.</p>
         <h3>Business sectors</h3>
