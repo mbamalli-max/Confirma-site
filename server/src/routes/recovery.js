@@ -1072,6 +1072,15 @@ export async function registerRecoveryRoutes(app) {
           };
         }
 
+        // Gate only creation of a new session. Existing sessions must keep
+        // idempotent re-post, upload, plan, reserved sync, and completion access
+        // after rollout is disabled so the device cannot be stranded behind the
+        // recovery_in_progress fence.
+        const recoveryEnabled = config.recoveryMode === "all"
+          || (config.recoveryMode === "allowlist"
+            && config.recoveryAllowedDevices.has(body.device_identity));
+        if (!recoveryEnabled) throw routeError(403, "recovery_not_enabled");
+
         const active = (await client.query(
           `
             SELECT *, lease_expires_at > clock_timestamp() AS lease_unexpired

@@ -22,6 +22,7 @@ export async function resetRecoveryDatabase() {
 }
 
 export async function buildRecoveryApp({ logger = false } = {}) {
+  setRecoveryMode("all");
   const app = Fastify({ logger });
   await registerSyncRoutes(app);
   await registerRecoveryRoutes(app);
@@ -168,4 +169,15 @@ export async function createRecovery(app, device, recoveryId = crypto.randomUUID
 
 export function setRecoveryAutoclear(value) {
   config.recoveryAutoclear = value;
+}
+
+export function setRecoveryMode(mode, devices = []) {
+  const previousMode = config.recoveryMode;
+  const previousAllowedDevices = config.recoveryAllowedDevices;
+  config.recoveryMode = mode;
+  config.recoveryAllowedDevices = new Set(devices);
+  return () => {
+    config.recoveryMode = previousMode;
+    config.recoveryAllowedDevices = previousAllowedDevices;
+  };
 }

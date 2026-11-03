@@ -22,6 +22,16 @@ function positiveInteger(rawValue, fallback) {
   return Number.isSafeInteger(value) && value > 0 ? value : fallback;
 }
 
+export function parseRecoveryMode(rawValue) {
+  return rawValue === "allowlist" || rawValue === "all" ? rawValue : "off";
+}
+
+export function parseRecoveryAllowedDevices(rawValue) {
+  return new Set(
+    String(rawValue ?? "").split(",").map((entry) => entry.trim()).filter(Boolean)
+  );
+}
+
 function normalizeMultilineSecret(rawValue) {
   return String(rawValue || "").replace(/\\n/g, "\n").trim();
 }
@@ -275,9 +285,13 @@ export const config = {
   resendFromEmail: String(process.env.RESEND_FROM_EMAIL || "Konfirmata <noreply@konfirmata.com>").trim(),
   verifyBaseUrl: normalizeBaseUrl(process.env.VERIFY_BASE_URL, "https://konfirmata.com"),
   verificationKeyUrl: normalizeBaseUrl(process.env.VERIFICATION_KEY_URL, ""),
-  // Recovery is deliberately inert unless an operator enables the exact value
-  // "true". Limits are server-side bounds, not client hints.
+  // Automatic post-recovery device clearing is deliberately inert unless an
+  // operator enables the exact value "true". Limits are server-side bounds.
   recoveryAutoclear: process.env.RECOVERY_AUTOCLEAR === "true",
+  // New recovery sessions fail closed. Existing sessions are governed by the
+  // route-level idempotency and completion contract, not this rollout switch.
+  recoveryMode: parseRecoveryMode(process.env.RECOVERY_MODE),
+  recoveryAllowedDevices: parseRecoveryAllowedDevices(process.env.RECOVERY_ALLOWED_DEVICES),
   recoveryLeaseSeconds: positiveInteger(process.env.RECOVERY_LEASE_SECONDS, 30 * 60),
   recoveryPartBodyLimitBytes: positiveInteger(process.env.RECOVERY_PART_BODY_LIMIT_BYTES, 512 * 1024),
   recoveryMaxParts: positiveInteger(process.env.RECOVERY_MAX_PARTS, 128),
