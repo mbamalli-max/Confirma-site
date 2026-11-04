@@ -55,10 +55,16 @@
     <main id="dashboard-screen" class="screen panel" hidden>
       <div class="head">
         <h1>Dashboard</h1>
-        <p class="fresh">Updated <span id="dash-as-of">—</span> · Exclusions last changed <span id="dash-exclusions-changed">—</span> · <a href="#settings/methodology">Methodology</a></p>
       </div>
+      <div class="dashboard-freshness">
+        <span id="dash-status" class="fresh-status" aria-live="polite" tabindex="0">Unavailable</span>
+        <p class="fresh">Figures calculated <span id="dash-as-of">—</span></p>
+        <button id="reload-figures" type="button" class="secondary">Reload figures</button>
+        <p class="fresh">Reload shows the latest calculated figures. To recalculate them, use <a href="#settings/quality">Rebuild figures in Settings → Data quality.</a></p>
+      </div>
+      <p class="fresh">Exclusions last changed <span id="dash-exclusions-changed">—</span> · <a href="#settings/methodology">Methodology</a></p>
       <p id="dash-stale" class="notice-error" hidden>These figures may be out of date.</p>
-      <p id="dash-unavailable" class="notice-error" role="alert" hidden>Figures are unavailable right now. None are shown.</p>
+      <p id="dash-unavailable" class="notice-error" role="alert" hidden>Activity figures are unavailable right now. None are shown.</p>
 
       <section aria-labelledby="activity-title">
         <div class="head">
@@ -75,25 +81,32 @@
         </div>
         <div class="kpis">
           <div class="card kpi" id="kpi-external">
-            <div class="kpi-label">Registered users
-              <details class="info"><summary aria-label="About Registered users">i</summary><p id="kpi-external-def">Accounts registered on the server, excluding those you have marked as internal, test, demo or administrator accounts. New accounts must confirm their email address with a code; some older accounts were created before that. Counts accounts, not independently verified unique people. Payment, records or activity are not required.</p></details>
+            <div class="kpi-label"><span class="kpi-copy"><span class="kpi-name">Registered accounts</span><span class="kpi-scope"><span class="kpi-dash"> — </span>all time</span></span>
+              <details class="info"><summary aria-label="About registered accounts">i</summary><p id="kpi-external-def">Accounts registered on the server, excluding those you have marked as internal, test, demo or administrator accounts. New accounts must confirm their email address with a code; some older accounts were created before that. Counts accounts, not independently verified unique people. Payment, records or activity are not required.</p></details>
             </div>
             <div class="kpi-value" id="kpi-external-value">—</div>
-            <div class="kpi-sub" id="kpi-external-sub"></div>
+            <div class="kpi-sub" id="kpi-external-sub">Not affected by the period</div>
+          </div>
+          <div class="card kpi" id="kpi-new">
+            <div class="kpi-label"><span class="kpi-copy"><span class="kpi-name">New accounts</span><span class="kpi-scope"><span class="kpi-dash"> — </span>selected period</span></span>
+              <details class="info"><summary aria-label="About new accounts">i</summary><p id="kpi-new-def">Accounts registered during the selected period, with the same exclusions as the all-time figure.</p></details>
+            </div>
+            <div class="kpi-value" id="kpi-new-value">—</div>
+            <div class="kpi-sub" id="kpi-new-sub">Last 90 days</div>
           </div>
           <div class="card kpi" id="kpi-submitting">
-            <div class="kpi-label">Accounts submitting records
+            <div class="kpi-label"><span class="kpi-copy"><span class="kpi-name">Accounts with recorded activity</span><span class="kpi-scope"><span class="kpi-dash"> — </span>selected period</span></span>
               <details class="info"><summary aria-label="About accounts submitting records">i</summary><p id="kpi-submitting-def"></p></details>
             </div>
             <div class="kpi-value" id="kpi-submitting-value">—</div>
-            <div class="kpi-sub">Registered users, in the period</div>
+            <div class="kpi-sub" id="kpi-submitting-sub">Last 90 days</div>
           </div>
           <div class="card kpi" id="kpi-records">
-            <div class="kpi-label">Records recorded
+            <div class="kpi-label"><span class="kpi-copy"><span class="kpi-name">Records recorded</span><span class="kpi-scope"><span class="kpi-dash"> — </span>selected period</span></span>
               <details class="info"><summary aria-label="About records recorded">i</summary><p id="kpi-records-def"></p></details>
             </div>
             <div class="kpi-value" id="kpi-records-value">—</div>
-            <div class="kpi-sub" id="kpi-records-undated">From registered users, in the period</div>
+            <div class="kpi-sub" id="kpi-records-undated">From registered accounts, in the period</div>
           </div>
         </div>
       </section>
@@ -111,11 +124,11 @@
         </div>
         <div class="grid2">
           <div class="card chart" id="growth-accounts_registered">
-            <h3>New registered users</h3>
+            <h3>New accounts</h3>
             <div class="chart-body"></div>
           </div>
           <div class="card chart" id="growth-records_recorded">
-            <h3>Records recorded by registered users</h3>
+            <h3>Records recorded</h3>
             <div class="chart-body"></div>
           </div>
         </div>
@@ -124,8 +137,8 @@
 
       <section aria-labelledby="audience-title">
         <div class="head">
-          <h2 id="audience-title">Audience — current profiles of registered users</h2>
-          <p class="fresh">All registered users as of the update time; not affected by the period.</p>
+          <h2 id="audience-title">Audience — current profiles of registered accounts</h2>
+          <p class="fresh">All registered accounts as of the update time; not affected by the period.</p>
         </div>
         <div class="grid2">
           <div class="card breakdown" id="aud-country" data-dimension="country">

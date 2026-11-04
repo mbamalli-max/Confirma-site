@@ -59,8 +59,11 @@ const external = (body, key) => String(body.metrics.find((m) => m.key === key).e
 
 async function kpisMatch(target, all, period, value) {
   await expect(target.locator("#kpi-external-value")).toHaveText(external(all, "accounts_registered"));
-  await expect(target.locator("#kpi-external-sub")).toHaveText(value === "all" ? "" : `+${external(period, "accounts_registered")} in the period`);
+  await expect(target.locator("#kpi-external-sub")).toHaveText("Not affected by the period");
+  await expect(target.locator("#kpi-new-value")).toHaveText(external(period, "accounts_registered"));
+  await expect(target.locator("#kpi-new-sub")).toHaveText({ "30d": "Last 30 days", "90d": "Last 90 days", "12m": "Last 12 months", all: "All time" }[value]);
   await expect(target.locator("#kpi-submitting-value")).toHaveText(external(period, "accounts_submitting_records"));
+  await expect(target.locator("#kpi-submitting-sub")).toHaveText({ "30d": "Last 30 days", "90d": "Last 90 days", "12m": "Last 12 months", all: "All time" }[value]);
   await expect(target.locator("#kpi-records-value")).toHaveText(external(period, "records_recorded"));
 }
 
@@ -121,16 +124,21 @@ test("2. after sign-in nothing is kept in browser storage", async () => {
   expect(await context.cookies()).toEqual([]);
 });
 
-test("3. the headline figures show the registered-users column of the API, with labels and footer", async () => {
+test("3. the four headline figures show the API values with their distinct labels and footer", async () => {
   const { all, period } = firstReading;
   expect(all.api_version).toBe(3);
   expect(period.range).toBe("90d");
   await kpisMatch(page, all, period, "90d");
+  await expect(page.locator(".kpis > .kpi .kpi-label")).toContainText([
+    "Registered accounts — all time", "New accounts — selected period",
+    "Accounts with recorded activity — selected period", "Records recorded — selected period"
+  ]);
+  await expect(page.locator(".kpis")).not.toContainText(/retention|verified people/i);
   await expect(page.locator("#kpi-submitting-def")).toHaveText(all.metrics.find((m) => m.key === "accounts_submitting_records").definition);
   await expect(page.locator("#kpi-records .kpi-label")).toContainText("Records recorded");
   await expect(page.locator("#kpi-records-def")).toContainText("calendar date recorded on the device");
   await expect(page.locator("#kpi-records-undated")).toHaveText(/records have no usable recorded date and are not placed in any month/);
-  await expect(page.locator("#growth-records_recorded h3")).toHaveText("Records recorded by registered users");
+  await expect(page.locator("#growth-records_recorded h3")).toHaveText("Records recorded");
   await expect(page.locator("#operator-label")).toHaveCount(0);
   await expect(page.locator('#tabs a[data-tab="reports"]')).toHaveCount(0);
   await expect(page.locator("#footer-note")).toHaveText("Operator-generated internal metrics. Aggregate counts only. Not a user-record attestation.");
@@ -171,7 +179,8 @@ test("6. a 503 shows the unavailable message with no figures and no zeros", asyn
   }));
   await page.selectOption("#period-select", "12m");
   await expect(page.locator("#dash-unavailable")).toBeVisible();
-  for (const id of ["#kpi-external-value", "#kpi-submitting-value", "#kpi-records-value"]) await expect(page.locator(id)).toHaveText("—");
+  await expect(page.locator("#dash-status")).toHaveText("Unavailable");
+  for (const id of ["#kpi-external-value", "#kpi-new-value", "#kpi-submitting-value", "#kpi-records-value"]) await expect(page.locator(id)).toHaveText("—");
   await page.unroute(`${API_BASE}/admin/v2/overview?range=12m`);
   await choosePeriod(page, "90d");
   await expect(page.locator("#dash-unavailable")).toBeHidden();
@@ -187,6 +196,7 @@ test("7. the as-of time and the stale flag are shown", async () => {
   await page.selectOption("#period-select", "12m");
   await expect(page.locator("#dash-as-of")).toHaveText("2026-10-26 23:00 EDT");
   await expect(page.locator("#dash-stale")).toBeVisible();
+  await expect(page.locator("#dash-status")).toHaveText("May be out of date");
   await page.unroute(`${API_BASE}/admin/v2/overview?range=12m`);
   const fresh = await choosePeriod(page, "90d");
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
@@ -195,6 +205,7 @@ test("7. the as-of time and the stale flag are shown", async () => {
   }).formatToParts(new Date(fresh.as_of)).map((part) => [part.type, part.value]));
   await expect(page.locator("#dash-as-of")).toHaveText(`${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} ${parts.timeZoneName}`);
   await expect(page.locator("#dash-stale")).toBeVisible({ visible: Boolean(fresh.stale) });
+  await expect(page.locator("#dash-status")).toHaveText(fresh.stale ? "May be out of date" : "Current");
 });
 
 test("7a. displayed timestamps use New York EST/EDT, including both DST fallback offsets", async () => {
@@ -413,6 +424,233 @@ async function servedSignIn(target, { expectDashboard = true } = {}) {
   if (expectDashboard) await expect(target.locator("#dashboard-screen")).toBeVisible();
 }
 
+test("D11h. headline label scopes stay below their names and keep their info controls aligned", async ({ browser }) => {
+  const { ctx, target } = await servedPage(browser, async () => undefined);
+  try {
+    await servedSignIn(target);
+    for (const width of [1280, 768, 375]) {
+      await target.setViewportSize({ width, height: 800 });
+      for (const id of ["#kpi-external", "#kpi-new", "#kpi-submitting", "#kpi-records"]) {
+        const card = target.locator(id);
+        const label = card.locator(".kpi-label");
+        const copy = card.locator(".kpi-copy");
+        const name = card.locator(".kpi-name");
+        const scope = card.locator(".kpi-scope");
+        const info = card.locator("details.info > summary");
+        const [labelBox, copyBox, nameBox, scopeBox, infoBox] = await Promise.all([
+          label.boundingBox(), copy.boundingBox(), name.boundingBox(), scope.boundingBox(), info.boundingBox()
+        ]);
+        expect(labelBox, `${width}px ${id} label box`).not.toBeNull();
+        expect(copyBox, `${width}px ${id} copy box`).not.toBeNull();
+        expect(nameBox, `${width}px ${id} name box`).not.toBeNull();
+        expect(scopeBox, `${width}px ${id} scope box`).not.toBeNull();
+        expect(infoBox, `${width}px ${id} info box`).not.toBeNull();
+        const nameTextRight = await name.evaluate((el) => {
+          const text = el.firstChild;
+          if (!text) throw new Error("headline name has no text node");
+          const range = document.createRange();
+          range.selectNodeContents(text);
+          return range.getBoundingClientRect().right;
+        });
+        const circleLeft = infoBox.x + (infoBox.width - 20) / 2;
+        expect(circleLeft - nameTextRight, `${width}px ${id} name text has space before its info circle`).toBeGreaterThanOrEqual(8);
+        expect(infoBox.x + infoBox.width, `${width}px ${id} info right edge stays inside label`).toBeLessThanOrEqual(labelBox.x + labelBox.width + 0.5);
+        expect(infoBox.x, `${width}px ${id} info left edge stays inside copy`).toBeGreaterThanOrEqual(copyBox.x);
+        expect(scopeBox.y, `${width}px ${id} scope below name`).toBeGreaterThanOrEqual(nameBox.y + nameBox.height - 1);
+        const nameLineHeight = await name.evaluate((el) => {
+          const style = getComputedStyle(el);
+          return Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.5;
+        });
+        const infoCentre = infoBox.y + infoBox.height / 2;
+        expect(infoCentre, `${width}px ${id} info centre is in name's first line`).toBeGreaterThanOrEqual(nameBox.y);
+        expect(infoCentre, `${width}px ${id} info centre is in name's first line`).toBeLessThanOrEqual(nameBox.y + nameLineHeight);
+      }
+      const overflow = await target.locator(".kpi-label, .kpi-name, .kpi-scope, .kpi-value, .kpi-sub").evaluateAll((els) => els.map((el) => ({
+        label: `${el.closest(".kpi")?.id || el.className} ${el.className}`,
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth
+      })));
+      for (const element of overflow) expect(element.scrollWidth, `${width}px ${element.label}`).toBeLessThanOrEqual(element.clientWidth);
+    }
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("D11i. headline values align only in the four-column layout and shared info geometry stays intact", async ({ browser }) => {
+  const { ctx, target } = await servedPage(browser, async () => undefined);
+  try {
+    await servedSignIn(target);
+    await target.setViewportSize({ width: 1280, height: 800 });
+    const valueBoxes = await target.locator(".kpis > .kpi .kpi-value").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON()));
+    expect(valueBoxes).toHaveLength(4);
+    for (const box of valueBoxes.slice(1)) expect(Math.abs(box.y - valueBoxes[0].y), "1280px KPI value alignment").toBeLessThanOrEqual(1);
+
+    const audienceSummaryMargins = await target.locator("#aud-country details.info > summary").evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { top: style.marginTop, left: style.marginLeft };
+    });
+    expect(audienceSummaryMargins).toEqual({ top: "-12px", left: "-10px" });
+    const audienceHeading = await target.locator("#aud-country h3").boundingBox();
+    expect(audienceHeading, "1280px Audience country heading").not.toBeNull();
+    expect(audienceHeading.height, "1280px Audience country heading height").toBeLessThanOrEqual(32);
+
+    for (const width of [768, 375]) {
+      await target.setViewportSize({ width, height: 800 });
+      const [copyBox, nameBox, scopeBox] = await Promise.all([
+        target.locator("#kpi-external .kpi-copy").boundingBox(),
+        target.locator("#kpi-external .kpi-name").boundingBox(),
+        target.locator("#kpi-external .kpi-scope").boundingBox()
+      ]);
+      expect(copyBox, `${width}px copy box`).not.toBeNull();
+      expect(nameBox, `${width}px name box`).not.toBeNull();
+      expect(scopeBox, `${width}px scope box`).not.toBeNull();
+      expect(copyBox.height, `${width}px no reserved KPI copy height`).toBeLessThanOrEqual(nameBox.height + scopeBox.height + 2);
+    }
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("D13a. opened headline definitions remain inside each card without narrowing its label", async ({ browser }) => {
+  const { ctx, target } = await servedPage(browser, async () => undefined);
+  try {
+    await servedSignIn(target);
+    const ids = ["#kpi-external", "#kpi-new", "#kpi-submitting", "#kpi-records"];
+    for (const width of [1280, 768, 375]) {
+      await target.setViewportSize({ width, height: 800 });
+      for (const id of ids) {
+        const card = target.locator(id);
+        const copy = card.locator(".kpi-copy");
+        const name = card.locator(".kpi-name");
+        const summary = card.locator(".kpi-label > details.info > summary");
+        const before = await Promise.all([card.boundingBox(), copy.boundingBox(), summary.boundingBox(), name.evaluate((el) => {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          return range.getClientRects().length;
+        })]);
+        await summary.focus();
+        await summary.press("Space");
+        const definition = card.locator(".kpi-label > details.info[open] > p");
+        await expect(definition).toBeVisible();
+        const [cardBox, definitionBox, openCopy, openLines, overflow] = await Promise.all([
+          card.boundingBox(), definition.boundingBox(), copy.boundingBox(), name.evaluate((el) => {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            return range.getClientRects().length;
+          }),
+          target.evaluate(() => ({
+            page: [document.documentElement.scrollWidth, document.documentElement.clientWidth],
+            label: Array.from(document.querySelectorAll(".kpi-label, .kpi")).map((el) => [el.scrollWidth, el.clientWidth])
+          }))
+        ]);
+        expect(cardBox, `${width}px ${id} card`).not.toBeNull();
+        expect(definitionBox, `${width}px ${id} definition`).not.toBeNull();
+        expect(openCopy, `${width}px ${id} open copy`).not.toBeNull();
+        expect(definitionBox.x, `${width}px ${id} definition left`).toBeGreaterThanOrEqual(cardBox.x);
+        expect(definitionBox.x + definitionBox.width, `${width}px ${id} definition right`).toBeLessThanOrEqual(cardBox.x + cardBox.width + 0.5);
+        expect(definitionBox.y + definitionBox.height, `${width}px ${id} definition bottom`).toBeLessThanOrEqual(cardBox.y + cardBox.height + 0.5);
+        expect(openLines, `${width}px ${id} name lines`).toBeLessThanOrEqual(before[3]);
+        expect(openCopy.width, `${width}px ${id} copy width`).toBeGreaterThanOrEqual(before[1].width - 0.5);
+        if (width === 375) expect(definitionBox.width, `${id} readable definition`).toBeGreaterThanOrEqual(120);
+        expect(overflow.page[0], `${width}px page overflow`).toBeLessThanOrEqual(overflow.page[1]);
+        for (const [scrollWidth, clientWidth] of overflow.label) expect(scrollWidth, `${width}px ${id} label overflow`).toBeLessThanOrEqual(clientWidth);
+        await summary.press("Enter");
+        await expect(definition).toBeHidden();
+        const after = await Promise.all([card.boundingBox(), copy.boundingBox(), summary.boundingBox()]);
+        for (const [label, beforeBox, afterBox] of [["copy", before[1], after[1]], ["summary", before[2], after[2]]]) {
+          const beforeRelative = [beforeBox.x - before[0].x, beforeBox.y - before[0].y, beforeBox.width, beforeBox.height];
+          const afterRelative = [afterBox.x - after[0].x, afterBox.y - after[0].y, afterBox.width, afterBox.height];
+          for (let index = 0; index < beforeRelative.length; index += 1) {
+            expect(Math.abs(afterRelative[index] - beforeRelative[index]), `${width}px ${id} closed ${label} relative geometry`).toBeLessThanOrEqual(0.5);
+          }
+        }
+      }
+    }
+    await target.setViewportSize({ width: 375, height: 800 });
+    for (const id of ids) await target.locator(`${id} .kpi-label > details.info > summary`).click();
+    const allOpenOverflow = await target.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+    expect(allOpenOverflow[0], "375px all-open page overflow").toBeLessThanOrEqual(allOpenOverflow[1]);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("D13b. every successful displayed response contributes to stale status", async ({ browser }) => {
+  const cases = [
+    ["growth accounts_registered", ({ url, send }) => url.pathname === "/admin/v2/timeseries" && url.searchParams.get("metric") === "accounts_registered" ? send(200, { ...sampleSeries("accounts_registered", "month", 12), stale: true }) : undefined, null],
+    ["growth records_recorded", ({ url, send }) => url.pathname === "/admin/v2/timeseries" && url.searchParams.get("metric") === "records_recorded" ? send(200, { ...sampleSeries("records_recorded", "month", 12), stale: true }) : undefined, null],
+    ["audience breakdown", ({ url, send }) => url.pathname === "/admin/v2/breakdown" && url.searchParams.get("dimension") === "country" ? send(200, { ...sampleBreakdown("country"), stale: true }) : undefined, null],
+    ["activity all-time while 12m is fresh", ({ url, send }) => url.pathname === "/admin/v2/overview" && url.searchParams.get("range") === "all" ? send(200, { ...sampleOverview("all"), stale: true }) : undefined, "12m"],
+    ["activity all period", ({ url, send }) => url.pathname === "/admin/v2/overview" && url.searchParams.get("range") === "all" ? send(200, { ...sampleOverview("all"), stale: true }) : undefined, "all"],
+    ["all fresh", () => undefined, null, "Current"]
+  ];
+  for (const [name, handle, period, expected = "May be out of date"] of cases) {
+    const { ctx, target } = await servedPage(browser, handle);
+    try {
+      await servedSignIn(target);
+      if (period) await target.selectOption("#period-select", period);
+      await expect(target.locator("#dash-status"), name).toHaveText(expected);
+      await expect(target.locator("#dash-stale"), name).toBeVisible({ visible: expected === "May be out of date" });
+    } finally {
+      await ctx.close();
+    }
+  }
+});
+
+test("D13c. stale status observes precedence, reloads, and activity race guards", async ({ browser }) => {
+  const staleAndFailed = await servedPage(browser, async ({ url, send }) => {
+    if (url.pathname === "/admin/v2/overview" && url.searchParams.get("range") === "all") return send(200, { ...sampleOverview("all"), stale: true });
+    if (url.pathname === "/admin/v2/breakdown" && url.searchParams.get("dimension") === "country") return send(503, { error: "unavailable" });
+    return undefined;
+  });
+  try {
+    await servedSignIn(staleAndFailed.target);
+    await expect(staleAndFailed.target.locator("#dash-status")).toHaveText("Unavailable");
+    await expect(staleAndFailed.target.locator("#dash-stale")).toBeHidden();
+  } finally { await staleAndFailed.ctx.close(); }
+
+  const release = gate();
+  const staleAndLoading = await servedPage(browser, async ({ url, send }) => {
+    if (url.pathname === "/admin/v2/overview" && url.searchParams.get("range") === "all") return send(200, { ...sampleOverview("all"), stale: true });
+    if (url.pathname === "/admin/v2/timeseries") { await release.promise; return send(200, sampleSeries(url.searchParams.get("metric"), "month", 12)); }
+    return undefined;
+  });
+  try {
+    await servedSignIn(staleAndLoading.target);
+    await expect(staleAndLoading.target.locator("#dash-status")).toHaveText("Updating…");
+    await expect(staleAndLoading.target.locator("#dash-stale")).toBeVisible();
+    release.open();
+    await expect(staleAndLoading.target.locator("#dash-status")).toHaveText("May be out of date");
+  } finally { await staleAndLoading.ctx.close(); }
+
+  let stale = true;
+  const reload = await servedPage(browser, async ({ url, send }) => url.pathname === "/admin/v2/overview" ? send(200, { ...sampleOverview(url.searchParams.get("range")), stale }) : undefined);
+  try {
+    await servedSignIn(reload.target);
+    await expect(reload.target.locator("#dash-status")).toHaveText("May be out of date");
+    stale = false;
+    await reload.target.click("#reload-figures");
+    await expect(reload.target.locator("#dash-status")).toHaveText("Current");
+    await expect(reload.target.locator("#dash-stale")).toBeHidden();
+  } finally { await reload.ctx.close(); }
+
+  const delayed = gate();
+  const superseded = await servedPage(browser, async ({ url, send }) => {
+    if (url.pathname === "/admin/v2/overview" && url.searchParams.get("range") === "12m") { await delayed.promise; return send(200, { ...sampleOverview("12m"), stale: true }); }
+    return undefined;
+  });
+  try {
+    await servedSignIn(superseded.target);
+    await superseded.target.selectOption("#period-select", "12m");
+    await superseded.target.selectOption("#period-select", "90d");
+    await expect(superseded.target.locator("#dash-status")).toHaveText("Current");
+    delayed.open();
+    await expect(superseded.target.locator("#dash-status")).toHaveText("Current");
+    await expect(superseded.target.locator("#dash-stale")).toBeHidden();
+  } finally { await superseded.ctx.close(); }
+});
+
 function gate() {
   let open;
   const promise = new Promise((resolve) => { open = resolve; });
@@ -517,7 +755,7 @@ test("16. while a new period loads, and if it fails, no figures from the old per
     await expect(target.locator("#kpi-records-value")).toHaveText("7");
     await target.selectOption("#period-select", "12m");
     await expect(target.locator("#kpi-records-value"), "old figures removed while loading").toHaveText("—");
-    await expect(target.locator("#kpi-external-sub")).toHaveText("");
+    await expect(target.locator("#kpi-external-sub")).toHaveText("Not affected by the period");
     release.open();
     await expect(target.locator("#dash-unavailable")).toBeVisible();
     await expect(target.locator("#kpi-records-value")).toHaveText("—");
@@ -838,6 +1076,7 @@ test("D1. an older server or a different version shows no figures, only the out-
       await servedSignIn(target);
       await expect(target.locator("#version-mismatch"), label).toBeVisible();
       await expect(target.locator("#version-mismatch")).toHaveText("This page and the server are out of step. Reload the page. No figures are shown.");
+      await expect(target.locator("#dash-status")).toHaveText("Unavailable");
       await target.evaluate(() => new Promise((resolve) => setTimeout(resolve, 300)));
       for (const id of ["#kpi-external-value", "#kpi-submitting-value", "#kpi-records-value", "#dash-exclusions-changed"]) await expect(target.locator(id), `${label} ${id}`).toHaveText("—");
       await expect(target.locator(".bar-row, .chart svg")).toHaveCount(0);
@@ -862,6 +1101,7 @@ test("D1a. a version-3 timeseries metric with no date basis shows no figures", a
     await servedSignIn(target);
     await expect(target.locator("#version-mismatch")).toBeVisible();
     await expect(target.locator("#version-mismatch")).toHaveText("This page and the server are out of step. Reload the page. No figures are shown.");
+    await expect(target.locator("#dash-status")).toHaveText("Unavailable");
     for (const id of ["#kpi-external-value", "#kpi-submitting-value", "#kpi-records-value"]) {
       await expect(target.locator(id)).toHaveText("—");
     }
@@ -889,6 +1129,7 @@ test("D2. growth charts mark only the current period as in progress, in chart an
       await expect(panel.locator("rect.bar.partial")).toHaveCount(1);
       await expect(panel.locator("rect.bar").last()).toHaveClass(/partial/);
       await expect(panel.locator("tbody tr")).toHaveCount(12);
+      await expect(panel.locator("thead th")).toHaveText(["Month starting", metric === "accounts_registered" ? "New accounts" : "Records recorded"]);
       await expect(panel.locator("tbody tr").last().locator("td").first()).toContainText("in progress");
       await expect(panel.locator("tbody tr td:first-child", { hasText: "in progress" })).toHaveCount(1);
       await expect(panel.locator("tbody tr").first().locator("td.num")).toHaveText("1");
@@ -926,9 +1167,9 @@ test("D3. audience bars show labelled categories; withheld reasons are distinct 
   const withheld = await servedPage(browser, async ({ url, send }) => (url.pathname === "/admin/v2/breakdown" ? send(200, results[url.searchParams.get("dimension")]) : undefined));
   try {
     await servedSignIn(withheld.target);
-    await expect(withheld.target.locator("#aud-country .withheld")).toHaveText("Withheld — fewer than 10 registered users in total.");
-    await expect(withheld.target.locator("#aud-sector .withheld")).toHaveText("Withheld — fewer than half of registered users have a valid profile sector code.");
-    await expect(withheld.target.locator("#aud-business_type .withheld")).toHaveText("Withheld — fewer than half of registered users have a business profile.");
+    await expect(withheld.target.locator("#aud-country .withheld")).toHaveText("Withheld — fewer than 10 registered accounts in total.");
+    await expect(withheld.target.locator("#aud-sector .withheld")).toHaveText("Withheld — fewer than half of registered accounts have a valid profile sector code.");
+    await expect(withheld.target.locator("#aud-business_type .withheld")).toHaveText("Withheld — fewer than half of registered accounts have a business profile.");
     for (const dimension of ["country", "sector", "business_type"]) {
       await expect(withheld.target.locator(`#aud-${dimension} .bar-row`)).toHaveCount(0);
       await expect(withheld.target.locator(`#aud-${dimension} .breakdown-body`)).not.toContainText(/\b0\b/);
@@ -946,8 +1187,8 @@ test("D3. audience bars show labelled categories; withheld reasons are distinct 
     await expect(t.locator("#aud-country .bar-row .bar-count")).toHaveText(["7"]);
     await expect(t.locator("#aud-country")).toContainText("Showing the 10 largest categories that have 2 or more users.");
     await expect(t.locator("#aud-country")).toContainText("Owner view only. These counts include small groups and are not for external publication or sharing.");
-    await expect(t.locator("#aud-country")).toContainText("Total registered users: 7");
-    await expect(t.locator("#audience-title")).toHaveText("Audience — current profiles of registered users");
+    await expect(t.locator("#aud-country")).toContainText("Total registered accounts: 7");
+    await expect(t.locator("#audience-title")).toHaveText("Audience — current profiles of registered accounts");
     await expect(t.locator("#dashboard-screen")).toContainText("not affected by the period");
     const widths = await t.locator("#aud-country .fill").evaluateAll((els) => els.map((e) => e.style.width));
     expect(widths).toEqual(["100%"]);
@@ -989,7 +1230,7 @@ test("D4. the period changes only the activity figures; audience and growth are 
     await expect(target.locator("#aud-country .bar-row").first()).toBeVisible();
     const before = asked.length;
     await target.selectOption("#period-select", "30d");
-    await expect(target.locator("#kpi-external-sub")).toHaveText("+1 in the period");
+    await expect(target.locator("#kpi-external-sub")).toHaveText("Not affected by the period");
     await target.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
     expect(asked.slice(before)).toEqual(["/admin/v2/overview", "/admin/v2/overview"]);
   } finally {
@@ -1163,7 +1404,7 @@ test("D11. sector categories: every business in a sector, no business profile ap
     await expect(target.locator("#aud-sector .bar-row .bar-label")).toHaveText(["Trade & Retail", "Agriculture, Livestock & Fishing", "Transport & Logistics", "No business profile"]);
     await expect(target.locator("#aud-sector")).toContainText("Showing the 10 largest categories that have 2 or more users.");
     await expect(target.locator("#aud-business_type .bar-row .bar-label")).toHaveText(["No business profile", "No business type", "Not listed in the catalog"]);
-    await expect(target.locator("#aud-country .withheld")).toHaveText("Withheld — fewer than half of registered users have a business profile.");
+    await expect(target.locator("#aud-country .withheld")).toHaveText("Withheld — fewer than half of registered accounts have a business profile.");
     await expect(target.locator("#dashboard-screen")).not.toContainText(/not yet categori[sz]ed|by default/i);
 
     await target.evaluate(() => { location.hash = "#settings/quality"; });
@@ -1177,6 +1418,159 @@ test("D11. sector categories: every business in a sector, no business profile ap
     expect(mentions).toBe(1);
     await expect(target.locator("#settings-methodology")).toContainText("not an official industry classification");
     await expect(target.locator("#settings-methodology")).toContainText("Country, sector and business type use the same owner-view policy: the 10 largest categories with 2 or more users are shown, and smaller or remaining categories are combined as \"Other\". Withheld figures are never shown as zero.");
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("D11a. reload re-reads dashboard figures without rebuilding, and its controls fit a phone viewport", async ({ browser }) => {
+  const asked = [];
+  const { ctx, target } = await servedPage(browser, async ({ url }) => { asked.push(url.pathname); return undefined; });
+  try {
+    await servedSignIn(target);
+    await expect(target.locator("#dash-status")).toHaveText("Current");
+    const before = asked.length;
+    await target.click("#reload-figures");
+    await expect(target.locator("#reload-figures")).toBeEnabled();
+    const reread = asked.slice(before);
+    expect(reread.filter((path) => path === "/admin/v2/overview")).toHaveLength(2);
+    expect(reread.filter((path) => path === "/admin/v2/timeseries")).toHaveLength(2);
+    expect(reread.filter((path) => path === "/admin/v2/breakdown")).toHaveLength(3);
+    expect(reread).not.toContain("/admin/v2/refresh");
+    await target.setViewportSize({ width: 375, height: 800 });
+    expect(await target.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await target.locator("#dash-status").focus();
+    await expect(target.locator("#dash-status")).toBeFocused();
+    await target.locator("#reload-figures").focus();
+    await expect(target.locator("#reload-figures")).toBeFocused();
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("D11b. a failed activity figure remains unavailable when only growth reloads", async ({ browser }) => {
+  const { ctx, target } = await servedPage(browser, async ({ url, send }) => {
+    if (url.pathname === "/admin/v2/overview" && url.searchParams.get("range") === "12m") {
+      return send(503, { error: "metrics_unavailable", api_version: 3, as_of: null, stale: true });
+    }
+    return undefined;
+  });
+  try {
+    await servedSignIn(target);
+    await target.selectOption("#period-select", "12m");
+    await expect(target.locator("#dash-unavailable")).toBeVisible();
+    await expect(target.locator("#dash-status")).toHaveText("Unavailable");
+    await target.selectOption("#growth-bucket", "week");
+    await expect(target.locator("#dash-unavailable")).toBeVisible();
+    await expect(target.locator("#dash-status")).toHaveText("Unavailable");
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("D11g. an unavailable activity overview does not claim that normal growth figures are absent", async ({ browser }) => {
+  const { ctx, target } = await servedPage(browser, async ({ url, send }) => {
+    if (url.pathname === "/admin/v2/overview" && url.searchParams.get("range") === "12m") {
+      return send(503, { error: "metrics_unavailable", api_version: 3, as_of: null, stale: true });
+    }
+    return undefined;
+  });
+  try {
+    await servedSignIn(target);
+    await target.selectOption("#period-select", "12m");
+    await expect(target.locator("#dash-unavailable")).toHaveText("Activity figures are unavailable right now. None are shown.");
+    await expect(target.locator("#dash-status")).toHaveText("Unavailable");
+    for (const id of ["#kpi-external-value", "#kpi-new-value", "#kpi-submitting-value", "#kpi-records-value"]) await expect(target.locator(id)).toHaveText("—");
+    await expect(target.locator("#growth-accounts_registered svg")).toBeVisible();
+    await expect(target.locator("#growth-records_recorded svg")).toBeVisible();
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("D11c. a growth failure survives an activity-only reload until growth succeeds", async ({ browser }) => {
+  let failWeek = true;
+  const { ctx, target } = await servedPage(browser, async ({ url, send }) => {
+    if (failWeek && url.pathname === "/admin/v2/timeseries" && url.searchParams.get("bucket") === "week") {
+      return send(503, { error: "metrics_unavailable", api_version: 3, as_of: null, stale: true });
+    }
+    return undefined;
+  });
+  try {
+    await servedSignIn(target);
+    await target.selectOption("#growth-bucket", "week");
+    await expect(target.locator("#growth-accounts_registered .withheld")).toHaveText("Unavailable right now.");
+    await expect(target.locator("#dash-status")).toHaveText("Unavailable");
+    await target.selectOption("#period-select", "12m");
+    await expect(target.locator("#dash-status")).toHaveText("Unavailable");
+    await expect(target.locator("#growth-records_recorded .withheld")).toHaveText("Unavailable right now.");
+    failWeek = false;
+    await target.selectOption("#growth-bucket", "month");
+    await expect(target.locator("#growth-accounts_registered .withheld")).toHaveCount(0);
+    await expect(target.locator("#dash-status")).toHaveText("Current");
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("D11d. audience loading keeps the chip updating until every figure settles", async ({ browser }) => {
+  const release = gate();
+  let delayAudience = false;
+  const { ctx, target } = await servedPage(browser, async ({ url }) => {
+    if (delayAudience && url.pathname === "/admin/v2/breakdown") await release.promise;
+    return undefined;
+  });
+  try {
+    await servedSignIn(target);
+    delayAudience = true;
+    await target.click("#reload-figures");
+    await expect(target.locator("#kpi-records-value")).toHaveText("7");
+    await expect(target.locator("#dash-status")).toHaveText("Updating…");
+    release.open();
+    await expect(target.locator("#reload-figures")).toBeEnabled();
+    await expect(target.locator("#dash-status")).toHaveText("Current");
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("D11e. a stale activity figure stays stale when only growth reloads", async ({ browser }) => {
+  const { ctx, target } = await servedPage(browser, async ({ url, send }) => {
+    if (url.pathname === "/admin/v2/overview" && url.searchParams.get("range") === "12m") {
+      return send(200, { ...sampleOverview("12m"), stale: true });
+    }
+    return undefined;
+  });
+  try {
+    await servedSignIn(target);
+    await target.selectOption("#period-select", "12m");
+    await expect(target.locator("#dash-stale")).toBeVisible();
+    await expect(target.locator("#dash-status")).toHaveText("May be out of date");
+    await target.selectOption("#growth-bucket", "week");
+    await expect(target.locator("#dash-status")).toHaveText("May be out of date");
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("D11f. a superseded activity response cannot change the chip or figures", async ({ browser }) => {
+  const release = gate();
+  const { ctx, target } = await servedPage(browser, async ({ url, send }) => {
+    if (url.pathname === "/admin/v2/overview" && url.searchParams.get("range") === "12m") {
+      await release.promise;
+      return send(200, { ...sampleOverview("12m", 999), stale: true });
+    }
+    return undefined;
+  });
+  try {
+    await servedSignIn(target);
+    await target.selectOption("#period-select", "12m");
+    await target.selectOption("#period-select", "90d");
+    await expect(target.locator("#kpi-new-value")).toHaveText("1");
+    await expect(target.locator("#dash-status")).toHaveText("Current");
+    release.open();
+    await expect(target.locator("#kpi-new-value")).toHaveText("1");
+    await expect(target.locator("#dash-status")).toHaveText("Current");
   } finally {
     await ctx.close();
   }

@@ -187,13 +187,17 @@ function categoryLabel(dimension, category) {
 // ---- Clearing --------------------------------------------------------------------
 
 function clearDashboard() {
-  for (const id of ["kpi-external-value", "kpi-submitting-value", "kpi-records-value"]) $(id).textContent = "—";
-  $("kpi-external-sub").textContent = "";
-  $("kpi-records-undated").textContent = "From registered users, in the period";
+  resetDashboardFigures();
+  for (const id of ["kpi-external-value", "kpi-new-value", "kpi-submitting-value", "kpi-records-value"]) $(id).textContent = "—";
+  $("kpi-external-sub").textContent = "Not affected by the period";
+  $("kpi-new-sub").textContent = periodName($("period-select").value);
+  $("kpi-submitting-sub").textContent = periodName($("period-select").value);
+  $("kpi-records-undated").textContent = "From registered accounts, in the period";
   $("dash-as-of").textContent = "—";
   $("dash-exclusions-changed").textContent = "—";
   $("dash-stale").hidden = true;
   $("dash-unavailable").hidden = true;
+  updateDashboardStatus();
   for (const metric of ["accounts_registered", "records_recorded"]) {
     document.querySelector(`#growth-${metric} .chart-body`).replaceChildren();
   }
@@ -297,6 +301,37 @@ function showRoute() {
 
 let activityRequest = 0;
 let growthRequest = 0;
+let audienceRequest = 0;
+const dashboardFigures = { activity: "idle", growth: "idle", audience: "idle" };
+let reloadBusy = false;
+
+function periodName(period) {
+  return ({ "30d": "Last 30 days", "90d": "Last 90 days", "12m": "Last 12 months", all: "All time" })[period] || "—";
+}
+
+function updateDashboardStatus() {
+  const states = Object.values(dashboardFigures);
+  const unavailable = outOfStep || !$("dash-unavailable").hidden || states.includes("failed") || states.includes("idle");
+  const stale = states.includes("stale");
+  $("dash-stale").hidden = unavailable || !stale;
+  if (unavailable) $("dash-status").textContent = "Unavailable";
+  else if (states.includes("loading")) $("dash-status").textContent = "Updating…";
+  else if (stale) $("dash-status").textContent = "May be out of date";
+  else $("dash-status").textContent = "Current";
+}
+
+function resetDashboardFigures() {
+  activityRequest += 1;
+  growthRequest += 1;
+  audienceRequest += 1;
+  for (const name of Object.keys(dashboardFigures)) dashboardFigures[name] = "idle";
+  updateDashboardStatus();
+}
+
+function setDashboardFigure(name, state) {
+  dashboardFigures[name] = state;
+  updateDashboardStatus();
+}
 
 function figure(body, key) {
   return body && Array.isArray(body.metrics) ? body.metrics.find((m) => m.key === key) : null;
@@ -305,9 +340,15 @@ function figure(body, key) {
 async function loadActivity() {
   const period = $("period-select").value;
   const requestId = ++activityRequest;
-  for (const id of ["kpi-external-value", "kpi-submitting-value", "kpi-records-value"]) $(id).textContent = "—";
-  $("kpi-external-sub").textContent = "";
-  $("kpi-records-undated").textContent = "From registered users, in the period";
+  setDashboardFigure("activity", "loading");
+  for (const id of ["kpi-external-value", "kpi-new-value", "kpi-submitting-value", "kpi-records-value"]) $(id).textContent = "—";
+  $("kpi-external-sub").textContent = "Not affected by the period";
+  $("kpi-new-sub").textContent = periodName(period);
+  $("kpi-submitting-sub").textContent = periodName(period);
+  $("kpi-records-undated").textContent = "From registered accounts, in the period";
+  $("dash-as-of").textContent = "—";
+  $("dash-unavailable").hidden = true;
+  updateDashboardStatus();
   let all;
   let inPeriod;
   try {
@@ -316,26 +357,27 @@ async function loadActivity() {
       period === "all" ? null : v2("GET", `/admin/v2/overview?range=${encodeURIComponent(period)}`),
     ]);
   } catch (e) {
-    if (e instanceof SessionEnded || e instanceof OutOfStep) return;
-    if (requestId === activityRequest) $("dash-unavailable").hidden = false;
+    if (requestId !== activityRequest) return;
+    if (!(e instanceof SessionEnded) && !(e instanceof OutOfStep)) $("dash-unavailable").hidden = false;
+    if (!(e instanceof SessionEnded) && !(e instanceof OutOfStep)) setDashboardFigure("activity", "failed");
     return;
   }
   if (requestId !== activityRequest) return;
   inPeriod = inPeriod || all;
   if (all.status !== 200 || inPeriod.status !== 200) {
     $("dash-unavailable").hidden = false;
+    setDashboardFigure("activity", "failed");
     return;
   }
   $("dash-unavailable").hidden = true;
   $("dash-as-of").textContent = formatNewYork(inPeriod.data.as_of);
-  $("dash-stale").hidden = !inPeriod.data.stale;
   const allAccounts = figure(all.data, "accounts_registered");
   const newAccounts = figure(inPeriod.data, "accounts_registered");
   const submitting = figure(inPeriod.data, "accounts_submitting_records");
   const records = figure(inPeriod.data, "records_recorded");
   const undated = figure(all.data, "records_undated");
   if (allAccounts) $("kpi-external-value").textContent = String(allAccounts.external);
-  if (newAccounts && period !== "all") $("kpi-external-sub").textContent = `+${newAccounts.external} in the period`;
+  if (newAccounts) $("kpi-new-value").textContent = String(newAccounts.external);
   if (submitting) {
     $("kpi-submitting-value").textContent = String(submitting.external);
     $("kpi-submitting-def").textContent = submitting.definition;
@@ -347,6 +389,7 @@ async function loadActivity() {
   if (undated) {
     $("kpi-records-undated").textContent = `${undated.external} records have no usable recorded date and are not placed in any month.`;
   }
+  setDashboardFigure("activity", all.data.stale || inPeriod.data.stale ? "stale" : "ok");
 }
 
 function periodLabel(start, bucket) {
@@ -366,7 +409,7 @@ function renderSeries(container, metric, data) {
   const max = Math.max(1, ...periods.map((p) => Number(p.external) || 0));
   const slot = width / Math.max(1, periods.length);
   const barWidth = Math.max(4, slot * 0.6);
-  const title = metric === "accounts_registered" ? "New registered users" : "Records recorded by registered users";
+  const title = metric === "accounts_registered" ? "New accounts" : "Records recorded";
   // Keep the established chart colour hook without preserving the retired metric name in visible text.
   const chartMetricClass = metric === "records_recorded" ? "records_received" : metric;
   const chart = svg("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-labelledby": `chart-title-${metric}` });
@@ -399,7 +442,7 @@ function renderSeries(container, metric, data) {
   });
   const table = el("table", "series-table");
   const head = el("tr");
-  head.append(el("th", "", bucket === "month" ? "Month starting" : "Week starting"), el("th", "", "Registered users"));
+  head.append(el("th", "", bucket === "month" ? "Month starting" : "Week starting"), el("th", "", title));
   table.append(el("thead"));
   table.tHead.append(head);
   const body = el("tbody");
@@ -420,6 +463,7 @@ async function loadGrowth() {
   const bucket = $("growth-bucket").value === "week" ? "week" : "month";
   const periods = bucket === "week" ? 26 : 12;
   const requestId = ++growthRequest;
+  setDashboardFigure("growth", "loading");
   const metrics = ["accounts_registered", "records_recorded"];
   for (const metric of metrics) document.querySelector(`#growth-${metric} .chart-body`).replaceChildren();
   let responses;
@@ -427,29 +471,32 @@ async function loadGrowth() {
     responses = await Promise.all(metrics.map((metric) =>
       v2("GET", `/admin/v2/timeseries?metric=${metric}&bucket=${bucket}&periods=${periods}`)));
   } catch (e) {
-    if (e instanceof SessionEnded || e instanceof OutOfStep) return;
-    if (requestId === growthRequest) {
+    if (requestId === growthRequest && !(e instanceof SessionEnded) && !(e instanceof OutOfStep)) {
       for (const metric of metrics) document.querySelector(`#growth-${metric} .chart-body`).replaceChildren(el("p", "withheld", "Unavailable right now."));
+      setDashboardFigure("growth", "failed");
     }
     return;
   }
   if (requestId !== growthRequest) return;
+  let failed = false;
   metrics.forEach((metric, index) => {
     const container = document.querySelector(`#growth-${metric} .chart-body`);
     const r = responses[index];
     if (r.status !== 200 || !Array.isArray(r.data.periods)) {
       container.replaceChildren(el("p", "withheld", "Unavailable right now."));
+      failed = true;
       return;
     }
     renderSeries(container, metric, r.data);
   });
+  setDashboardFigure("growth", failed ? "failed" : responses.some((r) => r.data.stale) ? "stale" : "ok");
 }
 
 function withheldText(result, k, dimension) {
   const noun = { country: "profile country", sector: "profile sector", business_type: "profile business type" }[dimension];
-  if (result.reason === "total_below_minimum") return `Withheld — fewer than ${k} registered users in total.`;
-  if (result.reason === "business_profiles_below_half") return "Withheld — fewer than half of registered users have a business profile.";
-  if (result.reason === "valid_codes_below_half") return `Withheld — fewer than half of registered users have a valid ${noun} code.`;
+  if (result.reason === "total_below_minimum") return `Withheld — fewer than ${k} registered accounts in total.`;
+  if (result.reason === "business_profiles_below_half") return "Withheld — fewer than half of registered accounts have a business profile.";
+  if (result.reason === "valid_codes_below_half") return `Withheld — fewer than half of registered accounts have a valid ${noun} code.`;
   if (result.reason === "residual_unsafe") return "Withheld — the categories are too small to show or group safely.";
   return "Withheld.";
 }
@@ -479,34 +526,36 @@ function renderBreakdown(panel, dimension, data) {
     list.append(row);
   }
   const notes = [el("p", "muted", "Showing the 10 largest categories that have 2 or more users. Smaller categories and everything beyond the top 10 are combined in Other.")];
-  body.replaceChildren(list, ...notes, el("p", "muted", `Total registered users: ${result.total}`));
+  body.replaceChildren(list, ...notes, el("p", "muted", `Total registered accounts: ${result.total}`));
 }
-
-let audienceRequest = 0;
 
 async function loadAudience() {
   const requestId = ++audienceRequest;
+  setDashboardFigure("audience", "loading");
   for (const dimension of DIMENSIONS) document.querySelector(`#aud-${dimension} .breakdown-body`).replaceChildren();
   let responses;
   try {
     responses = await Promise.all(DIMENSIONS.map((d) => v2("GET", `/admin/v2/breakdown?dimension=${d}`)));
   } catch (e) {
-    if (e instanceof SessionEnded || e instanceof OutOfStep) return;
-    if (requestId === audienceRequest) {
+    if (requestId === audienceRequest && !(e instanceof SessionEnded) && !(e instanceof OutOfStep)) {
       for (const d of DIMENSIONS) document.querySelector(`#aud-${d} .breakdown-body`).replaceChildren(el("p", "withheld", "Unavailable right now."));
+      setDashboardFigure("audience", "failed");
     }
     return;
   }
   if (requestId !== audienceRequest) return;
+  let failed = false;
   DIMENSIONS.forEach((dimension, index) => {
     const panel = $(`aud-${dimension}`);
     const r = responses[index];
     if (r.status !== 200) {
       panel.querySelector(".breakdown-body").replaceChildren(el("p", "withheld", "Unavailable right now."));
+      failed = true;
       return;
     }
     renderBreakdown(panel, dimension, r.data);
   });
+  setDashboardFigure("audience", failed ? "failed" : responses.some((r) => r.data.stale) ? "stale" : "ok");
 }
 
 // Several actions reload these two panels; only the latest request may draw.
@@ -544,6 +593,18 @@ function loadDashboard() {
   loadGrowth();
   loadAudience();
   loadExclusionState();
+}
+
+async function reloadDashboardFigures() {
+  if (reloadBusy || !ownerView || outOfStep) return;
+  reloadBusy = true;
+  $("reload-figures").disabled = true;
+  try {
+    await Promise.all([loadActivity(), loadGrowth(), loadAudience(), loadExclusionState()]);
+  } finally {
+    reloadBusy = false;
+    $("reload-figures").disabled = false;
+  }
 }
 
 // ---- Settings: data quality, operator detail, methodology --------------------------
@@ -1039,6 +1100,7 @@ window.addEventListener("hashchange", () => {
 });
 $("period-select").addEventListener("change", () => { if (ownerView && !outOfStep) loadActivity(); });
 $("growth-bucket").addEventListener("change", () => { if (ownerView && !outOfStep) loadGrowth(); });
+$("reload-figures").addEventListener("click", reloadDashboardFigures);
 $("detail-range").addEventListener("change", () => { if (ownerView && !outOfStep) loadDetail(); });
 $("refresh-button").addEventListener("click", () => {
   if (!refreshBusy) { $("refresh-confirm").hidden = false; $("refresh-message").textContent = ""; }

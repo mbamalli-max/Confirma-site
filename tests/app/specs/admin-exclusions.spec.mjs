@@ -510,8 +510,12 @@ test("C11. the website look: colours, type and contrast", async ({ browser }) =>
     const pairs = [
       ["#brand-bar .brand", [26, 60, 52]],
       [".fresh", paper],
+      ["#dash-status", white],
+      ["#reload-figures", white],
       [".kpi-sub", white],
       [".kpi-label", white],
+      [".kpi-name", white],
+      [".kpi-scope", white],
       [".kpi-value", white],
       ["#footer-note", paper],
       ['#tabs a[aria-current="page"]', [26, 60, 52]],
