@@ -1,9 +1,10 @@
-const CACHE_NAME = "konfirmata-cache-v46";
+const CACHE_NAME = "konfirmata-cache-v47";
 const FILES = [
   "/app",
   "/app/index.html",
   "/app/styles.css",
   "/app/app.js",
+  "/app/quick-transactions.js",
   "/app/recovery-core.js",
   "/app/recovery-client.js",
   "/app/catalog-data.js",

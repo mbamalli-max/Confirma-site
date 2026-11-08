@@ -402,6 +402,46 @@ h1, h2, h3, h4 {
   min-height: 100px;
 }
 
+.quick-transactions {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+
+.quick-transaction-row h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.quick-transaction-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-transaction-chip {
+  min-height: 44px;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  padding: 9px 13px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.quick-transaction-chip:hover {
+  border-color: var(--primary);
+}
+
+.quick-transaction-chip:focus-visible {
+  border-color: var(--primary);
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 /* ── Voice Card ──────────────────────────────────────────── */
 .voice-card {
   background: var(--card);
