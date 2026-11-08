@@ -27,6 +27,7 @@ import {
   normalizeActionKey, layerBActionKey, layerBContextFromActionKey,
   slugifyLabel, friendlyActionLabel
 } from "./label-scorer.js";
+import { computeQuickTransactions } from "./quick-transactions.js";
 import {
   UNLISTED_BUSINESS_TYPE_ID, searchBusinessTypes, cleanBusinessDescription, businessDescriptionError
 } from "./business-search.js";
@@ -90,6 +91,7 @@ const PROFILE_PROMPT_OPEN_WINDOW_MS = 20 * 60 * 60 * 1000;
 const PROFILE_PROMPT_EVERY = 3;
 
 let LABEL_CATALOG = [];
+let captureChoiceToken = 0;
 
 const state = {
   db: null,
@@ -328,7 +330,7 @@ function cacheElements() {
     "business-description", "business-description-error", "unlisted-continue", "common-label-grid", "onboarding-step-copy", "finish-onboarding",
     "onboarding-next", "onboarding-name", "onboarding-phone", "onboarding-phone-readonly-note", "onboarding-email", "onboarding-state",
     "onboarding-birth-year", "onboarding-gender", "onboarding-profile-error",
-    "business-helper", "profile-summary", "anomaly-banner", "anomaly-banner-text", "anomaly-banner-cta", "primary-actions", "advanced-panel", "transfer-actions", "liability-actions",
+    "business-helper", "profile-summary", "anomaly-banner", "anomaly-banner-text", "anomaly-banner-cta", "quick-transactions", "quick-transactions-inflow", "quick-transactions-outflow", "primary-actions", "advanced-panel", "transfer-actions", "liability-actions",
     "quick-label-grid", "selected-label-chip", "amount-input-v2", "amount-helper-v2", "counterparty-input-v2", "source-account-input",
     "destination-account-input", "transfer-details", "capture-error", "confirm-copy-v2", "confirm-meta-v2",
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
@@ -1431,6 +1433,7 @@ async function showCapture() {
   hydrateProfileUi();
   renderActionRows();
   await renderQuickLabels();
+  await renderQuickTransactions();
   await renderRecentRecords();
   await checkDailyReminder();
   showScreen("screen-capture");
@@ -3764,26 +3767,32 @@ function renderActionRows() {
   const liabilitySelected = isLiabilityAction(state.currentAction) ? state.currentAction : null;
 
   renderActionButtons(els["primary-actions"], PRIMARY_ACTIONS, primarySelected, (id) => {
+    captureChoiceToken += 1;
     state.currentAction = id;
     state.profile.last_action = id;
     renderActionRows();
     renderQuickLabels();
+    void renderQuickTransactions();
     clearSelectedLabel();
   });
 
   renderActionButtons(els["transfer-actions"], TRANSFER_ACTIONS, transferSelected, (id) => {
+    captureChoiceToken += 1;
     state.currentAction = "transfer";
     state.transferSubtype = id;
     renderActionRows();
     renderQuickLabels();
+    void renderQuickTransactions();
     clearSelectedLabel();
   });
 
   renderActionButtons(els["liability-actions"], LIABILITY_ACTIONS, liabilitySelected, (id) => {
+    captureChoiceToken += 1;
     state.currentAction = id;
     state.profile.last_action = id;
     renderActionRows();
     renderQuickLabels();
+    void renderQuickTransactions();
     clearSelectedLabel();
   });
 
@@ -3806,17 +3815,106 @@ function renderActionButtons(container, actions, selectedId, handler) {
   });
 }
 
-async function renderQuickLabels() {
+async function renderQuickLabels(captureToken) {
   els["quick-label-grid"].innerHTML = "";
   const preferredCount = normalizePreferredLabels(state.profile?.preferred_labels, state.profile?.business_type_id).length;
   const ranked = await rankLabels("", {
     limit: Math.max(9, preferredCount),
     includePreferred: true
   });
+  if (captureToken !== undefined && captureToken !== captureChoiceToken) return;
   ranked.forEach((item) => {
     els["quick-label-grid"].appendChild(buildRankedLabelButton(item));
   });
   await renderBrowseResults();
+}
+
+async function renderQuickTransactions() {
+  const section = els["quick-transactions"];
+  if (!section) return;
+  let records = [];
+  try {
+    records = getOperationalRecords(await getRecords());
+  } catch {
+    // Capture remains usable while local history is unavailable.
+  }
+  const history = computeQuickTransactions({ records, nowSeconds: Math.floor(Date.now() / 1000) });
+  const rows = [
+    ["inflow", "quick-transactions-inflow", ["sale", "receipt"]],
+    ["outflow", "quick-transactions-outflow", ["purchase", "payment"]]
+  ];
+
+  for (const [direction, containerId, contexts] of rows) {
+    const container = els[containerId];
+    if (!container) continue;
+    const chips = [...history[direction]];
+    const shown = new Set(chips.map((item) => `${item.transaction_type}\u0000${item.normalized_label}`));
+    if (chips.length < 3) {
+      let fallback = [];
+      try {
+        fallback = await rankQuickTransactionFallbacks(contexts);
+      } catch {
+        // No profile recommendations is a valid offline/loading state.
+      }
+      fallback.forEach((item) => {
+        const key = `${item.transaction_type}\u0000${item.normalized_label}`;
+        if (chips.length < 3 && !shown.has(key)) {
+          shown.add(key);
+          chips.push(item);
+        }
+      });
+    }
+    container.replaceChildren(...chips.map(buildQuickTransactionButton));
+    container.closest(".quick-transaction-row").hidden = !chips.length;
+  }
+  section.hidden = !rows.some(([, containerId]) => els[containerId]?.children.length);
+}
+
+async function rankQuickTransactionFallbacks(contexts) {
+  const candidates = (await Promise.all(contexts.map(async (context) => {
+    const ranked = await rankLabels("", { includePreferred: true, actionContext: context });
+    return ranked.map((item) => ({ transaction_type: context, normalized_label: item.normalized_label, label: item.display_name, score: item.score }));
+  }))).flat();
+  return candidates.sort((a, b) => b.score - a.score || a.label.localeCompare(b.label) || a.transaction_type.localeCompare(b.transaction_type));
+}
+
+function buildQuickTransactionButton(item) {
+  const button = document.createElement("button");
+  const action = PRIMARY_ACTIONS.find((entry) => entry.id === item.transaction_type);
+  const actionLabel = action?.label || friendlyActionLabel(item.transaction_type);
+  button.type = "button";
+  button.className = "quick-transaction-chip";
+  button.setAttribute("aria-label", `${actionLabel}, ${item.label}`);
+  button.innerHTML = `${escapeHtml(actionLabel)} <span aria-hidden="true">·</span> ${escapeHtml(item.label)}`;
+  button.addEventListener("click", () => { void selectQuickTransaction(item); });
+  return button;
+}
+
+async function selectQuickTransaction(item) {
+  const token = ++captureChoiceToken;
+  state.currentAction = item.transaction_type;
+  state.profile.last_action = item.transaction_type;
+  renderActionRows();
+  await renderQuickLabels(token);
+  if (token !== captureChoiceToken) return;
+  const catalogItem = getCatalogForProfileAction(item.transaction_type)
+    .find((candidate) => candidate.normalized_label === item.normalized_label)
+    || LABEL_CATALOG.find((candidate) => candidate.normalized_label === item.normalized_label)
+    || {
+      id: `quick_${item.normalized_label}`,
+      normalized_label: item.normalized_label,
+      display_name: item.label,
+      synonyms: [item.label],
+      icon: "⭐",
+      image_url: null,
+      transaction_contexts: [item.transaction_type],
+      countries: ["GLOBAL"],
+      business_types: [state.profile.business_type_id]
+    };
+  await selectLabel(catalogItem, token);
+  if (token !== captureChoiceToken) return;
+  els["amount-input-v2"].focus();
+  els["amount-input-v2"].scrollIntoView({ block: "center" });
 }
 
 function buildRankedLabelButton(item) {
@@ -3824,7 +3922,10 @@ function buildRankedLabelButton(item) {
   button.type = "button";
   button.className = `ranked-item${state.selectedLabel && state.selectedLabel.id === item.id ? " active" : ""}`;
   button.innerHTML = `<strong>${item.icon || "🏷️"} ${escapeHtml(item.display_name)}</strong><span>${escapeHtml(contextCopy(item))}</span>`;
-  button.addEventListener("click", () => selectLabel(item));
+  button.addEventListener("click", () => {
+    captureChoiceToken += 1;
+    selectLabel(item);
+  });
   return button;
 }
 
@@ -3834,12 +3935,13 @@ function contextCopy(item) {
   return friendlyActionLabel(context);
 }
 
-function selectLabel(item) {
+function selectLabel(item, captureToken) {
   state.selectedLabel = item;
   els["selected-label-chip"].textContent = `${item.icon || "🏷️"} ${item.display_name} selected`;
   void maybeLearnVoiceCorrection();
-  renderQuickLabels();
+  const rendered = renderQuickLabels(captureToken);
   closeSelector();
+  return rendered;
 }
 
 function clearSelectedLabel() {
@@ -4585,7 +4687,10 @@ function wireRankedButtons(containerId, results) {
   document.getElementById(containerId).querySelectorAll("[data-ranked-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const item = results.find((entry) => entry.id === button.dataset.rankedId);
-      if (item) selectLabel(item);
+      if (item) {
+        captureChoiceToken += 1;
+        selectLabel(item);
+      }
     });
   });
 }
@@ -4704,6 +4809,7 @@ function wireSpeechCustomLabelButton(label) {
   const button = document.querySelector("[data-voice-custom-label]");
   if (!(button && label)) return;
   button.addEventListener("click", async () => {
+    captureChoiceToken += 1;
     const item = await createUserCustomLabel(label);
     selectLabel(item);
     els["speech-status"].textContent = `"${label}" saved as a custom label.`;
@@ -4713,6 +4819,7 @@ function wireSpeechCustomLabelButton(label) {
 async function saveCustomLabel() {
   const value = els["custom-label-input"].value.trim();
   if (!value) return;
+  captureChoiceToken += 1;
   const item = await createUserCustomLabel(value);
   selectLabel(item);
   els["custom-label-input"].value = "";
@@ -4823,6 +4930,7 @@ async function confirmAppend() {
     await updateSyncBadge();
     resetCaptureForm();
     await renderRecentRecords();
+    await renderQuickTransactions();
     await renderHistory();
     await renderDashboard();
     await checkDailyReminder();
@@ -4929,7 +5037,17 @@ function confirmationCopy(record) {
 function rankLabels(query, options = {}) {
   const includeScore = options.includeScore !== false;
   const limit = options.limit || 12;
-  const catalog = getCatalogForCurrentProfile({ includePreferred: options.includePreferred });
+  let catalog = options.actionContext
+    ? getCatalogForProfileAction(options.actionContext)
+    : getCatalogForCurrentProfile({ includePreferred: options.includePreferred });
+  if (options.actionContext && options.includePreferred) {
+    const existingNames = new Set(catalog.map((item) => item.display_name));
+    const preferredItems = normalizePreferredLabels(state.profile?.preferred_labels, state.profile?.business_type_id)
+      .filter((displayName) => !existingNames.has(displayName))
+      .map((displayName) => findPreferredCatalogItem(displayName, options.actionContext, true))
+      .filter(Boolean);
+    catalog = [...preferredItems, ...catalog];
+  }
   const usageMapPromise = getUsageMap();
 
   return usageMapPromise.then((usageMap) => {
@@ -4980,13 +5098,13 @@ function businessSectorMatch(item) {
   return item.business_types.some((businessId) => BUSINESS_TYPES.find((entry) => entry.id === businessId)?.suggestion_group === group);
 }
 
-function findPreferredCatalogItem(displayName) {
+function findPreferredCatalogItem(displayName, actionContext = getCurrentActionContext(), requireActionContext = false) {
   if (!(state.profile && state.profile.business_type_id)) return null;
-  const actionContext = getCurrentActionContext();
   const candidates = LABEL_CATALOG
     .filter((item) => item.display_name === displayName && labelSupportsRegion(item))
     .filter((item) => item.business_types.includes(state.profile.business_type_id)
-      || businessSectorMatch(item));
+      || businessSectorMatch(item))
+    .filter((item) => !requireActionContext || item.transaction_contexts.includes(actionContext));
 
   if (!candidates.length) return null;
 
@@ -8841,6 +8959,7 @@ async function restoreServerAccountIntoLocal({
   }
 
   const records = await restoreServerRecordsIntoLocal({ quiet });
+  await renderQuickTransactions();
   return { profile: serverProfile, records, ordinaryQueueFlushed: true };
 }
 
