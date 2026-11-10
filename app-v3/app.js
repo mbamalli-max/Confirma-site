@@ -335,6 +335,10 @@ function cacheElements() {
     "destination-account-input", "transfer-details", "capture-error", "confirm-copy-v2", "confirm-meta-v2",
     "recent-records-v2", "history-records-v2", "selector-modal", "label-search-input", "search-results",
     "speech-results", "browse-results", "speech-status", "custom-label-input", "onboarding-back",
+    "phone-change-modal", "phone-change-close", "phone-change-close-backdrop", "phone-change-copy", "phone-change-error",
+    "phone-change-number-step", "phone-change-country-prefix", "phone-change-number-input", "phone-change-send-code", "phone-change-code-step",
+    "phone-change-email-copy", "phone-change-code-input", "phone-change-confirm", "phone-change-resend",
+    "phone-change-success-step", "phone-change-success", "phone-change-done",
     "change-confirm-modal", "pin-confirm-modal", "pin-confirm-title", "pin-confirm-copy", "pin-confirm-input", "pin-confirm-error", "pin-confirm-submit", "pin-confirm-cancel", "pin-confirm-close",
     "pin-lock-hint", "pin-entry-input", "pin-unlock-btn",
     "pin-forgot-link", "pin-forgot-modal", "pin-forgot-close", "pin-forgot-copy", "pin-forgot-hint", "pin-forgot-helper", "pin-forgot-code-wrap",
@@ -462,6 +466,14 @@ function wireEvents() {
   });
   document.getElementById("selector-close").addEventListener("click", closeSelector);
   document.getElementById("selector-close-backdrop").addEventListener("click", closeSelector);
+  els["phone-change-close"]?.addEventListener("click", closePhoneChangeModal);
+  els["phone-change-close-backdrop"]?.addEventListener("click", closePhoneChangeModal);
+  els["phone-change-send-code"]?.addEventListener("click", () => void requestPhoneChangeCode());
+  els["phone-change-resend"]?.addEventListener("click", () => void requestPhoneChangeCode());
+  els["phone-change-confirm"]?.addEventListener("click", () => void confirmPhoneChange());
+  els["phone-change-done"]?.addEventListener("click", closePhoneChangeModal);
+  els["phone-change-number-input"]?.addEventListener("input", clearPhoneChangeError);
+  els["phone-change-code-input"]?.addEventListener("input", clearPhoneChangeError);
   document.getElementById("prepare-confirmation").addEventListener("click", prepareConfirmation);
   document.getElementById("confirm-append").addEventListener("click", confirmAppend);
   document.getElementById("back-to-capture").addEventListener("click", () => showScreen("screen-capture"));
@@ -1705,7 +1717,7 @@ async function renderSettings() {
     ${renderSettingsRow("Sector", sector?.name || "Not selected")}
     ${renderSettingsRow(isUnlistedBusiness() ? "Business (not listed)" : "Business type", getBusinessTypeLabel() || "Not selected")}
     ${state.profile.display_name ? renderSettingsRow("Name", state.profile.display_name) : ""}
-    ${state.profile.phone_number ? renderSettingsRow("Phone", maskContact(state.profile.phone_number)) : ""}
+    ${state.profile.phone_number ? `<div class="settings-row"><span>Phone</span><strong>${escapeHtml(maskContact(state.profile.phone_number))}</strong>${state.boundAccount && state.profile.email_verified ? '<button class="pill-button" id="settings-change-phone">Change phone number</button>' : '<span class="record-meta">A verified email is needed to change your number.</span>'}</div>` : ""}
     ${state.profile.email ? renderSettingsRow("Email", maskContact(state.profile.email)) : ""}
     ${state.profile.region ? renderSettingsRow("Region", state.profile.region) : ""}
     ${renderSettingsRow("Last action", friendlyActionLabel(state.profile.last_action || "sale"))}
@@ -1719,6 +1731,7 @@ async function renderSettings() {
     <p class="record-meta" id="settings-region-note" hidden></p>
   `;
   const settingsLanguageSelect = document.getElementById("settings-language-select");
+  document.getElementById("settings-change-phone")?.addEventListener("click", openPhoneChangeModal);
   if (settingsLanguageSelect) {
     settingsLanguageSelect.value = getProfileLanguage();
     settingsLanguageSelect.addEventListener("change", async () => {
@@ -1800,6 +1813,142 @@ async function renderSettings() {
   await refreshStorageWarning();
   if (state.lowStorageWarning) {
     els["settings-summary-v2"].innerHTML += renderSettingsRow("Backup recommendation", state.lowStorageWarning);
+  }
+}
+
+function clearPhoneChangeError() {
+  if (!els["phone-change-error"]) return;
+  els["phone-change-error"].hidden = true;
+  els["phone-change-error"].textContent = "";
+}
+
+function showPhoneChangeError(message) {
+  if (!els["phone-change-error"]) return;
+  els["phone-change-error"].textContent = message;
+  els["phone-change-error"].hidden = false;
+}
+
+function formatPhoneChangeRetryAfter(seconds) {
+  const value = Math.max(1, Math.ceil(Number(seconds) || 0));
+  if (value >= 60) return `${Math.ceil(value / 60)} minute${Math.ceil(value / 60) === 1 ? "" : "s"}`;
+  return `${value} second${value === 1 ? "" : "s"}`;
+}
+
+function phoneChangeErrorMessage(error, { confirming = false } = {}) {
+  const status = Number(error?.statusCode || 0);
+  if (!status) return "Changing your number needs a connection.";
+  if (status === 404 || status >= 500) return "The server is temporarily unavailable. Please try again later.";
+  if (status === 409 && error?.payload?.code === "phone_in_use") return "This phone number is already linked to another account.";
+  if (status === 429) return `Too many attempts. Try again after ${formatPhoneChangeRetryAfter(error?.payload?.retry_after)}.`;
+  if (confirming && status === 400) {
+    const guesses = Number(error?.payload?.guesses_left);
+    return Number.isFinite(guesses)
+      ? `That code is incorrect or has expired. ${guesses} guess${guesses === 1 ? "" : "es"} left.`
+      : "That code is incorrect or has expired.";
+  }
+  return error?.message || "The server is temporarily unavailable. Please try again later.";
+}
+
+function setPhoneChangeStep(step) {
+  const number = step === "number";
+  const code = step === "code";
+  const success = step === "success";
+  if (els["phone-change-number-step"]) els["phone-change-number-step"].hidden = !number;
+  if (els["phone-change-code-step"]) els["phone-change-code-step"].hidden = !code;
+  if (els["phone-change-success-step"]) els["phone-change-success-step"].hidden = !success;
+  if (els["phone-change-copy"]) els["phone-change-copy"].hidden = !number;
+  window.requestAnimationFrame(() => {
+    if (number) els["phone-change-number-input"]?.focus();
+    else if (code) els["phone-change-code-input"]?.focus();
+    else els["phone-change-done"]?.focus();
+  });
+}
+
+function openPhoneChangeModal() {
+  if (!(state.boundAccount && state.profile?.email_verified) || !els["phone-change-modal"]) return;
+  clearPhoneChangeError();
+  els["phone-change-number-input"].value = "";
+  els["phone-change-code-input"].value = "";
+  if (els["phone-change-country-prefix"]) {
+    els["phone-change-country-prefix"].textContent = getCountryDialCode(getPhoneInputCountry());
+  }
+  els["phone-change-email-copy"].textContent = `We'll email a code to ${maskContact(state.profile?.email || "your verified email")}.`;
+  els["phone-change-modal"].hidden = false;
+  setPhoneChangeStep("number");
+}
+
+function closePhoneChangeModal() {
+  if (els["phone-change-modal"]) els["phone-change-modal"].hidden = true;
+  clearPhoneChangeError();
+}
+
+function getPhoneChangeNumber() {
+  return normalizePhoneNumber(els["phone-change-number-input"]?.value || "", getPhoneInputCountry());
+}
+
+async function requestPhoneChangeCode() {
+  const phoneNumber = getPhoneChangeNumber();
+  if (!phoneNumber) {
+    showPhoneChangeError("Enter an international phone number with 7 to 15 digits.");
+    return;
+  }
+  clearPhoneChangeError();
+  const button = els["phone-change-send-code"];
+  const resend = els["phone-change-resend"];
+  if (button) button.disabled = true;
+  if (resend) resend.disabled = true;
+  try {
+    const response = await fetchAuthenticatedJson("/account/phone-change/request", {
+      method: "POST", body: { new_phone_number: phoneNumber }, purpose: "ordinary"
+    });
+    // Development delivery is intentionally only displayed by the existing
+    // sign-in test screen. This Settings flow never renders or logs a code.
+    void response;
+    setPhoneChangeStep("code");
+  } catch (error) {
+    showPhoneChangeError(phoneChangeErrorMessage(error));
+  } finally {
+    if (button) button.disabled = false;
+    if (resend) resend.disabled = false;
+  }
+}
+
+async function confirmPhoneChange() {
+  const phoneNumber = getPhoneChangeNumber();
+  const code = String(els["phone-change-code-input"]?.value || "").trim();
+  if (!phoneNumber) {
+    setPhoneChangeStep("number");
+    showPhoneChangeError("Enter an international phone number with 7 to 15 digits.");
+    return;
+  }
+  if (!/^\d{6}$/.test(code)) {
+    showPhoneChangeError("Enter the six-digit email code.");
+    return;
+  }
+  clearPhoneChangeError();
+  const button = els["phone-change-confirm"];
+  if (button) button.disabled = true;
+  try {
+    const response = await fetchAuthenticatedJson("/account/phone-change/confirm", {
+      method: "POST", body: { new_phone_number: phoneNumber, code }, purpose: "ordinary"
+    });
+    const updatedPhone = normalizePhoneNumber(response.phone_number || phoneNumber, getPhoneInputCountry());
+    state.profile = { ...state.profile, phone_number: updatedPhone, phone_verified: false };
+    state.boundPhoneNumber = updatedPhone;
+    const saved = await saveServerResponseProfile(
+      state.profile,
+      { sessionGeneration: state.sessionGeneration, wipeEpoch: state.wipeEpoch, authToken: state.authSessionKey },
+      { bound_phone_number: updatedPhone }
+    );
+    if (!saved) throw new Error("The account changed before the updated number could be saved.");
+    syncBoundPhoneInputs();
+    await renderSettings();
+    els["phone-change-success"].textContent = `Your phone number is now ${maskContact(updatedPhone)}. It isn't verified.`;
+    setPhoneChangeStep("success");
+  } catch (error) {
+    showPhoneChangeError(phoneChangeErrorMessage(error, { confirming: true }));
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -8557,9 +8706,15 @@ async function checkServerProfile({ token, generation }) {
 
 async function applyServerProfile(serverProfile, { token, generation, guard }) {
   if (!serverProfile) return false;
-  if (token !== state.authSessionKey || generation !== state.sessionGeneration) return false;
+  if (!canWriteForBoundAccount(token, generation)) return false;
   const profile = mergeServerProfile(serverProfile);
-  const serverPhone = normalizePhoneNumber(serverProfile.phone || profile.phone_number || "", getPhoneInputCountry());
+  // A profile response is authoritative only for this already-authenticated,
+  // bound account. Persist its phone and the immutable phone snapshot together.
+  const serverPhone = normalizePhoneNumber(
+    serverProfile.phone || profile.phone_number || "",
+    detectPhoneCountryFromPhoneNumber(serverProfile.phone || profile.phone_number) || getPhoneInputCountry()
+  );
+  if (serverPhone) profile.phone_number = serverPhone;
   const saved = await saveServerResponseProfile(profile, guard, serverPhone ? { bound_phone_number: serverPhone } : {});
   if (!saved) return false;
   state.profile = profile;
@@ -9438,13 +9593,27 @@ async function finishRestoreFlow(country, phoneNumber) {
     quiet: true
   });
 
-  if (!state.profile) {
-    state.profile = buildFallbackRecoveredProfile(country, phoneNumber);
-    await saveProfile(state.profile, { skipPush: true });
+  const recoveredProfile = buildFallbackRecoveredProfile(
+    country,
+    state.profile?.phone_number || phoneNumber
+  );
+  if (restored.profile && canWriteForBoundAccount(state.authSessionKey, state.sessionGeneration)) {
+    const authoritativePhone = normalizePhoneNumber(
+      restored.profile.phone || recoveredProfile.phone_number || "",
+      detectPhoneCountryFromPhoneNumber(restored.profile.phone || recoveredProfile.phone_number) || country
+    );
+    if (authoritativePhone) recoveredProfile.phone_number = authoritativePhone;
+    const saved = await saveServerResponseProfile(
+      recoveredProfile,
+      { ...captureRecordWriteGuard(), authToken: state.authSessionKey },
+      authoritativePhone ? { bound_phone_number: authoritativePhone } : {}
+    );
+    if (!saved) throw new Error("The account changed before the restored profile could be saved.");
+    state.boundPhoneNumber = authoritativePhone || state.boundPhoneNumber;
   } else {
-    state.profile = buildFallbackRecoveredProfile(country, state.profile.phone_number || phoneNumber);
-    await saveProfile(state.profile, { skipPush: true });
+    await saveProfile(recoveredProfile, { skipPush: true });
   }
+  state.profile = recoveredProfile;
 
   hydrateProfileUi();
   await showCapture();

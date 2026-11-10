@@ -48,7 +48,7 @@ test("linked account locks its stored phone through Change business profile and 
   await changeBusinessProfile(page);
   await expect(page.locator("#onboarding-phone")).toHaveValue(account.phone);
   await expect(page.locator("#onboarding-phone")).toHaveAttribute("readonly", "");
-  await expect(page.locator("#onboarding-phone-readonly-note")).toHaveText("Phone number changes aren't available yet.");
+  await expect(page.locator("#onboarding-phone-readonly-note")).toHaveText("Change your number in Settings.");
   await page.reload();
   await expect(page.locator("#onboarding-phone")).toHaveValue(account.phone);
   await expect(page.locator("#onboarding-phone")).toHaveAttribute("readonly", "");
@@ -60,6 +60,7 @@ test("linked signed-out and expired sessions retain the phone lock", async ({ pa
   await page.locator("#settings-logout-v2").click();
   await openSignedOutVerification(page, account);
   await expect(page.locator("#otp-phone-input")).toHaveAttribute("readonly", "");
+  await expect(page.locator("#otp-phone-readonly-note")).toHaveText("Change your number in Settings.");
   await page.reload();
   await openSignedOutVerification(page, account);
   await expect(page.locator("#otp-phone-input")).toHaveAttribute("readonly", "");
@@ -72,6 +73,7 @@ test("linked signed-out and expired sessions retain the phone lock", async ({ pa
   await page.reload();
   await changeBusinessProfile(page);
   await expect(page.locator("#onboarding-phone")).toHaveAttribute("readonly", "");
+  await expect(page.locator("#onboarding-phone-readonly-note")).toHaveText("Change your number in Settings.");
 });
 
 test("script-mutated linked phone cannot be saved or sent as a different number", async ({ page }) => {
@@ -111,6 +113,7 @@ test("fresh-device restore locks the restored account phone", async ({ page, bro
     await reachProfileStep(fresh);
     await expect(fresh.locator("#onboarding-phone")).toHaveValue(account.phone);
     await expect(fresh.locator("#onboarding-phone")).toHaveAttribute("readonly", "");
+    await expect(fresh.locator("#onboarding-phone-readonly-note")).toHaveText("Change your number in Settings.");
   } finally {
     await context.close();
   }

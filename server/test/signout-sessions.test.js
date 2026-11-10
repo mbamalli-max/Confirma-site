@@ -31,7 +31,7 @@ const INVALID_SESSION_REPLY = { error: "session_invalid" };
 const MISSING_TOKEN_REPLY = { error: "token_missing" };
 const DEVICE_MISMATCH_REPLY = { error: "device_mismatch" };
 const DEVICE_ACTIVITY_UPDATE = /UPDATE\s+device_identities\s+SET\s+user_id\s+=\s+user_id,\s*last_seen_at\s+=\s+NOW\(\),\s*updated_at\s+=\s+NOW\(\)\s+WHERE\s+device_identity\s+=\s+\$1/i;
-const SMS_PHONE_VERIFICATION_OR_DEVICE_ACTIVITY_UPDATE = /UPDATE\s+(?:users\s+SET\s+phone_verified\s+=\s+TRUE\s+WHERE\s+phone_number\s+=\s+\$1|device_identities\s+SET\s+user_id\s+=\s+user_id,\s*last_seen_at\s+=\s+NOW\(\),\s*updated_at\s+=\s+NOW\(\)\s+WHERE\s+device_identity\s+=\s+\$1)/i;
+const SMS_PHONE_VERIFICATION_OR_DEVICE_ACTIVITY_UPDATE = /UPDATE\s+(?:users\s+SET\s+phone_verified\s+=\s+TRUE\s+WHERE\s+id\s+=\s+\$1|device_identities\s+SET\s+user_id\s+=\s+user_id,\s*last_seen_at\s+=\s+NOW\(\),\s*updated_at\s+=\s+NOW\(\)\s+WHERE\s+device_identity\s+=\s+\$1)/i;
 const appPool = getPool();
 const database = createTestPool(config.databaseUrl, config.databaseSsl);
 const poolRecorder = instrumentApplicationPool(appPool);
@@ -851,6 +851,8 @@ test("A3/A6: every registered shared-guard route refuses a token after revocatio
     "POST /auth/otp/verify",
     "POST /auth/logout",
     "POST /auth/logout-all",
+    "POST /account/phone-change/request",
+    "POST /account/phone-change/confirm",
     "POST /profile",
     "POST /sync/entries",
     "POST /identity/rotate/challenge",
@@ -884,6 +886,8 @@ test("A3/A6: every registered shared-guard route refuses a token after revocatio
     ["HEAD", "/profile"],
     ["HEAD", "/devices"],
     ["POST", "/auth/logout-all"],
+    ["POST", "/account/phone-change/request"],
+    ["POST", "/account/phone-change/confirm"],
     ["POST", "/profile"],
     ["POST", "/sync/entries"],
     ["POST", "/identity/rotate/challenge"],

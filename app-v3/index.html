@@ -293,7 +293,7 @@
           <label class="field">
             Phone number
             <input id="onboarding-phone" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel" required>
-            <span class="record-meta" id="onboarding-phone-readonly-note" hidden>Phone number changes aren't available yet.</span>
+            <span class="record-meta" id="onboarding-phone-readonly-note" hidden>Change your number in Settings.</span>
           </label>
 
           <label class="field">
@@ -360,7 +360,7 @@
             <span class="phone-prefix" id="otp-country-prefix" aria-hidden="true"></span>
             <input id="otp-phone-input" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel" aria-describedby="otp-helper-text">
           </div>
-          <span class="record-meta" id="otp-phone-readonly-note" hidden>Phone number changes aren't available yet.</span>
+          <span class="record-meta" id="otp-phone-readonly-note" hidden>Change your number in Settings.</span>
         </label>
         <div class="button-stack">
           <button class="btn btn-secondary" id="otp-request-code" type="button">Send verification code</button>
@@ -983,7 +983,7 @@
           <span class="phone-prefix" id="restore-country-prefix" aria-hidden="true"></span>
           <input id="restore-phone-input" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel" aria-describedby="restore-helper-text">
         </div>
-        <span class="record-meta" id="restore-phone-readonly-note" hidden>Phone number changes aren't available yet.</span>
+        <span class="record-meta" id="restore-phone-readonly-note" hidden>Change your number in Settings.</span>
       </label>
       <p class="record-meta" id="restore-helper-text">Request a restore code to continue.</p>
       <div id="restore-code-wrap" hidden>
@@ -1062,6 +1062,52 @@
           <input id="custom-label-input" type="text" placeholder="Enter your label">
         </label>
         <button class="btn btn-secondary" id="save-custom-label" type="button">Use this custom label</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-shell" id="phone-change-modal" hidden>
+    <div class="modal-backdrop" id="phone-change-close-backdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="phone-change-title">
+      <div class="action-header">
+        <div>
+          <h2 id="phone-change-title">Change phone number</h2>
+          <p class="subtle" id="phone-change-copy">Enter your new international phone number.</p>
+        </div>
+        <button class="pill-button" id="phone-change-close" type="button">Close</button>
+      </div>
+      <p class="record-meta" id="phone-change-error" role="alert" aria-live="assertive" hidden></p>
+
+      <div id="phone-change-number-step">
+        <label class="field" for="phone-change-number-input">
+          New phone number
+          <div class="phone-input-shell">
+            <span class="phone-prefix" id="phone-change-country-prefix" aria-hidden="true"></span>
+            <input id="phone-change-number-input" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel">
+          </div>
+        </label>
+        <div class="button-stack" style="margin-top:12px">
+          <button class="btn btn-primary" id="phone-change-send-code" type="button">Email me a code</button>
+        </div>
+      </div>
+
+      <div id="phone-change-code-step" hidden>
+        <p class="subtle" id="phone-change-email-copy"></p>
+        <label class="field" for="phone-change-code-input">
+          Six-digit email code
+          <input id="phone-change-code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">
+        </label>
+        <div class="button-stack" style="margin-top:12px">
+          <button class="btn btn-primary" id="phone-change-confirm" type="button">Confirm phone number</button>
+          <button class="btn btn-secondary" id="phone-change-resend" type="button">Resend code</button>
+        </div>
+      </div>
+
+      <div id="phone-change-success-step" hidden>
+        <p class="subtle" id="phone-change-success" role="status" aria-live="polite"></p>
+        <div class="button-stack" style="margin-top:12px">
+          <button class="btn btn-primary" id="phone-change-done" type="button">Done</button>
+        </div>
       </div>
     </div>
   </div>

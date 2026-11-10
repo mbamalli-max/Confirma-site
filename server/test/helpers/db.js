@@ -314,7 +314,8 @@ export function instrumentApplicationPool(pool) {
     transactionPids: [],
     queryTexts: [],
     commitsUntilFailure: null,
-    failQueryPattern: null
+    failQueryPattern: null,
+    pauseNextQuery: null
   };
 
   async function instrumentClient(client) {
@@ -356,6 +357,12 @@ export function instrumentApplicationPool(pool) {
           return undefined;
         }
         return Promise.reject(error);
+      }
+      const pause = state.pauseNextQuery;
+      if (pause && pause.matches(String(text || ""))) {
+        state.pauseNextQuery = null;
+        pause.reachedResolve();
+        return pause.released.then(() => originalQuery(...args));
       }
       return originalQuery(...args);
     };
@@ -404,6 +411,7 @@ export function instrumentApplicationPool(pool) {
       state.queryTexts.length = 0;
       state.commitsUntilFailure = null;
       state.failQueryPattern = null;
+      state.pauseNextQuery = null;
     },
     failNextCommit() {
       state.commitsUntilFailure = 1;
@@ -416,6 +424,32 @@ export function instrumentApplicationPool(pool) {
     },
     failNextQueryMatching(pattern) {
       state.failQueryPattern = pattern;
+    },
+    pauseNext(pattern) {
+      if (state.pauseNextQuery) throw new Error("A query pause is already active.");
+      let reachedResolve;
+      let releaseResolve;
+      const reached = new Promise((resolve) => { reachedResolve = resolve; });
+      const released = new Promise((resolve) => { releaseResolve = resolve; });
+      const matches = (text) => {
+        if (typeof pattern === "string") return text.includes(pattern);
+        if (pattern instanceof RegExp) {
+          pattern.lastIndex = 0;
+          return pattern.test(text);
+        }
+        throw new TypeError("Query pause pattern must be a string or RegExp.");
+      };
+      let releasedOnce = false;
+      state.pauseNextQuery = { matches, reachedResolve, released };
+      return {
+        reached,
+        release() {
+          if (!releasedOnce) {
+            releasedOnce = true;
+            releaseResolve();
+          }
+        }
+      };
     },
     restore() {
       pool.connect = originalConnect;
