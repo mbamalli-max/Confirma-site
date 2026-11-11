@@ -766,7 +766,7 @@ function ensureOnboardingCountrySteps() {
     phoneCountryCopy.className = "subtle";
     phoneCountryHeading?.insertAdjacentElement("afterend", phoneCountryCopy);
   }
-  phoneCountryCopy.textContent = "We use this for phone number formatting and OTP delivery. Your business region can be different.";
+  phoneCountryCopy.textContent = "We use this to format your phone number. Your business country can be different.";
 
   let operatingRegionStep = document.getElementById("operating-region-step");
   if (!operatingRegionStep) {
@@ -804,6 +804,26 @@ function ensureOnboardingCountrySteps() {
 }
 
 const countryGridExpanded = { phone_country: false, operating_region: false };
+
+const TIME_ZONE_COUNTRY_SUGGESTIONS = {
+  "Africa/Lagos": "NG",
+  "Africa/Accra": "GH",
+  "Africa/Nairobi": "KE",
+  "Europe/London": "GB",
+  "Asia/Kolkata": "IN",
+  "Asia/Calcutta": "IN"
+};
+
+function getSuggestedCountryId() {
+  try {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (TIME_ZONE_COUNTRY_SUGGESTIONS[timeZone]) return TIME_ZONE_COUNTRY_SUGGESTIONS[timeZone];
+    if (timeZone?.startsWith("America/")) return "US";
+  } catch {
+    // Country selection remains unchanged when the device time zone is unavailable.
+  }
+  return "";
+}
 
 function handleCountrySelect(country, dimension) {
   if (dimension === "phone_country") {
@@ -891,35 +911,33 @@ function renderCountryGrid(dimension = "phone_country") {
     ? getRecognizedCountryId(state.profile?.operating_region || state.profile?.country || state.profile?.phone_country)
     : getRecognizedCountryId(state.profile?.country || state.profile?.phone_country || state.authPhoneCountry);
 
-  if (!expanded) {
-    FEATURED_COUNTRY_IDS
+  const suggestedCountryId = getSuggestedCountryId();
+  const suggestedCountry = COUNTRIES.find((country) => country.id === suggestedCountryId);
+  const countryCards = !expanded
+    ? FEATURED_COUNTRY_IDS
       .map((id) => COUNTRIES.find((c) => c.id === id))
       .filter(Boolean)
-      .forEach((country) => {
-        container.appendChild(buildVisualCard(
-          country.icon,
-          country.name,
-          dimension === "operating_region" ? "Business region" : "Phone country",
-          () => handleCountrySelect(country, dimension),
-          selectedCountry === country.id
-        ));
-      });
+    : (query ? COUNTRIES.filter(c => c.name.toLowerCase().includes(query)) : COUNTRIES);
+  const orderedCountryCards = suggestedCountry && countryCards.some((country) => country.id === suggestedCountry.id)
+    ? [suggestedCountry, ...countryCards.filter((country) => country.id !== suggestedCountry.id)]
+    : countryCards;
 
+  orderedCountryCards.forEach((country) => {
+    container.appendChild(buildVisualCard(
+      country.icon,
+      country.name,
+      dimension === "operating_region" ? "Business region" : "Phone country",
+      () => handleCountrySelect(country, dimension),
+      selectedCountry === country.id,
+      country.id === suggestedCountryId
+    ));
+  });
+
+  if (!expanded) {
     container.appendChild(buildVisualCard("🌐", "Other", "Choose from all countries", () => {
       countryGridExpanded[dimension] = true;
       renderCountryGrid(dimension);
     }));
-  } else {
-    const filteredCountries = query ? COUNTRIES.filter(c => c.name.toLowerCase().includes(query)) : COUNTRIES;
-    filteredCountries.forEach((country) => {
-      container.appendChild(buildVisualCard(
-        country.icon,
-        country.name,
-        dimension === "operating_region" ? "Business region" : "Phone country",
-        () => handleCountrySelect(country, dimension),
-        selectedCountry === country.id
-      ));
-    });
   }
 
   if (dimension === "operating_region") {
@@ -1292,11 +1310,11 @@ function goToPreviousOnboardingStep() {
   updateOnboardingStep(targetStep);
 }
 
-function buildVisualCard(icon, title, description, onClick, active) {
+function buildVisualCard(icon, title, description, onClick, active, suggested = false) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = `visual-card${active ? " active" : ""}`;
-  button.innerHTML = `<span class="visual-icon">${icon}</span><strong>${title}</strong><span>${description}</span>`;
+  button.innerHTML = `<span class="visual-icon">${icon}</span><strong>${title}</strong><span>${description}</span>${suggested ? '<span class="visual-card-suggestion">Suggested</span>' : ""}`;
   button.addEventListener("click", onClick);
   return button;
 }
@@ -1316,9 +1334,7 @@ function updateOperatingRegionContinueState() {
   const button = els["operating-region-next"] || document.getElementById("operating-region-next");
   if (!button) return;
 
-  const operatingRegion = getRecognizedCountryId(
-    state.profile?.operating_region || state.profile?.country || state.profile?.phone_country || ""
-  );
+  const operatingRegion = getRecognizedCountryId(state.profile?.operating_region || state.profile?.country || state.profile?.phone_country || "");
 
   button.disabled = !operatingRegion;
   button.textContent = operatingRegion
@@ -3041,7 +3057,7 @@ async function refreshTierButtonLabels() {
 
     const verifiedReportSubtitle = els["verified-report-region-note"]?.previousElementSibling;
     if (verifiedReportSubtitle?.matches("p.subtle")) {
-      verifiedReportSubtitle.textContent = `Server-attested file. Your records span ${formatVerifiedReportSpanDate(earliestDate)} to ${formatVerifiedReportSpanDate(latestDate)}. The app is free to use.`;
+      verifiedReportSubtitle.textContent = `Server-attested file. Your records span ${formatVerifiedReportSpanDate(earliestDate)} to ${formatVerifiedReportSpanDate(latestDate)}.`;
     }
   } catch (error) {
     console.warn("Unable to refresh verifiable export labels.", error);
@@ -4886,7 +4902,6 @@ function prepareConfirmation() {
   els["confirm-copy-v2"].textContent = confirmationCopy(record);
   els["confirm-meta-v2"].innerHTML = `
     <div><strong>Type:</strong> ${escapeHtml(record.transaction_type)}</div>
-    <div><strong>Normalized label:</strong> ${escapeHtml(record.normalized_label)}</div>
     <div><strong>Amount:</strong> ${formatMoney(record.amount_minor, record.currency)}</div>
     <div><strong>Counterparty:</strong> ${escapeHtml(record.counterparty || "Not provided")}</div>
     ${record.reversed_entry_hash ? `<div><strong>Reverses:</strong> ${escapeHtml(record.reversed_entry_hash)}</div>` : ""}
@@ -5016,7 +5031,7 @@ function renderRecordCard(record, options = {}) {
       </div>
       <div class="record-meta">
         <span class="record-money">${formatMoney(record.amount_minor, record.currency)}</span> • ${new Date(record.confirmed_at * 1000).toLocaleString()}<br>
-        ${record.normalized_label}${record.counterparty ? ` • ${record.counterparty}` : ""}${record.reversed_entry_hash ? ` • reverses ${record.reversed_entry_hash.slice(0, 12)}...` : ""}
+        ${record.counterparty || ""}${record.counterparty && record.reversed_entry_hash ? " • " : ""}${record.reversed_entry_hash ? `reverses ${record.reversed_entry_hash.slice(0, 12)}...` : ""}
       </div>
     </div>
   `;

@@ -222,7 +222,7 @@
 
         <div class="step active" data-step="1">
           <h2>Choose your phone country</h2>
-          <p class="subtle">We use this for phone number formatting and OTP delivery. Your business region can be different.</p>
+          <p class="subtle">We use this to format your phone number. Your business country can be different.</p>
           <button class="restore-link" id="restore-account-link" type="button">Already have an account? Restore your account →</button>
           <div class="visual-grid" id="country-grid"></div>
         </div>
@@ -344,7 +344,6 @@
       <div class="panel">
         <h2 id="otp-screen-title">Verify your email on this device</h2>
         <p class="subtle" id="otp-screen-copy">Konfirmata sends a code to your email address to verify this device.</p>
-        <div class="settings-list" id="otp-status-card"></div>
       </div>
 
       <div class="panel">
@@ -378,6 +377,11 @@
         </div>
         <p class="error" id="otp-error-text" role="alert" aria-live="polite" aria-atomic="true" hidden></p>
       </div>
+
+      <details class="technical-details" id="otp-technical-details">
+        <summary>Technical details</summary>
+        <div class="settings-list" id="otp-status-card"></div>
+      </details>
     </section>
 
     <section class="screen" id="screen-signed-out" aria-labelledby="signed-out-title">
@@ -462,7 +466,7 @@
         <div class="action-header">
           <div>
             <h2>Pick an action</h2>
-            <p class="subtle">Keep the primary row simple: Sell, Buy, Pay, Receive.</p>
+            <p class="subtle">What kind of transaction is it?</p>
           </div>
           <button class="pill-button" id="advanced-toggle" type="button">Advanced</button>
         </div>
@@ -481,7 +485,7 @@
         <div class="action-header">
           <div>
             <h2>Choose a label</h2>
-            <p class="subtle">Visual quick-picks first. Typing comes last.</p>
+            <p class="subtle">Tap what the money was for.</p>
           </div>
           <button class="pill-button" id="open-selector" type="button">More</button>
         </div>
@@ -576,14 +580,13 @@
       <header class="topbar">
         <div>
           <strong>Confirm record</strong>
-          <span>No path bypasses confirmation.</span>
         </div>
       </header>
       <div class="panel">
         <div class="confirm-copy" id="confirm-copy-v2"></div>
         <div class="confirm-meta" id="confirm-meta-v2"></div>
         <div class="button-stack">
-          <button class="btn btn-primary" id="confirm-append" type="button">Confirm and append</button>
+          <button class="btn btn-primary" id="confirm-append" type="button">Confirm record</button>
           <button class="btn btn-secondary" id="back-to-capture" type="button">Go back</button>
         </div>
       </div>
@@ -684,7 +687,10 @@
           Device & sync details ▸
         </button>
         <div class="collapsible-panel" id="settings-trust-panel" hidden>
-          <div class="settings-list" id="settings-trust-v3"></div>
+          <details class="technical-details" id="settings-technical-details">
+            <summary>Technical details</summary>
+            <div class="settings-list" id="settings-trust-v3"></div>
+          </details>
         </div>
       </div>
       <div class="panel">
@@ -818,7 +824,10 @@
       <div class="panel">
         <h2>Verifiable PDF export</h2>
         <p class="subtle">Download a server-attested PDF with QR code, full entry list, and record integrity data.</p>
-        <div class="settings-list" id="export-trust-status-v3"></div>
+        <details class="technical-details" id="export-technical-details">
+          <summary>Technical details</summary>
+          <div class="settings-list" id="export-trust-status-v3"></div>
+        </details>
         <button class="btn btn-secondary" id="export-open-trust-v3" type="button">Open email verification</button>
         <button class="btn btn-primary" id="export-button-v2" type="button">Generate verifiable PDF</button>
         <div class="verified-report-section" id="verified-report-section" hidden>

@@ -236,6 +236,26 @@ h1, h2, h3, h4 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.technical-details {
+  margin: 16px 0;
+}
+
+.technical-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.technical-details .settings-list {
+  margin-top: 10px;
+}
+
+.visual-card-suggestion {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 /* ── Cards: visual, action, ranked ───────────────────────── */
 .visual-card,
 .action-card,
