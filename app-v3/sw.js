@@ -19,7 +19,11 @@ const FILES = [
   "/app/vendor/jspdf.umd.min.js",
   "/app/manifest.json",
   "/app/icons/icon.svg",
-  "/app/icons/icon-mask.svg"
+  "/app/icons/icon-mask.svg",
+  "/app/icons/icon-192.png",
+  "/app/icons/icon-512.png",
+  "/app/icons/icon-maskable-512.png",
+  "/app/icons/apple-touch-icon-180.png"
 ];
 
 self.addEventListener("install", (event) => {
