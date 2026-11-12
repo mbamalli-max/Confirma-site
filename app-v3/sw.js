@@ -17,6 +17,7 @@ const FILES = [
   "/app/syncWorker.js",
   "/app/vendor/qrcode.min.js",
   "/app/vendor/jspdf.umd.min.js",
+  "/app/vendor/chart.umd.js",
   "/app/manifest.json",
   "/app/icons/icon.svg",
   "/app/icons/icon-mask.svg",
@@ -49,11 +50,16 @@ self.addEventListener("message", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
+    // An older Konfirmata cache is a signal for this release, not definitive proof of a prior install.
+    const isUpgrade = keys.some((key) => key !== CACHE_NAME && key.startsWith("konfirmata-cache-"));
     await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
     const windowApi = self["cl" + "ients"];
     await windowApi.claim();
+    if (!isUpgrade) return;
     const windows = await windowApi.matchAll({ type: "window" });
     windows.forEach((windowClient) => {
+      const path = new URL(windowClient.url).pathname;
+      if (path !== "/app" && !path.startsWith("/app/")) return;
       windowClient.postMessage({ type: "SW_UPDATED" });
       if ("navigate" in windowClient) windowClient.navigate(windowClient.url);
     });
@@ -61,6 +67,9 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+  if (url.pathname !== "/app" && !url.pathname.startsWith("/app/")) return;
+
   if (event.request.mode === "navigate") {
     event.respondWith((async () => {
       try {
@@ -78,7 +87,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  const url = new URL(event.request.url);
   const isAppAsset = url.pathname.startsWith("/app/") &&
     (url.pathname.endsWith(".js") || url.pathname.endsWith(".css") || url.pathname.endsWith(".html"));
 

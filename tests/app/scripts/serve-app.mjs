@@ -17,7 +17,16 @@ const adminHeaders = Object.fromEntries(
     .headers.find((rule) => rule.source === "/(.*)").headers
     .map(({ key, value }) => [key, value.replace("https://api.konfirmata.com", apiOrigin)])
 );
-const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json", ".txt": "text/plain" };
+// Keep the app server under the same policy that Vercel applies in production.
+// The API origin is deliberately local so browser tests can use test accounts.
+const appConfig = JSON.parse(readFileSync(resolve(root, "../vercel.json"), "utf8"));
+const appHeaderRoute = appConfig.routes.find((route) => route.src === "/(.*)" && route.continue === true);
+if (!appHeaderRoute?.headers) throw new Error("missing continuing app header route");
+const appHeaders = Object.fromEntries(
+  Object.entries(appHeaderRoute.headers).map(([key, value]) => [key, value.replace("https://api.konfirmata.com", apiOrigin)])
+);
+const serviceWorkerHeaders = { ...appHeaders, "Service-Worker-Allowed": "/app" };
+const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".txt": "text/plain" };
 
 createServer(async (request, response) => {
   const requestPath = new URL(request.url, url).pathname;
@@ -38,13 +47,14 @@ createServer(async (request, response) => {
     .replace(/^\/app(?:\/|$)/, "")
     .replace(/^\/+/, "") || "index.html";
   const path = resolve(root, pathname);
-  if (path !== root && !path.startsWith(`${root}${sep}`)) return response.writeHead(403).end();
+  const headers = requestPath === "/app/sw.js" ? serviceWorkerHeaders : appHeaders;
+  if (path !== root && !path.startsWith(`${root}${sep}`)) return response.writeHead(403, headers).end();
   try {
     const info = await stat(path);
     if (!info.isFile()) throw new Error("not a file");
-    response.writeHead(200, { "content-type": mime[extname(path)] || "application/octet-stream" });
+    response.writeHead(200, { ...headers, "content-type": mime[extname(path)] || "application/octet-stream" });
     createReadStream(path).pipe(response);
   } catch {
-    response.writeHead(404).end();
+    response.writeHead(404, headers).end();
   }
 }).listen(Number(url.port || 5500), url.hostname);

@@ -628,11 +628,12 @@ function wireEvents() {
 }
 
 function registerPwa() {
+  const hadControllerAtLoad = Boolean(navigator.serviceWorker.controller);
   if ("serviceWorker" in navigator) {
     const syncWaitingServiceWorker = (registration) => {
       if (!registration) return;
       state.swRegistration = registration;
-      if (registration.waiting) {
+      if (hadControllerAtLoad && registration.waiting) {
         applyWaitingServiceWorkerUpdate();
       }
     };
@@ -646,19 +647,37 @@ function registerPwa() {
       });
     };
 
-    navigator.serviceWorker.register("/app/sw.js").then((registration) => {
+    const broadScope = new URL("/app", window.location.origin).href;
+    const legacyScope = new URL("/app/", window.location.origin).href;
+    const useRegistration = (registration) => {
       state.swRegistration = registration;
       watchInstallingServiceWorker(registration, registration.installing);
       registration.addEventListener("updatefound", () => {
         watchInstallingServiceWorker(registration, registration.installing);
       });
+      return registration;
+    };
+
+    navigator.serviceWorker.register("/app/sw.js", { scope: "/app" }).then((registration) => {
+      useRegistration(registration);
+      if (registration.scope === broadScope) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(registrations
+          .filter((candidate) => candidate.scope === legacyScope)
+          .map((candidate) => candidate.unregister())
+        )).catch((cleanupError) => {
+          console.warn("Unable to unregister legacy service worker scope.", cleanupError);
+        });
+      }
     }).catch((error) => {
-      console.warn("Service worker registration failed.", error);
+      console.warn("Broad service worker scope registration failed; falling back to /app/.", error);
+      return navigator.serviceWorker.register("/app/sw.js").then(useRegistration).catch((fallbackError) => {
+        console.warn("Service worker registration failed.", fallbackError);
+      });
     });
 
     navigator.serviceWorker.addEventListener("message", (event) => {
       if (event.data?.type === "SW_UPDATED") {
-        navigator.serviceWorker.getRegistration("/app/").then((registration) => {
+        navigator.serviceWorker.getRegistration("/app").then((registration) => {
           syncWaitingServiceWorker(registration || state.swRegistration);
         }).catch(() => {
           syncWaitingServiceWorker(state.swRegistration);

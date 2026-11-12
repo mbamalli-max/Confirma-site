@@ -1,0 +1,16 @@
+[
+  { "src": "/\\.well-known/verification-key\\.json", "dest": "https://api.konfirmata.com/.well-known/verification-key.json" },
+  { "src": "/app/?", "dest": "/app-v3/index.html" },
+  { "src": "/app/sw\\.js", "dest": "/app-v3/sw.js" },
+  { "src": "/app/manifest\\.json", "dest": "/app-v3/manifest.json" },
+  { "src": "/app/icons/(.*)", "dest": "/app-v3/icons/$1" },
+  { "src": "/app/(.*)", "dest": "/app-v3/$1" },
+  { "src": "/verify", "dest": "/website-v2/verify.html" },
+  { "src": "/verify/", "dest": "/website-v2/verify.html" },
+  { "src": "/verify/(.*)", "dest": "/website-v2/verify.html" },
+  { "src": "/lenders\\.html", "status": 308, "headers": { "Location": "/institutions.html" } },
+  { "src": "/banks\\.html", "status": 308, "headers": { "Location": "/institutions.html" } },
+  { "src": "/", "dest": "/website-v2/index.html" },
+  { "src": "/admin(/.*)?", "status": 404 },
+  { "src": "/(.*)", "dest": "/website-v2/$1" }
+]

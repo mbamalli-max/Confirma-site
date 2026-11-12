@@ -21,7 +21,6 @@ test("served module matches the app canonical bytes and classifies all date clas
     const appSource = await (await fetch("/app/app.js")).text();
     const match = appSource.match(/function buildLedgerHashCanonicalString\(record, id, confirmedAt, prevHash\) \{[\s\S]*?\n\}/);
     if (!match) throw new Error("canonical function was not found in the served app");
-    const appCanonical = Function(`${match[0]}; return buildLedgerHashCanonicalString;`)();
     const row = {
       transaction_type: "sale", normalized_label: "fixture", amount_minor: 1200, currency: "NGN",
       counterparty: null, business_type_id: "retail", country: "NG", source_account: undefined,
@@ -29,8 +28,9 @@ test("served module matches the app canonical bytes and classifies all date clas
     };
     const bound = 2_000_000_000;
     return {
-      same: recovery.buildCanonical(row, 7, 1_900_000_000, "a".repeat(64))
-        === appCanonical(row, 7, 1_900_000_000, "a".repeat(64)),
+      appCanonicalSource: match[0],
+      canonicalInputs: { row, id: 7, confirmedAt: 1_900_000_000, prevHash: "a".repeat(64) },
+      recoveryCanonical: recovery.buildCanonical(row, 7, 1_900_000_000, "a".repeat(64)),
       dates: {
         ok: recovery.classifyDate(1_700_000_000, { receivedBoundSeconds: bound }),
         before: recovery.classifyDate(900_000_000, { receivedBoundSeconds: bound }),
@@ -48,7 +48,13 @@ test("served module matches the app canonical bytes and classifies all date clas
       }
     };
   });
-  expect(result.same).toBe(true);
+  const appCanonical = Function(`${result.appCanonicalSource}; return buildLedgerHashCanonicalString;`)();
+  expect(result.recoveryCanonical).toBe(appCanonical(
+    result.canonicalInputs.row,
+    result.canonicalInputs.id,
+    result.canonicalInputs.confirmedAt,
+    result.canonicalInputs.prevHash
+  ));
   expect(result.dates).toEqual({
     ok: "ok", before: "before_2000", future: "future", after: "after_receipt_bound",
     missing: "unrepresentable", empty: "unrepresentable", zero: "unrepresentable",
