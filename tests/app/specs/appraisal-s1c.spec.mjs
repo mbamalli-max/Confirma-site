@@ -94,7 +94,7 @@ async function serveApp(request, response) {
       }
     }
     let worker = await readFile(resolve(root, "app-v3/sw.js"), "utf8");
-    if (served.cacheSuffix) worker = worker.replace('"konfirmata-cache-v47"', `"konfirmata-cache-v47${served.cacheSuffix}"`);
+    if (served.cacheSuffix) worker = worker.replace('"konfirmata-cache-v48"', `"konfirmata-cache-v48${served.cacheSuffix}"`);
     return response.writeHead(200, { ...headers, "content-type": "text/javascript" }).end(worker);
   }
   return sendFile(response, isCandidate ? resolve(root, "app-v3") : oldRoot, appFile(path), headers);
@@ -217,8 +217,8 @@ test("S1c C1-C4: /app is controlled, updates, reopens offline, and keeps CSP", a
     expect(await page.evaluate(() => window.__s1cCspViolations)).toEqual([]);
     candidate({ suffix: "-s1c-test" });
     await page.evaluate(() => navigator.serviceWorker.getRegistration("/app").then((registration) => registration.update()));
-    await waitForNavigationQuiet(page); await expectCache(page, "konfirmata-cache-v47-s1c-test"); await page.reload(); await waitForNavigationQuiet(page); await expectChart(page); await expectControlled(page);
-    expect(await page.evaluate(() => caches.open("konfirmata-cache-v47-s1c-test").then((cache) => cache.match("/app/vendor/chart.umd.js").then(Boolean)))).toBe(true);
+    await waitForNavigationQuiet(page); await expectCache(page, "konfirmata-cache-v48-s1c-test"); await page.reload(); await waitForNavigationQuiet(page); await expectChart(page); await expectControlled(page);
+    expect(await page.evaluate(() => caches.open("konfirmata-cache-v48-s1c-test").then((cache) => cache.match("/app/vendor/chart.umd.js").then(Boolean)))).toBe(true);
     await context.setOffline(true);
     for (const path of ["/app", "/app/"]) { const offline = await context.newPage(); await offline.goto(path); await waitForNavigationQuiet(offline); await expectChart(offline); await offline.close(); }
     await context.setOffline(false);
@@ -237,7 +237,7 @@ test("S1c C5: an existing /app/ install upgrades once to the /app worker", async
     expect(await legacy.evaluate(() => caches.open("konfirmata-cache-v47").then((cache) => cache.match("/app/index.html").then(async (response) => (await response.text()).includes("cdnjs.cloudflare.com"))))).toBe(true);
     const loadsBeforeUpgrade = loads;
     candidate({ suffix: "-s1c-upgrade" });
-    const current = await context.newPage(); await current.goto("/app"); await Promise.all([waitForNavigationQuiet(legacy), waitForNavigationQuiet(current)]); await expectChart(current); await expectCache(current, "konfirmata-cache-v47-s1c-upgrade");
+    const current = await context.newPage(); await current.goto("/app"); await Promise.all([waitForNavigationQuiet(legacy), waitForNavigationQuiet(current)]); await expectChart(current); await expectCache(current, "konfirmata-cache-v48-s1c-upgrade");
     await expect.poll(() => legacy.evaluate(async () => {
       const controller = navigator.serviceWorker.controller;
       const registrations = await navigator.serviceWorker.getRegistrations();
@@ -247,8 +247,8 @@ test("S1c C5: an existing /app/ install upgrades once to the /app worker", async
     const settledLoads = loads; await new Promise((done) => setTimeout(done, 10_000)); expect(loads).toBe(settledLoads);
     expect(await current.evaluate(() => navigator.serviceWorker.getRegistrations().then((all) => all.map((item) => item.scope)))).toEqual([`${new URL(APP_URL).origin}/app`]);
     for (const page of [current, legacy]) await expectControlled(page);
-    expect(await current.evaluate(() => caches.has("konfirmata-cache-v47-s1c-upgrade"))).toBe(true);
-    expect(await current.evaluate(() => caches.open("konfirmata-cache-v47-s1c-upgrade").then((cache) => cache.match("/app/vendor/chart.umd.js").then(Boolean)))).toBe(true);
+    expect(await current.evaluate(() => caches.has("konfirmata-cache-v48-s1c-upgrade"))).toBe(true);
+    expect(await current.evaluate(() => caches.open("konfirmata-cache-v48-s1c-upgrade").then((cache) => cache.match("/app/vendor/chart.umd.js").then(Boolean)))).toBe(true);
     expect(await current.evaluate(() => caches.has("konfirmata-cache-v47"))).toBe(false);
     test.info().annotations.push({ type: "c5-old-cdn-requests", description: String(cdnRequests.length) });
     await context.setOffline(true);
@@ -295,6 +295,6 @@ test("S1c C7: unrelated prefix routes are neither activated nor served by the ap
       expect(await item.page.evaluate(() => window.__s1cMessages)).not.toContainEqual({ type: "SW_UPDATED" });
       const response = await item.page.goto(item.path); expect(response.fromServiceWorker()).toBe(false);
     }
-    expect(await app.evaluate(() => caches.open("konfirmata-cache-v47").then((cache) => cache.match("/app/index.html").then((response) => response.text())))).toContain("Konfirmata");
+    expect(await app.evaluate(() => caches.open("konfirmata-cache-v48").then((cache) => cache.match("/app/index.html").then((response) => response.text())))).toContain("Konfirmata");
   } finally { await context.close(); }
 });
