@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Konfirmata</title>
+  <desc id="desc">Konfirmata logo and the words: Tamper-evident business activity records</desc>
+  <rect width="1200" height="630" fill="#0D1F17"/>
+  <g transform="translate(135 257) scale(1.55) translate(-60 -55)">
+    <path fill-rule="evenodd" d="M22,30 L60,10 L98,30 L60,50 Z M43.3,30 L60,21.2 L76.7,30 L60,38.8 Z" fill="#52B788"/>
+    <path d="M22,55 L60,75 L98,55 L98,43 L60,63 L22,43 Z" fill="#F4F7F5"/>
+    <path d="M22,80 L60,100 L98,80 L98,68 L60,88 L22,68 Z" fill="#F4F7F5"/>
+  </g>
+  <text x="250" y="285" fill="#F4F7F5" font-family="Georgia, serif" font-size="88">Konfirmata</text>
+  <text x="80" y="425" fill="#52B788" font-family="Helvetica, Arial, sans-serif" font-size="38">Tamper-evident business activity records</text>
+</svg>

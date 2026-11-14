@@ -1047,7 +1047,7 @@ test("13. the admin site sends strict headers and the main site refuses /admin",
 
   const main = JSON.parse(await readFile(ROOT_VERCEL, "utf8"));
   const block = main.routes.findIndex((r) => r.src === "/admin(/.*)?" && r.status === 404);
-  const catchAll = main.routes.findIndex((r) => r.src === "/(.*)");
+  const catchAll = main.routes.findIndex((r) => r.src === "/(.*)" && r.dest);
   expect(block, "main site has a 404 route for /admin").toBeGreaterThanOrEqual(0);
   expect(block, "the 404 route comes before the catch-all").toBeLessThan(catchAll);
 });
