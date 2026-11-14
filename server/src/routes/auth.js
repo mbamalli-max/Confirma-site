@@ -124,10 +124,10 @@ async function upsertVerifiedUser(database, { channel, identifier, phoneNumber, 
         `
           UPDATE users
           SET phone_verified = TRUE
-          WHERE phone_number = $1
+          WHERE id = $1
           RETURNING id, phone_number, email, email_verified, phone_verified
         `,
-        [phoneNumber]
+        [existingByPhone.id]
       );
       return result.rows[0] || null;
     }
@@ -136,7 +136,7 @@ async function upsertVerifiedUser(database, { channel, identifier, phoneNumber, 
       `
         INSERT INTO users (phone_number, phone_verified)
         VALUES ($1, TRUE)
-        ON CONFLICT (phone_number)
+        ON CONFLICT
         DO NOTHING
         RETURNING id, phone_number, email, email_verified, phone_verified
       `,
@@ -144,14 +144,16 @@ async function upsertVerifiedUser(database, { channel, identifier, phoneNumber, 
     );
     if (inserted.rows[0]) return inserted.rows[0];
 
+    const concurrent = await getUserByPhoneNumber(phoneNumber, database);
+    if (!concurrent) return null;
     const result = await database.query(
       `
         UPDATE users
         SET phone_verified = TRUE
-        WHERE phone_number = $1
+          WHERE id = $1
         RETURNING id, phone_number, email, email_verified, phone_verified
       `,
-      [phoneNumber]
+      [concurrent.id]
     );
     return result.rows[0] || null;
   }
@@ -162,10 +164,10 @@ async function upsertVerifiedUser(database, { channel, identifier, phoneNumber, 
       `
         UPDATE users
         SET email = $2, email_verified = TRUE
-        WHERE phone_number = $1
+        WHERE id = $1
         RETURNING id, phone_number, email, email_verified, phone_verified
       `,
-      [existingByEmail.phone_number, email]
+        [existingByEmail.id, email]
     );
     return result.rows[0] || null;
   }
@@ -178,7 +180,7 @@ async function upsertVerifiedUser(database, { channel, identifier, phoneNumber, 
     `
       INSERT INTO users (phone_number, email, email_verified, phone_verified)
       VALUES ($1, $2, TRUE, FALSE)
-      ON CONFLICT (phone_number)
+    ON CONFLICT
       DO NOTHING
       RETURNING id, phone_number, email, email_verified, phone_verified
     `,

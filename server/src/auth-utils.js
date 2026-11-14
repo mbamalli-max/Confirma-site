@@ -7,6 +7,21 @@ export function normalizePhoneNumber(phoneNumber) {
   return String(phoneNumber || "").trim();
 }
 
+// Keep this deliberately small and identical to migration 024's expression.
+// It is a lookup aid only; Postgres remains the authority for uniqueness.
+export function phoneDigits(value) {
+  return String(value || "").replace(/[^0-9]/g, "");
+}
+
+export function normalizeInternationalPhoneNumber(value) {
+  const raw = String(value || "").trim();
+  // Phone changes accept an explicit international prefix only. Spaces and
+  // dashes are presentation characters, never part of the stored value.
+  if (!raw.startsWith("+")) return "";
+  const digits = phoneDigits(raw);
+  return /^\d{7,15}$/.test(digits) && !digits.startsWith("0") ? `+${digits}` : "";
+}
+
 export function isValidPhoneNumber(phoneNumber) {
   return /^\+?[\d\s\-]{7,15}$/.test(normalizePhoneNumber(phoneNumber));
 }
@@ -33,6 +48,34 @@ export function hashOtp(identifier, code, channel = "email") {
     ? normalizePhoneNumber(identifier)
     : normalizeEmail(identifier);
   return crypto.createHash("sha256").update(`${normalizedChannel}:${normalizedIdentifier}:${String(code)}`).digest("hex");
+}
+
+let phoneChangeDigestKey = null;
+
+function getPhoneChangeDigestKey() {
+  if (!phoneChangeDigestKey) {
+    phoneChangeDigestKey = crypto.hkdfSync(
+      "sha256",
+      Buffer.from(String(config.jwtSecret)),
+      Buffer.alloc(0),
+      "konfirmata/phone-change-code/v1",
+      32
+    );
+  }
+  return phoneChangeDigestKey;
+}
+
+// A database dump cannot validate a six-digit code without JWT_SECRET.
+export function phoneChangeCodeDigest({ challengeId, userId, newPhoneDigits, code }) {
+  const fields = ["v1", challengeId, userId, newPhoneDigits, code].map((value) => String(value));
+  const message = fields.map((value) => `${Buffer.byteLength(value)}:${value}`).join("|");
+  return crypto.createHmac("sha256", getPhoneChangeDigestKey()).update(message).digest("hex");
+}
+
+export function phoneChangeCodeMatches(expectedDigest, fields) {
+  const expected = Buffer.from(String(expectedDigest || ""), "hex");
+  const actual = Buffer.from(phoneChangeCodeDigest(fields), "hex");
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
 }
 
 export function issueAuthToken(phoneNumber, deviceIdentity = "", extraClaims = {}) {
