@@ -314,6 +314,18 @@ test("R2: roll-forward rollback from v48 takes control cleanly", async ({ browse
   };
   const readBuildProof = (page) => page.evaluate(async () => {
     const registration = await navigator.serviceWorker.getRegistration("/app");
+    const workerVersion = await new Promise((resolve) => {
+      const controller = navigator.serviceWorker.controller;
+      if (!controller) return resolve(null);
+      const channel = new MessageChannel();
+      const timeout = setTimeout(() => resolve(null), 2_000);
+      channel.port1.onmessage = (event) => {
+        clearTimeout(timeout);
+        resolve(event.data?.cacheName || null);
+      };
+      try { controller.postMessage({ type: "GET_VERSION" }, [channel.port2]); }
+      catch { clearTimeout(timeout); resolve(null); }
+    });
     const cacheNames = await caches.keys();
     const cacheKeyPaths = await Promise.all(cacheNames.map(async (name) => {
       const cache = await caches.open(name);
@@ -325,6 +337,7 @@ test("R2: roll-forward rollback from v48 takes control cleanly", async ({ browse
     return {
       controller: navigator.serviceWorker.controller?.scriptURL || null,
       active: registration?.active ? { scriptURL: registration.active.scriptURL, state: registration.active.state } : null,
+      workerVersion,
       cacheNames,
       cacheKeyPaths: cacheKeyPaths.flat(),
       html: {
@@ -339,6 +352,7 @@ test("R2: roll-forward rollback from v48 takes control cleanly", async ({ browse
     await expect.poll(() => readBuildProof(page), { timeout: 30_000 }).toMatchObject({
       controller: `${new URL(APP_URL).origin}/app/sw.js`,
       active: { scriptURL: `${new URL(APP_URL).origin}/app/sw.js`, state: "activated" },
+      workerVersion: "konfirmata-cache-v49",
       cacheNames: ["konfirmata-cache-v49"],
       html: { hasRollbackMarker: true, hasV48Marker: false },
       appScript: { hasV48Suggestion: false }
@@ -346,6 +360,7 @@ test("R2: roll-forward rollback from v48 takes control cleanly", async ({ browse
     const proof = await readBuildProof(page);
     expect(proof.controller).not.toBeNull();
     expect(proof.active).toEqual({ scriptURL: proof.controller, state: "activated" });
+    expect(proof.workerVersion).toBe("konfirmata-cache-v49");
     expect(proof.cacheNames).toEqual(["konfirmata-cache-v49"]);
     expect(proof.cacheKeyPaths).not.toContain("/app/icons/icon-192.png");
     expect(proof.html).toEqual({ hasRollbackMarker: true, hasV48Marker: false });
@@ -358,6 +373,7 @@ test("R2: roll-forward rollback from v48 takes control cleanly", async ({ browse
   };
   const expectV48Build = async (page) => {
     const proof = await readBuildProof(page);
+    expect(proof.workerVersion).toBeNull();
     expect(proof.html).toEqual({ hasRollbackMarker: false, hasV48Marker: true });
     expect(proof.appScript).toEqual({ hasV48Suggestion: true });
     return proof;
