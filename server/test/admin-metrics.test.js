@@ -654,7 +654,7 @@ test("8: a record belongs to its UTC device-recorded month, not its later server
   `);
   assert.equal(Number(october.rows[0].count), 1);
   assert.equal(Number(november.rows[0].count), 0);
-  assert.equal(metric(await readOverview({ range: "30d" }), "accounts_submitting_records").total, 1);
+  assert.equal(metric(await readOverview({ range: "all" }), "accounts_submitting_records").total, 1);
 });
 
 test("8a: a recovered FORKED-device replacement is an ordinary confirmed_at row and stays counted once across rebuilds", async () => {

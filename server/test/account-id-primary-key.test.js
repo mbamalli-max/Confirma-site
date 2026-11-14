@@ -25,6 +25,8 @@ const originalAttestationConfig = {
 };
 const { privateKey: historicalAttestationKey } = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const query = (...args) => stage.pool.query(...args);
+// M1b assertions deliberately stop at 022. Later migrations may add nullable
+// columns, but must not alter the historical M1b snapshot being asserted.
 const run = () => stage.runMigrations(22);
 
 async function pre022() {
@@ -251,7 +253,7 @@ test("M1b catalog has only validated ID ownership links and nullable historical 
 
 test("M1b fresh schema install matches the upgrade catalog and is idempotent", async () => {
   await seed();
-  await run();
+  await stage.runMigrations(24);
   const upgradeCatalog = (await query(`
     SELECT c.relname, a.attname, a.attnotnull, coalesce(pg_get_constraintdef(k.oid), '') AS definition
     FROM pg_class c JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
@@ -259,7 +261,7 @@ test("M1b fresh schema install matches the upgrade catalog and is idempotent", a
     WHERE c.relname = ANY($1::text[])
     ORDER BY c.relname, a.attname, definition
   `, [["users", ...tables]])).rows;
-  const fresh = await createStageDatabase(22, {
+  const fresh = await createStageDatabase(24, {
     databaseUrl: config.databaseUrl,
     databaseSsl: config.databaseSsl,
     freshSchema: true
@@ -273,7 +275,7 @@ test("M1b fresh schema install matches the upgrade catalog and is idempotent", a
       ORDER BY c.relname, a.attname, definition
     `, [["users", ...tables]])).rows;
     assert.deepEqual(freshCatalog, upgradeCatalog);
-    assert.match((await fresh.runMigrations(22)).stdout, /No pending migrations/);
+    assert.match((await fresh.runMigrations(24)).stdout, /No pending migrations/);
   } finally {
     await fresh.drop();
   }

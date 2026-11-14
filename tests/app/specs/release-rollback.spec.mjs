@@ -61,7 +61,8 @@ function waitForNavigationQuiet(page, quietMs = 2_000) {
 async function oldAppDirectory() {
   const directory = await mkdtemp(join(tmpdir(), "confirma-rollback-v47-"));
   const archive = join(directory, "app-v3.tar");
-  execFileSync("git", ["archive", "-o", archive, "origin/main", "app-v3"], { cwd: root });
+  // Last v47 build.
+  execFileSync("git", ["archive", "-o", archive, "18d4698775b37d023eb143c0a058a61ea0652c49", "app-v3"], { cwd: root });
   execFileSync("tar", ["-xf", archive, "-C", directory]);
   return join(directory, "app-v3");
 }

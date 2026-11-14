@@ -1,5 +1,6 @@
-import { authenticateRequest, isValidEmail, normalizeEmail, normalizePhoneNumber } from "../auth-utils.js";
-import { query } from "../db.js";
+import { authenticateRequest, generateOtpCode, isValidEmail, normalizeEmail, normalizeInternationalPhoneNumber, phoneChangeCodeDigest, phoneChangeCodeMatches, phoneDigits, normalizePhoneNumber } from "../auth-utils.js";
+import { query, withTransaction } from "../db.js";
+import { config } from "../config.js";
 import { UNLISTED_BUSINESS_TYPE_ID } from "../business-catalog.js";
 import {
   catalogSector,
@@ -29,6 +30,42 @@ function normalizePreferredLabels(value) {
 
 const BUSINESS_DESCRIPTION_MIN = 3;
 const BUSINESS_DESCRIPTION_MAX = 60;
+const PHONE_CHANGE_WINDOW = "1 hour";
+const PHONE_CHANGE_TTL = "10 minutes";
+
+let resendModulePromise = null;
+async function sendPhoneChangeEmail(email, code) {
+  if (!config.resendApiKey) throw new Error("Email delivery is not configured.");
+  if (!resendModulePromise) resendModulePromise = import("resend");
+  const { Resend } = await resendModulePromise;
+  await new Resend(config.resendApiKey).emails.send({
+    from: config.resendFromEmail,
+    to: email,
+    subject: "Confirm your Konfirmata phone number change",
+    text: `Your Konfirmata code is ${code}. It expires in 10 minutes. This code changes the phone number on your account; it does not verify the new number.`
+  });
+}
+
+async function sendPhoneChangeNotice(email, changedAt) {
+  if (!config.resendApiKey) throw new Error("Email delivery is not configured.");
+  if (!resendModulePromise) resendModulePromise = import("resend");
+  const { Resend } = await resendModulePromise;
+  await new Resend(config.resendApiKey).emails.send({
+    from: config.resendFromEmail,
+    to: email,
+    subject: "Your Konfirmata phone number was changed",
+    text: `The phone number on your Konfirmata account was changed on ${new Date(changedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}. If this wasn't you, sign out everywhere and contact support.`
+  });
+}
+
+function isPhoneConflict(error) {
+  return (error?.code === "23P01" && error?.constraint === "users_phone_digits_excl")
+    || (error?.code === "23505" && error?.constraint === "users_phone_number_key");
+}
+
+function retryAfterSeconds(row) {
+  return Math.max(1, Math.ceil((new Date(row.created_at).getTime() + 60 * 60 * 1000 - Date.now()) / 1000));
+}
 
 function cleanBusinessDescription(value) {
   // Strip control characters, then trim. Length is counted in characters, as Postgres char_length does.
@@ -257,7 +294,12 @@ async function fillMissingProfile({ user, body, business, email }) {
   return applied;
 }
 
-export async function registerAccountRoutes(app) {
+export async function registerAccountRoutes(app, {
+  // Dependency injection is intentionally narrow: production retains the module
+  // senders while database tests can capture a code without a Resend request.
+  sendPhoneChangeEmail: sendCode = sendPhoneChangeEmail,
+  sendPhoneChangeNotice: sendNotice = sendPhoneChangeNotice
+} = {}) {
   app.get("/records", {
     config: { rateLimit: { max: 30, timeWindow: "1 minute" } }
   }, async (request, reply) => {
@@ -472,6 +514,106 @@ export async function registerAccountRoutes(app) {
     }
 
     return { ok: true };
+  });
+
+  app.post("/account/phone-change/request", {
+    config: { rateLimit: { max: 10, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
+    const auth = await authenticateRequest(request, reply);
+    if (!auth) return reply;
+    const phoneNumber = normalizeInternationalPhoneNumber(request.body?.new_phone_number);
+    if (!phoneNumber) return reply.code(400).send({ error: "Enter an international phone number with 7 to 15 digits." });
+    const code = generateOtpCode();
+    let outcome;
+    try {
+      outcome = await withTransaction(async (database) => {
+        // This is intentionally the first statement in every M2 transaction.
+        const locked = await database.query("SELECT id, phone_number, email, email_verified FROM users WHERE id = $1 FOR UPDATE", [auth.account_id]);
+        const user = locked.rows[0];
+        if (!user) return { kind: "missing" };
+        if (!user.email_verified || !user.email) return { kind: "email_required" };
+        const failed = await database.query("SELECT created_at FROM phone_change_failed_guesses WHERE user_id = $1 AND created_at > NOW() - INTERVAL '1 hour' ORDER BY created_at ASC", [user.id]);
+        if (failed.rowCount >= 5) return { kind: "limited", retry_after: retryAfterSeconds(failed.rows[0]) };
+        const requests = await database.query("SELECT created_at FROM phone_change_challenges WHERE user_id = $1 AND created_at > NOW() - INTERVAL '1 hour' ORDER BY created_at ASC", [user.id]);
+        if (requests.rowCount >= 5) return { kind: "limited", retry_after: retryAfterSeconds(requests.rows[0]) };
+        if (phoneDigits(user.phone_number) === phoneDigits(phoneNumber)) return { kind: "own" };
+        const taken = await database.query("SELECT 1 FROM users WHERE regexp_replace(phone_number, '[^0-9]', '', 'g') = $1 AND id <> $2 LIMIT 1", [phoneDigits(phoneNumber), user.id]);
+        if (taken.rowCount) return { kind: "in_use" };
+        await database.query("UPDATE phone_change_challenges SET superseded_at = NOW() WHERE user_id = $1 AND consumed_at IS NULL AND superseded_at IS NULL", [user.id]);
+        const inserted = await database.query("INSERT INTO phone_change_challenges (user_id, new_phone_number, code_digest, expires_at) VALUES ($1, $2, $3, NOW() + INTERVAL '10 minutes') RETURNING id", [user.id, phoneNumber, "pending"]);
+        const digest = phoneChangeCodeDigest({ challengeId: inserted.rows[0].id, userId: user.id, newPhoneDigits: phoneDigits(phoneNumber), code });
+        await database.query("UPDATE phone_change_challenges SET code_digest = $2 WHERE id = $1", [inserted.rows[0].id, digest]);
+        return { kind: "send", challenge_id: inserted.rows[0].id, email: user.email };
+      });
+    } catch (error) {
+      if (isPhoneConflict(error)) return reply.code(409).send({ code: "phone_in_use", error: "This phone number is already linked to another account." });
+      request.log.error({ err: { message: error?.message }, route: "phone_change_request" }, "Phone change request failed");
+      return reply.code(500).send({ error: "Unable to request a phone-number change right now." });
+    }
+    if (outcome.kind === "email_required") return reply.code(403).send({ error: "A verified email is needed before you can change your phone number." });
+    if (outcome.kind === "limited") return reply.code(429).send({ error: "Too many phone-change attempts. Try again later.", retry_after: outcome.retry_after });
+    if (outcome.kind === "own") return reply.code(400).send({ error: "That is already your number." });
+    if (outcome.kind === "in_use") return reply.code(409).send({ code: "phone_in_use", error: "This phone number is already linked to another account." });
+    if (outcome.kind === "missing") return reply.code(404).send({ error: "User account not found." });
+    try {
+      await sendCode(outcome.email, code);
+    } catch (error) {
+      // Match email sign-in's development-only delivery fallback. In this case
+      // the challenge remains usable; a real delivery failure still supersedes it.
+      if (config.allowDevOtp) {
+        return { ok: true, ttl_minutes: 10, delivery: "development", dev_code: code };
+      }
+      await query("UPDATE phone_change_challenges SET superseded_at = NOW() WHERE id = $1 AND consumed_at IS NULL", [outcome.challenge_id]);
+      request.log.warn({ err: error, route: "phone_change_request" }, "Phone change email delivery failed");
+      return reply.code(502).send({ error: "We could not send the email code. Please try again." });
+    }
+    return { ok: true, ttl_minutes: 10 };
+  });
+
+  app.post("/account/phone-change/confirm", {
+    config: { rateLimit: { max: 15, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
+    const auth = await authenticateRequest(request, reply);
+    if (!auth) return reply;
+    const phoneNumber = normalizeInternationalPhoneNumber(request.body?.new_phone_number);
+    const code = String(request.body?.code || "").trim();
+    if (!phoneNumber || !/^\d{6}$/.test(code)) return reply.code(400).send({ error: "Enter the phone number and six-digit email code." });
+    let outcome;
+    try {
+      outcome = await withTransaction(async (database) => {
+        const locked = await database.query("SELECT id, email FROM users WHERE id = $1 FOR UPDATE", [auth.account_id]);
+        const user = locked.rows[0];
+        if (!user) return { kind: "missing" };
+        const failures = await database.query("SELECT created_at FROM phone_change_failed_guesses WHERE user_id = $1 AND created_at > NOW() - INTERVAL '1 hour' ORDER BY created_at ASC", [user.id]);
+        if (failures.rowCount >= 5) return { kind: "limited", retry_after: retryAfterSeconds(failures.rows[0]) };
+        const found = await database.query("SELECT id, new_phone_number, code_digest FROM phone_change_challenges WHERE user_id = $1 AND consumed_at IS NULL AND superseded_at IS NULL AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1 FOR UPDATE", [user.id]);
+        const challenge = found.rows[0];
+        const matches = challenge && phoneDigits(challenge.new_phone_number) === phoneDigits(phoneNumber) && phoneChangeCodeMatches(challenge.code_digest, { challengeId: challenge.id, userId: user.id, newPhoneDigits: phoneDigits(phoneNumber), code });
+        if (!matches) {
+          await database.query("INSERT INTO phone_change_failed_guesses (user_id, challenge_id) VALUES ($1, $2)", [user.id, challenge?.id || null]);
+          return { kind: "wrong", guesses_left: Math.max(0, 4 - failures.rowCount) };
+        }
+        await database.query("UPDATE users SET phone_number = $2, phone_verified = FALSE WHERE id = $1", [user.id, phoneNumber]);
+        await database.query("UPDATE profiles SET phone_number = $2 WHERE user_id = $1", [user.id, phoneNumber]);
+        await database.query("UPDATE phone_change_challenges SET consumed_at = NOW() WHERE id = $1", [challenge.id]);
+        const audit = await database.query("INSERT INTO account_phone_changes (user_id, device_identity) VALUES ($1, $2) RETURNING id, changed_at", [user.id, auth.device_identity]);
+        return { kind: "changed", email: user.email, audit_id: audit.rows[0].id, changed_at: audit.rows[0].changed_at };
+      });
+    } catch (error) {
+      if (isPhoneConflict(error)) return reply.code(409).send({ code: "phone_in_use", error: "This phone number is already linked to another account." });
+      request.log.error({ err: { message: error?.message }, route: "phone_change_confirm" }, "Phone change failed");
+      return reply.code(500).send({ error: "Unable to change the phone number right now." });
+    }
+    if (outcome.kind === "limited") return reply.code(429).send({ error: "Too many phone-change attempts. Try again later.", retry_after: outcome.retry_after });
+    if (outcome.kind === "wrong") return reply.code(400).send({ error: "That code is incorrect or has expired.", guesses_left: outcome.guesses_left });
+    if (outcome.kind === "missing") return reply.code(404).send({ error: "User account not found." });
+    try {
+      await sendNotice(outcome.email, outcome.changed_at);
+      await query("UPDATE account_phone_changes SET notice_sent = TRUE WHERE id = $1", [outcome.audit_id]);
+    } catch (error) {
+      request.log.warn({ err: error, route: "phone_change_notice" }, "Phone change notice delivery failed");
+    }
+    return { ok: true, phone_number: phoneNumber, phone_verified: false };
   });
 
   app.get("/devices", {
