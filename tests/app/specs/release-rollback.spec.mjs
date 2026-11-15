@@ -15,7 +15,7 @@ const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
 const route = JSON.parse(readFileSync(resolve(root, "vercel.json"), "utf8")).routes.find((item) => item.src === "/(.*)" && item.continue === true);
 if (!route?.headers) throw new Error("missing continuing app header route");
 const appHeaders = Object.fromEntries(Object.entries(route.headers).map(([key, value]) => [key, value.replace("https://api.konfirmata.com", apiOrigin)]));
-let oldRoot, server;
+let oldRoot, liveV48Root, server;
 let mode = "candidate";
 const rollbackRoot = process.env.ROLLBACK_APP_DIR ? resolve(process.env.ROLLBACK_APP_DIR) : null;
 
@@ -67,6 +67,15 @@ async function oldAppDirectory() {
   return join(directory, "app-v3");
 }
 
+async function liveV48AppDirectory() {
+  const directory = await mkdtemp(join(tmpdir(), "confirma-rollback-v48-"));
+  const archive = join(directory, "app-v3.tar");
+  // Live v48 build; R1/R2 test rolling back from production v48.
+  execFileSync("git", ["archive", "-o", archive, "218deea56445919fc5e1020f5f29ac31b6bf8ffe", "app-v3"], { cwd: root });
+  execFileSync("tar", ["-xf", archive, "-C", directory]);
+  return join(directory, "app-v3");
+}
+
 async function sendFile(response, source, relative, headers = {}) {
   const file = resolve(source, relative);
   if (file !== source && !file.startsWith(`${source}${sep}`)) return response.writeHead(403, headers).end();
@@ -81,7 +90,7 @@ async function serveApp(request, response) {
   const path = new URL(request.url, APP_URL).pathname;
   if (path === "/") return response.writeHead(302, { location: "/app" }).end();
   if (path !== "/app" && !path.startsWith("/app/")) return response.writeHead(404).end();
-  const source = mode === "candidate" ? resolve(root, "app-v3") : mode === "rollback" ? rollbackRoot : oldRoot;
+  const source = mode === "candidate" ? liveV48Root : mode === "rollback" ? rollbackRoot : oldRoot;
   const headers = mode === "candidate" ? { ...appHeaders } : {};
   if (path === "/app/sw.js") {
     if (mode === "candidate") headers["Service-Worker-Allowed"] = "/app";
@@ -169,6 +178,7 @@ async function rollbackObservation(page) {
 
 test.beforeAll(async () => {
   oldRoot = await oldAppDirectory();
+  liveV48Root = await liveV48AppDirectory();
   const url = new URL(APP_URL);
   server = createServer(serveApp);
   await new Promise((done) => server.listen(Number(url.port), url.hostname, done));
@@ -177,6 +187,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await new Promise((done) => server.close(done));
   await rm(resolve(oldRoot, ".."), { recursive: true, force: true });
+  await rm(resolve(liveV48Root, ".."), { recursive: true, force: true });
 });
 
 test("R1: rollback from v48 to v47 keeps the app and records", async ({ browser }) => {
